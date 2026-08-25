@@ -1,0 +1,38 @@
+{
+  "title": "Casa ES Energy Manager",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Energy sensor mapping",
+        "description": "Version 0.1 is read-only. Select the sensors used to calculate grid and phase safety margins.",
+        "data": {
+          "pv_power_sensor": "PV power sensor",
+          "load_power_sensor": "House/load power sensor",
+          "grid_power_sensor": "Grid power sensor (positive = import)",
+          "battery_soc_sensor": "Battery state of charge sensor",
+          "battery_power_sensor": "Battery power sensor (positive = charging)",
+          "phase_l1_power_sensor": "Phase L1 load power sensor (optional)",
+          "phase_l2_power_sensor": "Phase L2 load power sensor (optional)",
+          "phase_l3_power_sensor": "Phase L3 load power sensor (optional)"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "Casa ES Energy Manager is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Protection limits",
+        "description": "These values are only monitored in version 0.1; the integration does not switch any load.",
+        "data": {
+          "inverter_power_limit": "Inverter total limit (W)",
+          "phase_power_limit": "Per-phase working limit (W)",
+          "grid_power_limit": "Grid working limit (W)",
+          "safety_margin": "Safety margin subtracted from limits (W)"
+        }
+      }
+    }
+  }
+}

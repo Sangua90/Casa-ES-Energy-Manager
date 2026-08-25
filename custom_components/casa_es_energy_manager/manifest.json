@@ -1,0 +1,15 @@
+{
+  "domain": "casa_es_energy_manager",
+  "name": "Casa ES Energy Manager",
+  "codeowners": [
+    "@Sangua90"
+  ],
+  "config_flow": true,
+  "documentation": "https://github.com/Sangua90/Casa-ES-Energy-Manager",
+  "integration_type": "hub",
+  "iot_class": "calculated",
+  "issue_tracker": "https://github.com/Sangua90/Casa-ES-Energy-Manager/issues",
+  "version": "0.1.0",
+  "homeassistant": "2025.8.0",
+  "single_config_entry": true
+}
