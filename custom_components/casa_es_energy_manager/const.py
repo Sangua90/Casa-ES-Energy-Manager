@@ -2,7 +2,7 @@
 
 DOMAIN = "casa_es_energy_manager"
 NAME = "Casa ES Energy Manager"
-VERSION = "1.0.2"
+VERSION = "1.1.0"
 
 # Core electrical sensors.
 CONF_PV_POWER_SENSOR = "pv_power_sensor"
@@ -60,7 +60,7 @@ CONF_EMERGENCY_CHARGE_POWER_W = "emergency_charge_power_w"
 CONF_EMERGENCY_CHARGE_MAX_MINUTES = "emergency_charge_max_minutes"
 
 # Managed flexible-load subentries. Automatic real service calls remain disabled;
-# v1.0 validates behaviour through deterministic dry-run first.
+# the current release validates behaviour through deterministic dry-run first.
 SUBENTRY_TYPE_MANAGED_DEVICE = "managed_device"
 CONF_DEVICE_NAME = "name"
 CONF_DEVICE_ENTITY = "entity_id"
@@ -78,18 +78,17 @@ CONF_DEVICE_MIN_OFF_MINUTES = "min_off_minutes"
 
 # Runtime per-device modes exposed as select entities.
 DEVICE_MODE_AUTO = "auto"
-DEVICE_MODE_OVERRIDE = "override"
+DEVICE_MODE_OVERRIDE = "override"  # User-facing label: Manuale.
 DEVICE_MODE_OFF = "off"
 DEVICE_MODES = (DEVICE_MODE_AUTO, DEVICE_MODE_OVERRIDE, DEVICE_MODE_OFF)
 
-# Options retained from the original PV Excess appliance model.
+# Useful managed-load constraints retained for the user's real load set.
 CONF_DEVICE_MIN_DAILY_RUNTIME_MINUTES = "min_daily_runtime_minutes"
 CONF_DEVICE_MAX_DAILY_RUNTIME_MINUTES = "max_daily_runtime_minutes"
 CONF_DEVICE_MAX_DAILY_ACTIVATIONS = "max_daily_activations"
 CONF_DEVICE_SCHEDULE_DEADLINE = "schedule_deadline"
 CONF_DEVICE_START_AFTER = "start_after"
 CONF_DEVICE_END_BEFORE = "end_before"
-CONF_DEVICE_REQUIRES_ENTITY = "requires_entity"
 CONF_DEVICE_AVERAGING_WINDOW_SECONDS = "averaging_window_seconds"
 CONF_DEVICE_BIG_CONSUMER = "big_consumer"
 CONF_DEVICE_BATTERY_DISCHARGE_OVERRIDE_W = "battery_discharge_override_w"
@@ -97,6 +96,10 @@ CONF_DEVICE_ON_ONLY = "on_only"
 CONF_DEVICE_PROTECT_PREEMPTION = "protect_preemption"
 CONF_DEVICE_SWITCH_INTERVAL_SECONDS = "switch_interval_seconds"  # legacy compatibility
 CONF_DEVICE_MAX_GRID_POWER_W = "max_grid_power_w"
+
+# Legacy v1.0 keys intentionally kept only so old subentries can be read and
+# cleaned safely when reconfigured. They are no longer exposed or used by v1.1.
+CONF_DEVICE_REQUIRES_ENTITY = "requires_entity"
 CONF_DEVICE_DYNAMIC_CURRENT = "dynamic_current"
 CONF_DEVICE_CURRENT_ENTITY = "current_entity"
 CONF_DEVICE_MIN_CURRENT_A = "min_current_a"
@@ -104,6 +107,16 @@ CONF_DEVICE_MAX_CURRENT_A = "max_current_a"
 CONF_DEVICE_EV_SOC_SENSOR = "ev_soc_sensor"
 CONF_DEVICE_EV_CONNECTED_SENSOR = "ev_connected_sensor"
 CONF_DEVICE_EV_TARGET_SOC = "ev_target_soc"
+LEGACY_REMOVED_DEVICE_KEYS = (
+    CONF_DEVICE_REQUIRES_ENTITY,
+    CONF_DEVICE_DYNAMIC_CURRENT,
+    CONF_DEVICE_CURRENT_ENTITY,
+    CONF_DEVICE_MIN_CURRENT_A,
+    CONF_DEVICE_MAX_CURRENT_A,
+    CONF_DEVICE_EV_SOC_SENSOR,
+    CONF_DEVICE_EV_CONNECTED_SENSOR,
+    CONF_DEVICE_EV_TARGET_SOC,
+)
 
 # Read-only monitored loads: useful for phase attribution, never controlled.
 SUBENTRY_TYPE_MONITORED_LOAD = "monitored_load"
@@ -112,9 +125,9 @@ CONF_MONITORED_LOAD_POWER_SENSOR = "power_sensor"
 CONF_MONITORED_LOAD_PHASE = "phase"
 CONF_MONITORED_LOAD_ENABLED = "enabled"
 
-# Numeric priority: 1 = highest, 10 = lowest.
+# Numeric priority: 1 = highest, 100 = lowest.
 DEVICE_PRIORITY_MIN = 1
-DEVICE_PRIORITY_MAX = 10
+DEVICE_PRIORITY_MAX = 100
 DEVICE_PHASES = ("l1", "l2", "l3", "three_phase")
 
 DEFAULT_INVERTER_POWER_LIMIT = 10_000.0
@@ -135,16 +148,17 @@ DEFAULT_EMERGENCY_CHARGE_TARGET_SOC = 100.0
 DEFAULT_EMERGENCY_CHARGE_POWER_W = 3000.0
 DEFAULT_EMERGENCY_CHARGE_MAX_MINUTES = 240
 
-DEFAULT_DEVICE_PRIORITY = 5
-DEFAULT_DEVICE_EXPECTED_RUNTIME_MINUTES = 60
+DEFAULT_DEVICE_PRIORITY = 50
+# Optional in v1.1: when omitted Casa ES does not invent a cycle duration.
+DEFAULT_DEVICE_EXPECTED_RUNTIME_MINUTES = None
 DEFAULT_DEVICE_MIN_BATTERY_SOC = 40.0
 DEFAULT_DEVICE_ALLOW_GRID = False
 DEFAULT_DEVICE_ENABLED = True
 DEFAULT_DEVICE_ADAPTIVE_POWER = True
-# Conservative anti-cycling defaults. They are especially appropriate for heat
-# pumps / inverter climates and can be reduced to zero for loads that do not need it.
-DEFAULT_DEVICE_MIN_ON_MINUTES = 20
-DEFAULT_DEVICE_MIN_OFF_MINUTES = 20
+# Optional in v1.1. Users can set anti-cycling where it is useful (for example
+# heat pumps) without forcing it on simple loads.
+DEFAULT_DEVICE_MIN_ON_MINUTES = 0
+DEFAULT_DEVICE_MIN_OFF_MINUTES = 0
 DEFAULT_DEVICE_MIN_DAILY_RUNTIME_MINUTES = 0
 DEFAULT_DEVICE_MAX_DAILY_RUNTIME_MINUTES = 1440
 DEFAULT_DEVICE_MAX_DAILY_ACTIVATIONS = 0
@@ -155,13 +169,9 @@ DEFAULT_DEVICE_ON_ONLY = False
 DEFAULT_DEVICE_PROTECT_PREEMPTION = False
 DEFAULT_DEVICE_SWITCH_INTERVAL_SECONDS = 0
 DEFAULT_DEVICE_MAX_GRID_POWER_W = 0.0
-DEFAULT_DEVICE_DYNAMIC_CURRENT = False
-DEFAULT_DEVICE_MIN_CURRENT_A = 6.0
-DEFAULT_DEVICE_MAX_CURRENT_A = 16.0
-DEFAULT_DEVICE_EV_TARGET_SOC = 80.0
 DEFAULT_MONITORED_LOAD_ENABLED = True
 
-# Adaptive climate learning.
+# Adaptive variable-load learning.
 ADAPTIVE_ACTIVE_POWER_THRESHOLD_W = 20.0
 ADAPTIVE_PROFILE_MIN_SAMPLES = 20
 ADAPTIVE_SAVE_EVERY_OBSERVATIONS = 60
