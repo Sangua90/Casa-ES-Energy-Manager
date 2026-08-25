@@ -51,6 +51,17 @@ from .const import (
     NAME,
 )
 
+OPTIONAL_ENTITY_KEYS = (
+    CONF_PV_POTENTIAL_POWER_SENSOR,
+    CONF_PV_FORECAST_REMAINING_TODAY_SENSOR,
+    CONF_PV_FORECAST_CURRENT_HOUR_SENSOR,
+    CONF_PV_FORECAST_NEXT_HOUR_SENSOR,
+    CONF_PV_FORECAST_TODAY_SENSOR,
+    CONF_PV_FORECAST_TOMORROW_SENSOR,
+    CONF_WEATHER_ENTITY,
+    CONF_AI_TASK_ENTITY,
+)
+
 
 def _entity_selector() -> selector.EntitySelector:
     return selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor"))
@@ -78,6 +89,25 @@ def _add_optional_entity(
         fields[vol.Optional(key, default=current[key])] = value_selector
     else:
         fields[vol.Optional(key)] = value_selector
+
+
+def _clean_options_input(user_input: dict[str, Any]) -> dict[str, Any]:
+    """Normalize empty optional selectors before persisting options."""
+    cleaned = dict(user_input)
+
+    for key in OPTIONAL_ENTITY_KEYS:
+        if cleaned.get(key) in (None, ""):
+            cleaned.pop(key, None)
+
+    extra = cleaned.get(CONF_EXTRA_CONTEXT_SENSORS)
+    if not extra:
+        cleaned[CONF_EXTRA_CONTEXT_SENSORS] = []
+    else:
+        cleaned[CONF_EXTRA_CONTEXT_SENSORS] = [
+            str(entity_id) for entity_id in extra if entity_id
+        ]
+
+    return cleaned
 
 
 class CasaESEnergyManagerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -125,10 +155,30 @@ class CasaESEnergyManagerOptionsFlow(OptionsFlowWithReload):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Manage protection, forecast/context sensors and the AI planner."""
+        errors: dict[str, str] = {}
+        attempted: dict[str, Any] | None = None
+
         if user_input is not None:
-            return self.async_create_entry(data=user_input)
+            attempted = _clean_options_input(user_input)
+
+            if attempted.get(CONF_AI_ENABLED, DEFAULT_AI_ENABLED):
+                ai_task_entity = attempted.get(CONF_AI_TASK_ENTITY)
+                if not ai_task_entity:
+                    errors["base"] = "ai_task_required"
+                elif not str(ai_task_entity).startswith("ai_task."):
+                    errors[CONF_AI_TASK_ENTITY] = "invalid_ai_task"
+                elif self.hass.states.get(str(ai_task_entity)) is None:
+                    errors[CONF_AI_TASK_ENTITY] = "ai_task_not_found"
+                elif not self.hass.services.has_service("ai_task", "generate_data"):
+                    errors["base"] = "ai_task_unavailable"
+
+            if not errors:
+                return self.async_create_entry(data=attempted)
 
         current = {**self.config_entry.data, **self.config_entry.options}
+        if attempted is not None:
+            current.update(attempted)
+
         fields: dict[Any, Any] = {
             vol.Required(
                 CONF_INVERTER_POWER_LIMIT,
@@ -216,4 +266,8 @@ class CasaESEnergyManagerOptionsFlow(OptionsFlowWithReload):
         )
         _add_optional_entity(fields, CONF_AI_TASK_ENTITY, current, _ai_task_selector())
 
-        return self.async_show_form(step_id="init", data_schema=vol.Schema(fields))
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema(fields),
+            errors=errors,
+        )
