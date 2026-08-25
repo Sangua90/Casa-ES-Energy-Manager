@@ -26,6 +26,7 @@ from .const import (
     DEFAULT_BATTERY_CAPACITY_KWH,
     DEFAULT_BATTERY_CHARGE_EFFICIENCY_PCT,
     DEFAULT_BATTERY_TARGET_SOC,
+    DEFAULT_DEVICE_ADAPTIVE_POWER,
     DEFAULT_EMERGENCY_CHARGE_MAX_MINUTES,
     DEFAULT_EMERGENCY_CHARGE_POWER_W,
     DEFAULT_EMERGENCY_CHARGE_TARGET_SOC,
@@ -37,6 +38,13 @@ from .coordinator import CasaESEnergyCoordinator as BaseCoordinator
 from .device_dry_run_v1 import evaluate_managed_devices
 from .phase_attribution import phase_attribution
 from .planner_policy_v1 import build_planner_policy
+
+
+def _float(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 class CasaESEnergyCoordinator(BaseCoordinator):
@@ -70,6 +78,39 @@ class CasaESEnergyCoordinator(BaseCoordinator):
     def emergency_charge_available(self) -> bool:
         return self._script_configured(CONF_EMERGENCY_CHARGE_START_SCRIPT) and self._script_configured(CONF_EMERGENCY_CHARGE_STOP_SCRIPT)
 
+    def _validate_emergency_charge_headroom(self, power_w: float) -> None:
+        """Reject a requested manual charge that does not fit measured limits."""
+        data = self.data or {}
+        grid_headroom = _float(data.get("grid_headroom_w"))
+        inverter_headroom = _float(data.get("inverter_headroom_w"))
+        if grid_headroom is not None and power_w > grid_headroom + 1e-9:
+            raise HomeAssistantError(
+                f"Ricarica emergenza non avviata: servono {power_w:.0f} W ma il margine rete è {grid_headroom:.0f} W."
+            )
+        if inverter_headroom is not None and power_w > inverter_headroom + 1e-9:
+            raise HomeAssistantError(
+                f"Ricarica emergenza non avviata: margine inverter insufficiente ({inverter_headroom:.0f} W)."
+            )
+        phase_need = power_w / 3.0
+        known_phase_headrooms = [
+            value
+            for value in (
+                _float(data.get("phase_l1_headroom_w")),
+                _float(data.get("phase_l2_headroom_w")),
+                _float(data.get("phase_l3_headroom_w")),
+            )
+            if value is not None
+        ]
+        if known_phase_headrooms and min(known_phase_headrooms) < phase_need - 1e-9:
+            raise HomeAssistantError(
+                "Ricarica emergenza non avviata: il margine di almeno una fase è insufficiente per la potenza richiesta."
+            )
+        policy = data.get("planner_policy") or {}
+        if policy.get("protect_grid_required"):
+            raise HomeAssistantError(
+                "Ricarica emergenza non avviata: è attiva una condizione di protezione elettrica locale."
+            )
+
     async def async_start_emergency_charge(self) -> None:
         """Invoke the user-configured inverter-specific start script."""
         if not self.emergency_charge_available:
@@ -81,6 +122,10 @@ class CasaESEnergyCoordinator(BaseCoordinator):
         target_soc = float(self._config(CONF_EMERGENCY_CHARGE_TARGET_SOC, DEFAULT_EMERGENCY_CHARGE_TARGET_SOC))
         power_w = float(self._config(CONF_EMERGENCY_CHARGE_POWER_W, DEFAULT_EMERGENCY_CHARGE_POWER_W))
         max_minutes = int(self._config(CONF_EMERGENCY_CHARGE_MAX_MINUTES, DEFAULT_EMERGENCY_CHARGE_MAX_MINUTES))
+        current_soc = _float((self.data or {}).get("battery_soc"))
+        if current_soc is not None and current_soc >= target_soc:
+            raise HomeAssistantError("La batteria ha già raggiunto il SOC obiettivo della ricarica di emergenza.")
+        self._validate_emergency_charge_headroom(power_w)
         script = str(self._config(CONF_EMERGENCY_CHARGE_START_SCRIPT))
         await self.hass.services.async_call(
             "script",
@@ -146,7 +191,7 @@ class CasaESEnergyCoordinator(BaseCoordinator):
         for item in devices:
             entity_id = str(item.get("entity_id") or "")
             nominal = float(item.get(CONF_DEVICE_NOMINAL_POWER_W) or 0.0)
-            adaptive = bool(item.get(CONF_DEVICE_ADAPTIVE_POWER, False))
+            adaptive = bool(item.get(CONF_DEVICE_ADAPTIVE_POWER, DEFAULT_DEVICE_ADAPTIVE_POWER))
             if adaptive and entity_id.startswith("climate.") and item.get("power_sensor"):
                 mode = str(item.get("hvac_mode") or "unknown")
                 profile = self.learner.profile_for(entity_id, mode, nominal)
@@ -188,7 +233,9 @@ class CasaESEnergyCoordinator(BaseCoordinator):
         if self.emergency_charge_active:
             target_soc = float(self._config(CONF_EMERGENCY_CHARGE_TARGET_SOC, DEFAULT_EMERGENCY_CHARGE_TARGET_SOC))
             soc = float(data.get("battery_soc") or 0.0)
-            if soc >= target_soc:
+            if policy.get("protect_grid_required"):
+                await self.async_stop_emergency_charge("electrical_protection", refresh=False)
+            elif soc >= target_soc:
                 await self.async_stop_emergency_charge("target_soc_reached", refresh=False)
             elif self.emergency_charge_deadline and now >= self.emergency_charge_deadline:
                 await self.async_stop_emergency_charge("timeout", refresh=False)
