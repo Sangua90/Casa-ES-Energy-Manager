@@ -34,7 +34,7 @@ from .const import (
     DEVICE_MODE_AUTO,
 )
 from .coordinator import CasaESEnergyCoordinator as BaseCoordinator
-from .device_dry_run import evaluate_managed_devices
+from .device_dry_run_v1 import evaluate_managed_devices
 from .phase_attribution import phase_attribution
 from .planner_policy_v1 import build_planner_policy
 
@@ -52,17 +52,14 @@ class CasaESEnergyCoordinator(BaseCoordinator):
         self.emergency_charge_stop_reason: str | None = None
 
     async def async_initialize(self) -> None:
-        """Load persistent adaptive profiles before the first coordinator refresh."""
         await self.learner.async_load()
 
     async def async_prepare_unload(self) -> None:
-        """Persist learning and fail safe a manual grid-charge session on unload."""
         if self.emergency_charge_active:
-            await self.async_stop_emergency_charge("integration_unload")
+            await self.async_stop_emergency_charge("integration_unload", refresh=False)
         await self.learner.async_save()
 
     def set_device_mode(self, subentry_id: str, mode: str) -> None:
-        """Update one managed device's runtime AUTO/OVERRIDE/OFF mode."""
         self.device_modes[subentry_id] = mode
 
     def _script_configured(self, key: str) -> bool:
@@ -71,34 +68,19 @@ class CasaESEnergyCoordinator(BaseCoordinator):
 
     @property
     def emergency_charge_available(self) -> bool:
-        return self._script_configured(CONF_EMERGENCY_CHARGE_START_SCRIPT) and self._script_configured(
-            CONF_EMERGENCY_CHARGE_STOP_SCRIPT
-        )
+        return self._script_configured(CONF_EMERGENCY_CHARGE_START_SCRIPT) and self._script_configured(CONF_EMERGENCY_CHARGE_STOP_SCRIPT)
 
     async def async_start_emergency_charge(self) -> None:
-        """Invoke the configured inverter-specific start script."""
+        """Invoke the user-configured inverter-specific start script."""
         if not self.emergency_charge_available:
             raise HomeAssistantError(
                 "Configura gli script di avvio e arresto ricarica di emergenza nelle opzioni Casa ES."
             )
         if self.emergency_charge_active:
             return
-
-        target_soc = float(
-            self._config(
-                CONF_EMERGENCY_CHARGE_TARGET_SOC,
-                DEFAULT_EMERGENCY_CHARGE_TARGET_SOC,
-            )
-        )
-        power_w = float(
-            self._config(CONF_EMERGENCY_CHARGE_POWER_W, DEFAULT_EMERGENCY_CHARGE_POWER_W)
-        )
-        max_minutes = int(
-            self._config(
-                CONF_EMERGENCY_CHARGE_MAX_MINUTES,
-                DEFAULT_EMERGENCY_CHARGE_MAX_MINUTES,
-            )
-        )
+        target_soc = float(self._config(CONF_EMERGENCY_CHARGE_TARGET_SOC, DEFAULT_EMERGENCY_CHARGE_TARGET_SOC))
+        power_w = float(self._config(CONF_EMERGENCY_CHARGE_POWER_W, DEFAULT_EMERGENCY_CHARGE_POWER_W))
+        max_minutes = int(self._config(CONF_EMERGENCY_CHARGE_MAX_MINUTES, DEFAULT_EMERGENCY_CHARGE_MAX_MINUTES))
         script = str(self._config(CONF_EMERGENCY_CHARGE_START_SCRIPT))
         await self.hass.services.async_call(
             "script",
@@ -120,20 +102,18 @@ class CasaESEnergyCoordinator(BaseCoordinator):
         self.emergency_charge_stop_reason = None
         await self.async_request_refresh()
 
-    async def async_stop_emergency_charge(self, reason: str = "manual") -> None:
-        """Invoke the configured inverter-specific stop script."""
+    async def async_stop_emergency_charge(self, reason: str = "manual", *, refresh: bool = True) -> None:
+        """Invoke the user-configured inverter-specific stop script."""
         script = self._config(CONF_EMERGENCY_CHARGE_STOP_SCRIPT)
         if script and str(script).startswith("script."):
-            await self.hass.services.async_call(
-                "script", "turn_on", {"entity_id": str(script)}, blocking=True
-            )
+            await self.hass.services.async_call("script", "turn_on", {"entity_id": str(script)}, blocking=True)
         self.emergency_charge_active = False
         self.emergency_charge_deadline = None
         self.emergency_charge_stop_reason = reason
-        await self.async_request_refresh()
+        if refresh:
+            await self.async_request_refresh()
 
     async def _async_update_data(self) -> dict[str, Any]:
-        """Refresh base data, then apply v1 policy and adaptive device context."""
         data = await super()._async_update_data()
         now, target = self._target_time()
 
@@ -141,24 +121,11 @@ class CasaESEnergyCoordinator(BaseCoordinator):
             data,
             now=now,
             target=target,
-            battery_capacity_kwh=float(
-                self._config(CONF_BATTERY_CAPACITY_KWH, DEFAULT_BATTERY_CAPACITY_KWH)
-            ),
-            battery_target_soc=float(
-                self._config(CONF_BATTERY_TARGET_SOC, DEFAULT_BATTERY_TARGET_SOC)
-            ),
-            expected_base_load_w=float(
-                self._config(CONF_EXPECTED_BASE_LOAD_W, DEFAULT_EXPECTED_BASE_LOAD_W)
-            ),
-            battery_charge_efficiency_pct=float(
-                self._config(
-                    CONF_BATTERY_CHARGE_EFFICIENCY_PCT,
-                    DEFAULT_BATTERY_CHARGE_EFFICIENCY_PCT,
-                )
-            ),
-            energy_preference=str(
-                self._config(CONF_ENERGY_PREFERENCE, DEFAULT_ENERGY_PREFERENCE)
-            ),
+            battery_capacity_kwh=float(self._config(CONF_BATTERY_CAPACITY_KWH, DEFAULT_BATTERY_CAPACITY_KWH)),
+            battery_target_soc=float(self._config(CONF_BATTERY_TARGET_SOC, DEFAULT_BATTERY_TARGET_SOC)),
+            expected_base_load_w=float(self._config(CONF_EXPECTED_BASE_LOAD_W, DEFAULT_EXPECTED_BASE_LOAD_W)),
+            battery_charge_efficiency_pct=float(self._config(CONF_BATTERY_CHARGE_EFFICIENCY_PCT, DEFAULT_BATTERY_CHARGE_EFFICIENCY_PCT)),
+            energy_preference=str(self._config(CONF_ENERGY_PREFERENCE, DEFAULT_ENERGY_PREFERENCE)),
         )
 
         devices = [dict(item) for item in (data.get("managed_device_configs") or [])]
@@ -204,7 +171,6 @@ class CasaESEnergyCoordinator(BaseCoordinator):
         data["adaptive_power_profiles"] = self.learner.export()
         data["energy_preference"] = policy["energy_preference"]
 
-        # Keep flattened deterministic values aligned with the v1 policy.
         for key in (
             "battery_energy_needed_kwh",
             "battery_input_energy_needed_kwh",
@@ -220,33 +186,17 @@ class CasaESEnergyCoordinator(BaseCoordinator):
         data["planner_solar_state"] = policy.get("solar_state")
 
         if self.emergency_charge_active:
-            target_soc = float(
-                self._config(
-                    CONF_EMERGENCY_CHARGE_TARGET_SOC,
-                    DEFAULT_EMERGENCY_CHARGE_TARGET_SOC,
-                )
-            )
+            target_soc = float(self._config(CONF_EMERGENCY_CHARGE_TARGET_SOC, DEFAULT_EMERGENCY_CHARGE_TARGET_SOC))
             soc = float(data.get("battery_soc") or 0.0)
             if soc >= target_soc:
-                await self.async_stop_emergency_charge("target_soc_reached")
+                await self.async_stop_emergency_charge("target_soc_reached", refresh=False)
             elif self.emergency_charge_deadline and now >= self.emergency_charge_deadline:
-                await self.async_stop_emergency_charge("timeout")
+                await self.async_stop_emergency_charge("timeout", refresh=False)
 
         data["emergency_charge_active"] = self.emergency_charge_active
         data["emergency_charge_available"] = self.emergency_charge_available
-        data["emergency_charge_target_soc"] = float(
-            self._config(
-                CONF_EMERGENCY_CHARGE_TARGET_SOC,
-                DEFAULT_EMERGENCY_CHARGE_TARGET_SOC,
-            )
-        )
-        data["emergency_charge_power_w"] = float(
-            self._config(CONF_EMERGENCY_CHARGE_POWER_W, DEFAULT_EMERGENCY_CHARGE_POWER_W)
-        )
-        data["emergency_charge_deadline"] = (
-            self.emergency_charge_deadline.isoformat()
-            if self.emergency_charge_deadline is not None
-            else None
-        )
+        data["emergency_charge_target_soc"] = float(self._config(CONF_EMERGENCY_CHARGE_TARGET_SOC, DEFAULT_EMERGENCY_CHARGE_TARGET_SOC))
+        data["emergency_charge_power_w"] = float(self._config(CONF_EMERGENCY_CHARGE_POWER_W, DEFAULT_EMERGENCY_CHARGE_POWER_W))
+        data["emergency_charge_deadline"] = self.emergency_charge_deadline.isoformat() if self.emergency_charge_deadline is not None else None
         data["emergency_charge_stop_reason"] = self.emergency_charge_stop_reason
         return data
