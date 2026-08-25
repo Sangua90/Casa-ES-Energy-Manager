@@ -7,7 +7,7 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_call_later, async_track_time_interval
 
-from .ai_planner import CasaESAIPlanner
+from .ai_planner_v1 import CasaESAIPlanner
 from .const import DOMAIN
 from .coordinator_v1 import CasaESEnergyCoordinator
 
