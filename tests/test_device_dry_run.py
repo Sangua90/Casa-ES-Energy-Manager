@@ -1,5 +1,6 @@
 """Tests for deterministic managed-device dry-run admission."""
 
+from datetime import datetime
 import importlib.util
 from pathlib import Path
 import unittest
@@ -50,6 +51,7 @@ class DeviceDryRunTests(unittest.TestCase):
             "priority": 5,
             "phase": "l1",
             "allow_grid": False,
+            "max_grid_power_w": 0,
             "enabled": True,
             "min_battery_soc": 40,
         }
@@ -121,6 +123,79 @@ class DeviceDryRunTests(unittest.TestCase):
             [self._device(allow_grid=True)], data=data, policy=self._policy()
         )
         self.assertTrue(result["dry_run_decisions"][0]["would_start"])
+
+    def test_grid_supplement_limit_uses_only_missing_power(self):
+        data = self._data()
+        data["pv_potential_after_house_w"] = 1000
+        result = evaluate_managed_devices(
+            [self._device(allow_grid=True, max_grid_power_w=600)],
+            data=data,
+            policy=self._policy(),
+        )
+        decision = result["dry_run_decisions"][0]
+        self.assertTrue(decision["would_start"])
+        self.assertEqual(decision["estimated_grid_needed_w"], 500.0)
+
+    def test_grid_supplement_limit_waits_for_more_solar(self):
+        data = self._data()
+        data["pv_potential_after_house_w"] = 1000
+        result = evaluate_managed_devices(
+            [self._device(allow_grid=True, max_grid_power_w=400)],
+            data=data,
+            policy=self._policy(),
+        )
+        self.assertFalse(result["dry_run_decisions"][0]["would_start"])
+        self.assertEqual(result["dry_run_decisions"][0]["decision"], "waiting_solar")
+
+    def test_time_window_blocks_outside_allowed_hours(self):
+        result = evaluate_managed_devices(
+            [self._device(start_after="08:00:00", end_before="18:00:00")],
+            data=self._data(),
+            policy=self._policy(),
+            now=datetime(2026, 8, 25, 20, 0, 0),
+        )
+        self.assertEqual(result["dry_run_decisions"][0]["decision"], "waiting_time")
+
+    def test_time_window_accepts_cross_midnight_window(self):
+        result = evaluate_managed_devices(
+            [self._device(start_after="22:00:00", end_before="06:00:00")],
+            data=self._data(),
+            policy=self._policy(),
+            now=datetime(2026, 8, 25, 23, 0, 0),
+        )
+        self.assertTrue(result["dry_run_decisions"][0]["would_start"])
+
+    def test_dependency_blocks_when_required_device_is_off(self):
+        dependent = self._device(
+            entity_id="switch.dependent",
+            requires_entity="switch.master",
+            requires_state="off",
+        )
+        result = evaluate_managed_devices(
+            [dependent], data=self._data(), policy=self._policy()
+        )
+        self.assertEqual(
+            result["dry_run_decisions"][0]["decision"], "waiting_dependency"
+        )
+
+    def test_dependency_uses_managed_device_running_state(self):
+        master = self._device(
+            subentry_id="master", entity_id="switch.master", state="on", priority=1
+        )
+        dependent = self._device(
+            subentry_id="dependent",
+            entity_id="switch.dependent",
+            requires_entity="switch.master",
+            priority=2,
+            nominal_power_w=1000,
+        )
+        data = self._data()
+        data["pv_potential_after_house_w"] = 4000
+        result = evaluate_managed_devices(
+            [master, dependent], data=data, policy=self._policy()
+        )
+        decisions = {item["subentry_id"]: item for item in result["dry_run_decisions"]}
+        self.assertTrue(decisions["dependent"]["would_start"])
 
     def test_running_load_reserves_future_energy_budget(self):
         running = self._device(
