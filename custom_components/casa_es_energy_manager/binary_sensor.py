@@ -25,6 +25,14 @@ BINARY_SENSORS = (
     CasaESBinaryDescription(key="grid_warning", name="Allarme limite rete"),
     CasaESBinaryDescription(key="phase_warning", name="Allarme limite fase"),
     CasaESBinaryDescription(key="inverter_warning", name="Allarme limite inverter"),
+    CasaESBinaryDescription(
+        key="ai_allow_flexible_loads",
+        name="AI consiglia carichi flessibili",
+    ),
+    CasaESBinaryDescription(
+        key="ai_grid_charge_recommended",
+        name="AI consiglia ricarica rete",
+    ),
 )
 
 
@@ -42,7 +50,7 @@ async def async_setup_entry(
 
 
 class CasaESBinarySensor(CoordinatorEntity[CasaESEnergyCoordinator], BinarySensorEntity):
-    """A Casa ES protection warning."""
+    """A Casa ES protection warning or read-only AI recommendation."""
 
     _attr_has_entity_name = True
 
@@ -66,5 +74,5 @@ class CasaESBinarySensor(CoordinatorEntity[CasaESEnergyCoordinator], BinarySenso
 
     @property
     def is_on(self) -> bool:
-        """Return whether the warning is active."""
+        """Return whether the state is active."""
         return bool(self.coordinator.data.get(self.description.key, False))
