@@ -1,0 +1,21 @@
+name: Home Assistant Runtime Smoke
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  managed-subentry:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install Home Assistant 2026.8.3
+        run: python -m pip install --disable-pip-version-check "homeassistant==2026.8.3"
+      - name: Open and serialize managed-device subentry form
+        run: python tests/smoke_managed_subentry_runtime.py
