@@ -26,6 +26,7 @@ from .const import (
     CONF_GRID_POWER_SENSOR,
     CONF_INVERTER_POWER_LIMIT,
     CONF_LOAD_POWER_SENSOR,
+    CONF_MONITORED_LOAD_POWER_SENSOR,
     CONF_PHASE_L1_POWER_SENSOR,
     CONF_PHASE_L2_POWER_SENSOR,
     CONF_PHASE_L3_POWER_SENSOR,
@@ -52,6 +53,7 @@ from .const import (
     DEFAULT_SAFETY_MARGIN,
     DOMAIN,
     SUBENTRY_TYPE_MANAGED_DEVICE,
+    SUBENTRY_TYPE_MONITORED_LOAD,
     VERSION,
 )
 
@@ -98,6 +100,30 @@ def _managed_device_diagnostics(
                     hass,
                     str(config.get(CONF_DEVICE_POWER_SENSOR, "")) or None,
                 ),
+            }
+        )
+    return result
+
+
+def _monitored_load_diagnostics(
+    hass: HomeAssistant, entry: ConfigEntry
+) -> list[dict[str, Any]]:
+    """Return configured read-only monitored loads and their live power sensors."""
+    result: list[dict[str, Any]] = []
+    for subentry in entry.subentries.values():
+        if subentry.subentry_type != SUBENTRY_TYPE_MONITORED_LOAD:
+            continue
+        config = dict(subentry.data)
+        result.append(
+            {
+                "subentry_id": subentry.subentry_id,
+                "title": subentry.title,
+                "config": config,
+                "power_sensor": _entity_snapshot(
+                    hass,
+                    str(config.get(CONF_MONITORED_LOAD_POWER_SENSOR, "")) or None,
+                ),
+                "read_only": True,
             }
         )
     return result
@@ -207,6 +233,7 @@ async def async_get_config_entry_diagnostics(
         "configured_limits": limits,
         "ai_planner": ai_planner,
         "managed_devices": _managed_device_diagnostics(hass, entry),
+        "monitored_loads": _monitored_load_diagnostics(hass, entry),
         "calculated_values": calculated,
         "coordinator": coordinator_status,
         "sign_conventions": {
@@ -214,5 +241,6 @@ async def async_get_config_entry_diagnostics(
             "battery_power": "positive = charging, negative = discharging",
             "pv_measured_power": "actual inverter production",
             "pv_potential_power": "forecast/simulated unconstrained production estimate",
+            "monitored_loads": "read-only attribution of measured phase power; never added on top of phase totals",
         },
     }
