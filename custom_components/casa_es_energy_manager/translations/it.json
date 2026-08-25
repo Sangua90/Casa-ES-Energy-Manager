@@ -22,6 +22,12 @@
     }
   },
   "options": {
+    "error": {
+      "ai_task_required": "Per abilitare il planner AI devi selezionare un'entità AI Task.",
+      "invalid_ai_task": "L'entità selezionata non è un'entità AI Task valida.",
+      "ai_task_not_found": "L'entità AI Task selezionata non è disponibile in Home Assistant.",
+      "ai_task_unavailable": "Il servizio AI Task non è disponibile. Configura prima un provider AI compatibile, ad esempio Google Gemini."
+    },
     "step": {
       "init": {
         "title": "Sensori, protezione e planner AI",
