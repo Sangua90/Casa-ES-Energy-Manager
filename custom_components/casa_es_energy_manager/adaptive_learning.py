@@ -1,4 +1,4 @@
-"""Adaptive power profiling for variable/inverter managed loads."""
+"""Adaptive power profiling for variable managed loads."""
 
 from __future__ import annotations
 
@@ -15,10 +15,17 @@ from .const import (
 )
 
 STORAGE_VERSION = 1
+GENERAL_MODE = "general"
 
 
 class AdaptivePowerLearner:
-    """Learn per-device, per-HVAC-mode power statistics from real sensors."""
+    """Learn per-device power statistics from a real power sensor.
+
+    A climate entity is useful when the controlled entity itself is a climate,
+    because Casa ES can then keep separate profiles for HVAC modes. It is not a
+    requirement: every managed device with a real power sensor can learn a
+    general variable-power profile from the observed watts alone.
+    """
 
     def __init__(self, hass: HomeAssistant, entry_id: str) -> None:
         self.hass = hass
@@ -37,13 +44,23 @@ class AdaptivePowerLearner:
         await self.store.async_save(self.data)
         self._observations_since_save = 0
 
+    @staticmethod
+    def mode_for(device: dict[str, Any]) -> str:
+        entity_id = str(device.get("entity_id") or "")
+        if entity_id.startswith("climate."):
+            return str(device.get("hvac_mode") or device.get("state") or "unknown")
+        return GENERAL_MODE
+
     async def async_observe(self, devices: list[dict[str, Any]]) -> None:
         changed = False
         for device in devices:
             if not device.get("adaptive_power_profile"):
                 continue
+            if not device.get("power_sensor"):
+                continue
+
             entity_id = str(device.get("entity_id") or "")
-            if not entity_id.startswith("climate."):
+            if not entity_id:
                 continue
             power = device.get("current_power_w")
             try:
@@ -51,8 +68,12 @@ class AdaptivePowerLearner:
             except (TypeError, ValueError):
                 continue
 
-            mode = str(device.get("hvac_mode") or device.get("state") or "unknown")
-            action = str(device.get("hvac_action") or "unknown")
+            mode = self.mode_for(device)
+            action = str(
+                device.get("hvac_action")
+                or device.get("state")
+                or "unknown"
+            )
             dev = self.data.setdefault("devices", {}).setdefault(entity_id, {"modes": {}})
             stats = dev.setdefault("modes", {}).setdefault(
                 mode,
@@ -96,7 +117,7 @@ class AdaptivePowerLearner:
         mode: str,
         fallback_w: float,
     ) -> dict[str, Any]:
-        """Return a conservative learned admission estimate for one HVAC mode."""
+        """Return a conservative learned admission estimate."""
         stats = (
             self.data.get("devices", {})
             .get(entity_id, {})
@@ -121,9 +142,6 @@ class AdaptivePowerLearner:
             estimate = max(fallback_w, maximum)
             status = "learning"
         else:
-            # Conservative high-side estimate: learned mean + 2 sigma, bounded by
-            # the highest observed active draw. A mild floor avoids reacting to an
-            # unusually low modulation period.
             high = mean + 2.0 * std
             estimate = max(mean * 1.15, high)
             if maximum > 0:
