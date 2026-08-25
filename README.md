@@ -2,12 +2,10 @@
 
 Custom Home Assistant integration for the Casa ES photovoltaic, battery and three-phase energy system.
 
-> **Version 1.0.0 - field-validation release**  
-> Electrical decisions are deterministic and local. AI remains advisory. Automatic real appliance switching is intentionally still disabled while the v1 admission logic is validated with real Casa ES data. Manual emergency grid charging is available only through explicit Home Assistant scripts configured by the user.
+> **Version 1.1.0 - simplified field-validation release**  
+> Electrical decisions are deterministic and local. AI remains advisory. Automatic real appliance switching is intentionally still disabled while admission logic is validated with real Casa ES data. Manual emergency grid charging is available only through explicit Home Assistant scripts configured by the user.
 
-## v1.0 highlights
-
-### Guided configuration
+## Guided configuration
 
 Initial setup and later Options are split into readable sections:
 
@@ -20,75 +18,77 @@ Initial setup and later Options are split into readable sections:
 
 Fields marked with `*` are optional. Required sensors are validated for compatible units.
 
-### Global energy preference
+## Global energy preference
 
 Choose one global preference without changing appliance priorities:
 
-- **Battery first**: keeps a larger energy reserve before admitting flexible loads.
-- **Balanced**: default compromise.
-- **Loads first**: uses more available PV on flexible loads while still respecting hard electrical limits and definite battery-target shortfalls.
+- **Batteria prioritaria**: keeps a larger energy reserve before admitting flexible loads.
+- **Bilanciata**: default compromise.
+- **Carichi prioritari**: uses more available PV on flexible loads while still respecting hard electrical limits and definite battery-target shortfalls.
 
 Measured grid, phase and inverter limits always override the selected preference.
 
+v1.1 also exposes **Strategia energetica** as a Home Assistant select entity so the preference can be changed directly from a compact dashboard view without reopening integration Options.
+
 ## Managed devices
 
-Managed devices are configured separately from the initial wizard. Their configuration is split into Base, Constraints/Times, and Advanced/EV sections.
+Managed devices are configured separately from the initial wizard. v1.1 deliberately simplifies the flow to two sections: **Base** and **Vincoli e tempi**.
 
 Important fields include:
 
 - Home Assistant entity to manage
 - optional real power sensor
 - initial conservative power estimate
-- numeric priority `1..10` (`1` = highest)
+- numeric priority `1..100` (`1` = highest, `100` = lowest)
 - electrical phase L1/L2/L3/three-phase
-- expected runtime
+- optional expected cycle/runtime
+- optional minimum ON time
+- optional minimum OFF time
 - minimum battery SOC
 - grid integration permission and per-device grid limit
 - minimum daily runtime, maximum daily runtime and activations
 - allowed time window and deadline
-- dependencies
 - on-only / non-interruptible-cycle behavior
 - preemption protection
 - large-consumer settings
-- dynamic-current / EV fields retained from the original PV Excess model
 
-### AUTO / OVERRIDE / OFF
+Wallbox/EV dynamic-current controls and device dependencies are intentionally removed from the active v1.1 model because they are not part of the Casa ES load set. Older stored subentries remain readable; obsolete keys are ignored and removed when the device is reconfigured.
+
+### Automatico / Manuale / Spento
 
 Every managed device exposes its own Home Assistant select entity:
 
-- **AUTO**: Casa ES evaluates the device normally.
-- **OVERRIDE**: Casa ES observes its power but excludes it from automatic decisions; the user remains in manual control.
-- **OFF**: Casa ES excludes the device and marks it as a load that must remain off when real control is enabled in a later validated release.
+- **Automatico**: Casa ES evaluates the device normally.
+- **Manuale**: Casa ES observes its real consumption but excludes it from automatic decisions; the user remains in control.
+- **Spento**: Casa ES excludes the device from automatic candidates. This is useful for seasonal loads such as pool equipment.
 
-The mode is restored after Home Assistant restarts.
+The mode is restored after Home Assistant restarts. Even when a device is Manuale or Spento, measured grid/inverter/phase totals remain authoritative for electrical safety.
 
-### Minimum ON / minimum OFF protection
+> In the current field-validation release these modes affect deterministic decisions/dry-run only. They do not yet physically switch normal managed appliances.
 
-Each managed device has two independent anti-cycling values:
+### Optional cycle and anti-cycling values
 
-- minimum time ON
-- minimum time OFF
+Expected cycle duration, minimum ON and minimum OFF are optional in v1.1.
 
-Both default to **20 minutes**, suitable as a conservative starting point for heat pumps and inverter climates. They can be reduced to zero for loads that do not need anti-cycling.
+- If expected runtime is omitted, Casa ES does not invent a synthetic one-hour cycle or reserve fictional cycle energy.
+- If minimum ON is omitted, no minimum-ON constraint is applied.
+- If minimum OFF is omitted, no minimum-OFF constraint is applied.
 
-For a climate entity, compressor modulation is not interpreted as Casa ES switching the appliance off. A climate may remain in `cool` or `heat` while its real power falls close to zero and later rises again.
+This keeps simple loads simple while still allowing explicit anti-cycling protection for heat pumps and inverter climates.
 
-## Adaptive climate / heat-pump learning
+## Adaptive variable-load learning
 
-When **adaptive power profile** is enabled on a `climate.*` managed device and a real power sensor is configured, Casa ES learns the electrical behavior automatically.
+Adaptive learning now needs only the **real power sensor**. A separate climate-specific learning configuration is not required.
 
-It records persistent statistics separately for HVAC modes such as:
+For any managed device with adaptive learning enabled and a real power sensor, Casa ES records persistent statistics such as active samples, mean, variation, minimum and maximum observed power and derives a conservative admission estimate.
 
-- cooling
-- heating
-- dry/dehumidification
-- fan-only
-
-The learner uses the real power sensor and also records `hvac_action`. During the initial learning period Casa ES uses the configured conservative power estimate. After enough active samples, it derives a high-side admission estimate from observed mean, variation and maximum draw.
-
-The profile survives Home Assistant restarts.
+When the managed entity itself is `climate.*`, Casa ES also uses its HVAC mode/action to keep more precise mode-specific profiles. For non-climate loads, a general profile is learned directly from the watt variation.
 
 The learned estimate is only used to decide whether a future start looks reasonable. Actual electrical safety always comes from measured grid, inverter and L1/L2/L3 sensors.
+
+## Daily runtime fields
+
+Minimum/maximum daily runtime and daily activation count remain available, useful for loads such as the pool filter. These fields are retained in the configuration and diagnostics while real scheduler/runtime enforcement remains part of the later control phase.
 
 ## Read-only monitored loads
 
@@ -103,84 +103,50 @@ These loads explain the measured phase consumption without double counting it. E
 
 ## Solar and battery planning
 
-Casa ES separates:
+Casa ES separates measured PV power, potential/unconstrained PV forecast and future forecast energy to the battery target.
 
-- measured PV power from the inverter
-- potential/unconstrained PV forecast
-- future forecast energy to the battery target
-
-Potential PV and forecast data improve planning but never replace measured electrical safety values.
-
-The local policy calculates battery energy still required, charging efficiency, expected base-house load, forecast energy to target, flexible-load energy budget, grid/inverter/phase headroom and target reachability.
-
-The selected Battery/Balanced/Loads preference adjusts only the conservative flexible-energy reservation. It cannot weaken electrical protection or override a definite forecast shortfall.
+Potential PV and forecast data improve planning but never replace measured electrical safety values. The selected Battery/Balanced/Loads preference adjusts only the conservative flexible-energy reservation and cannot weaken electrical protection or override a definite forecast shortfall.
 
 ## Emergency battery charge from grid
 
-v1.0 exposes:
+Casa ES exposes:
 
 - **Avvia ricarica di emergenza batteria**
 - **Interrompi ricarica di emergenza batteria**
 
-Because inverter controls differ between installations, Casa ES does not guess inverter services. In Options, configure two explicit Home Assistant `script.*` entities:
+Because inverter controls differ between installations, Casa ES does not guess inverter services. In Options, configure two explicit Home Assistant `script.*` entities: one to start grid charging and one to stop it.
 
-- start grid-charge script
-- stop grid-charge script
-
-The start script receives these variables:
+The start script receives:
 
 - `power_w`
 - `target_soc`
 - `max_minutes`
 
-Casa ES automatically requests the stop script when target SOC is reached, the timeout expires, or the integration unloads normally. The buttons remain unavailable until both scripts are configured.
+Casa ES automatically requests the stop script when target SOC is reached, the timeout expires, or an electrical protection condition requires it. The buttons remain unavailable until both scripts are configured.
+
+## Compact Casa ES Manager view
+
+v1.1 is designed to support a small day-to-day Home Assistant view containing only:
+
+- **Strategia energetica**
+- emergency grid-charge start/stop
+- one **Automatico / Manuale / Spento** selector for every managed device
+
+It intentionally does not duplicate PV/house/grid charts that already exist elsewhere in the user's dashboard. An example Lovelace view is provided under `examples/` and can be adapted to the entity IDs created by Home Assistant.
 
 ## Advisory AI
 
-Gemini / AI Task remains advisory. The AI receives:
+Gemini / AI Task remains advisory. AI recommendations cannot override local deterministic guardrails.
 
-- current measured electrical data
-- deterministic policy
-- selected energy preference
-- forecast and weather context
-- phase-load attribution
-- managed-device runtime modes
-- adaptive climate profiles
-
-AI recommendations cannot override local deterministic guardrails.
-
-## Diagnostics and tomorrow's validation
+## Diagnostics and field validation
 
 Download diagnostics from:
 
 `Settings -> Devices & services -> Casa ES Energy Manager -> Download diagnostics`
 
-The v1 diagnostics include:
+Useful diagnostics include source sensors, forecast inputs, planner policy, energy preference, phase headroom/attribution, managed-device configuration, runtime mode, real device power, adaptive learned profiles and dry-run decisions/reasons.
 
-- all mapped source sensors and live states
-- forecast inputs and planner policy
-- energy preference
-- L1/L2/L3 headroom and phase attribution
-- every managed-device configuration
-- runtime AUTO/OVERRIDE/OFF mode
-- real device power
-- HVAC mode/action
-- adaptive learned profile and sample counts
-- admission estimate
-- minimum ON/OFF state
-- dry-run decision and reason
-- emergency grid-charge state
-- coordinator health
-
-For the first sunny-day validation, useful diagnostics are:
-
-1. shortly before meaningful PV production
-2. when PV first becomes sufficient for a managed load
-3. after one climate/variable load has been active for a while
-4. around midday/high PV
-5. whenever a decision looks wrong
-
-Attach those diagnostics files to the development chat. Casa ES automatic appliance switching should remain disabled until the dry-run decisions have been reviewed against real behavior.
+Automatic appliance switching should remain disabled until dry-run decisions have been reviewed against real behavior.
 
 ## Installation / update
 
@@ -192,7 +158,7 @@ Install/update **Casa ES Energy Manager**, restart Home Assistant, then open:
 
 `Settings -> Devices & services -> Casa ES Energy Manager`
 
-Existing 0.4.x configuration remains readable; new v1 fields use safe defaults.
+Existing v1.0 configurations remain readable. Reconfiguring an old managed device automatically removes obsolete wallbox/EV/dependency fields.
 
 ## Safety architecture
 
