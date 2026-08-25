@@ -2,7 +2,7 @@
 
 Custom Home Assistant integration for the Casa ES photovoltaic, battery and three-phase energy system.
 
-> **Status: v0.3 alpha / advisory only.**  
+> **Status: v0.4 alpha / dry-run only.**  
 > This release does **not** switch appliances, change inverter settings or start grid charging.
 
 ## Core monitoring
@@ -75,20 +75,22 @@ There is also an **Additional AI context sensors** selector. It accepts multiple
 
 These additional sensors are context for planning only. They do not participate directly in electrical protection calculations.
 
-## v0.3 deterministic planner policy and AI guardrails
+## Deterministic planner policy and AI guardrails
 
-Version 0.3 keeps Gemini as a planning advisor but no longer lets the model freely choose strategies that contradict measured electrical conditions.
+Casa ES keeps Gemini as a planning advisor but does not let the model freely choose strategies that contradict measured electrical conditions.
 
-Before every AI request, Casa ES calculates a deterministic policy including:
+The deterministic policy is recalculated locally every coordinator refresh (5 seconds), independently of the 30-minute AI interval. It includes:
 
 - battery energy still required to reach the configured target SOC
-- hours remaining to the target time
+- battery input energy corrected for charging efficiency
+- expected base-house energy to the target
 - grid, inverter and minimum per-phase headroom
 - electrical pressure (`normal`, `elevated`, `critical`)
 - solar state (`absent`, `very_low`, `low`, `useful`, `high`)
 - forecast energy to the target when the available power curve fully covers the target window
-- forecast margin before base-house consumption
-- whether a definite solar shortfall has been demonstrated
+- margin before and after expected base-house consumption
+- conservative flexible-load energy budget after a safety buffer
+- target reachability (`unknown`, `comfortable`, `tight`, `definite_shortfall`)
 - whether `protect_grid`, `grid_charge`, `battery_first` or `use_surplus` are justified
 
 The policy is passed to the AI as a **binding constraint**.
@@ -101,7 +103,47 @@ Important guardrails:
 - The model may not describe solar production as absent unless the deterministic solar state is actually `absent`.
 - Raw AI strategy and final strategy are both exposed, together with the guardrail reason when a correction was applied.
 
-These guardrails are advisory-layer constraints only. Future real device control will still pass through a separate deterministic safety engine.
+## v0.4 managed-device dry-run
+
+Version 0.4 introduces repeatable **managed device** subentries in Home Assistant. Each flexible load can be configured separately with:
+
+- entity to manage (`switch`, `climate`, `water_heater`, `fan` or `input_boolean`)
+- optional real power sensor
+- nominal power in watts
+- priority (`very_high` to `very_low`)
+- electrical phase (`L1`, `L2`, `L3` or three-phase)
+- expected cycle/runtime in minutes
+- minimum battery SOC
+- whether grid energy is allowed for that load
+- enabled/disabled state
+
+The v0.4 engine is **dry-run only**. It never calls `turn_on`, `turn_off`, climate services or inverter services.
+
+Every five seconds it evaluates configured loads in priority order and separates two different concepts:
+
+1. **Future energy budget**: whether the expected cycle can fit before the battery target after reserving energy for the battery, base-house consumption and a safety buffer.
+2. **Instantaneous admission**: whether enough power is available *now* while respecting inverter, grid and per-phase headroom.
+
+A positive future energy budget therefore does **not** mean a device may start immediately. For a device that is not allowed to use grid energy, current PV opportunity must also cover its nominal power. At night such a device will typically report `waiting_solar` even when tomorrow's energy budget is comfortable.
+
+The dry-run allocator also:
+
+- reserves expected energy for configured loads that are already running
+- allocates current PV opportunity to higher-priority loads first
+- allocates per-phase headroom before lower-priority candidates
+- blocks new starts during a definite battery-target shortfall
+- blocks new starts when local electrical protection is required
+- exposes all per-device decisions as attributes of the **Stato dry-run dispositivi** sensor
+
+Summary entities include:
+
+- managed device count
+- managed devices already running
+- devices admissible now
+- devices waiting
+- PV power currently available for new dry-run loads
+- running-load energy commitment
+- remaining flexible energy budget
 
 ## Advisory AI planner
 
@@ -132,6 +174,8 @@ Then open the Casa ES Energy Manager integration options and configure:
 - battery capacity (default 14.3 kWh)
 - battery target SOC (default 100%)
 - battery target hour (default 17:00)
+- expected average base-house load (default 500 W)
+- battery charge efficiency (default 95%)
 
 A button named **Aggiorna strategia AI** can request a recommendation immediately.
 
@@ -148,6 +192,7 @@ The file contains the information useful for Casa ES Energy Manager testing, inc
 - L1/L2/L3 power values
 - configured inverter, grid and phase limits
 - deterministic planner policy and AI guardrail result
+- managed-device configuration snapshots and dry-run decisions
 - AI context and latest raw/final advisory result
 - all values calculated by the coordinator
 - coordinator health and sign conventions
@@ -179,8 +224,9 @@ Casa ES Energy Manager is being developed in layers:
 1. deterministic electrical monitoring and protection
 2. solar opportunity and forecast model
 3. advisory AI planning with deterministic guardrails
-4. device priority and per-phase admission control
+4. device priority and per-phase admission control in dry-run
 5. battery target scheduling and optional grid charging
+6. only after validation: real device switching with anti-cycling and fail-safe rules
 
 Forecast and AI may influence future optimization decisions, but they will never bypass phase, grid, inverter, battery or anti-cycling safety rules.
 
