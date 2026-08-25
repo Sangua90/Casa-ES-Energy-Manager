@@ -1,0 +1,61 @@
+# Casa ES Manager - vista Lovelace compatta
+#
+# Dopo l'installazione della v1.1.0, sostituisci gli entity_id sotto con quelli
+# effettivamente creati da Home Assistant. La vista usa solo card native.
+#
+# Obiettivo: controllo quotidiano rapido, senza duplicare grafici FV/rete/casa.
+
+title: Casa ES Manager
+path: casa-es-manager
+icon: mdi:home-lightning-bolt
+cards:
+  - type: entities
+    title: Gestione energia
+    show_header_toggle: false
+    entities:
+      - entity: select.SOSTITUISCI_STRATEGIA_ENERGETICA
+        name: Strategia
+        icon: mdi:tune-variant
+      - entity: binary_sensor.SOSTITUISCI_RICARICA_EMERGENZA_ATTIVA
+        name: Ricarica Enel
+        icon: mdi:battery-charging
+
+  - type: horizontal-stack
+    cards:
+      - type: button
+        entity: button.SOSTITUISCI_AVVIA_RICARICA_EMERGENZA
+        name: Carica da Enel
+        icon: mdi:battery-charging-high
+        show_state: false
+        tap_action:
+          action: toggle
+          confirmation:
+            text: Avviare la ricarica della batteria da Enel?
+      - type: button
+        entity: button.SOSTITUISCI_INTERROMPI_RICARICA_EMERGENZA
+        name: Interrompi
+        icon: mdi:battery-off-outline
+        show_state: false
+        tap_action:
+          action: toggle
+          confirmation:
+            text: Interrompere la ricarica da Enel?
+
+  - type: entities
+    title: Dispositivi gestiti
+    show_header_toggle: false
+    entities:
+      # Aggiungi qui i select "Modalità <nome dispositivo>" creati da Casa ES.
+      # Esempio:
+      # - entity: select.SOSTITUISCI_MODALITA_CLIMA_SALOTTO
+      #   name: Clima salotto
+      # - entity: select.SOSTITUISCI_MODALITA_BOILER
+      #   name: Boiler
+      # - entity: select.SOSTITUISCI_MODALITA_DEUMIDIFICATORE
+      #   name: Deumidificatore
+      # - entity: select.SOSTITUISCI_MODALITA_FILTRO_PISCINA
+      #   name: Filtro piscina
+      # - entity: select.SOSTITUISCI_MODALITA_RISCALDAMENTO_PISCINA
+      #   name: Riscaldamento piscina
+      - type: section
+        label: Inserisci qui i selettori Automatico / Manuale / Spento

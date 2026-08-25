@@ -1,4 +1,4 @@
-"""Runtime smoke test for the first managed-device config-subentry form.
+"""Runtime smoke test for the managed-device config-subentry form.
 
 This intentionally imports the real Home Assistant runtime. It is executed by a
 separate GitHub Actions job pinned to the Home Assistant version used by Casa ES.
@@ -45,7 +45,35 @@ async def _run() -> None:
     )
     assert serialized
     names = {field["name"] for field in serialized}
-    assert {"name", "entity_id", "power_sensor", "nominal_power_w"} <= names
+    required = {
+        "name",
+        "entity_id",
+        "power_sensor",
+        "nominal_power_w",
+        "priority",
+        "expected_runtime_minutes",
+        "min_on_minutes",
+        "min_off_minutes",
+    }
+    assert required <= names
+
+    # Wallbox/EV and dependency fields were deliberately removed in v1.1.0.
+    removed = {
+        "requires_entity",
+        "dynamic_current",
+        "current_entity",
+        "min_current_a",
+        "max_current_a",
+        "ev_soc_sensor",
+        "ev_connected_sensor",
+        "ev_target_soc",
+    }
+    assert removed.isdisjoint(names)
+
+    # The three cycle/anti-cycling fields must genuinely be optional in the schema.
+    by_name = {field["name"]: field for field in serialized}
+    for name in ("expected_runtime_minutes", "min_on_minutes", "min_off_minutes"):
+        assert not by_name[name].get("required", False)
 
 
 if __name__ == "__main__":

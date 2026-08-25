@@ -63,7 +63,7 @@ class V1DeviceModeTests(unittest.TestCase):
             "nominal_power_w": 1000,
             "admission_power_w": 1200,
             "expected_runtime_minutes": 60,
-            "priority": 3,
+            "priority": 30,
             "phase": "l1",
             "allow_grid": False,
             "enabled": True,
@@ -78,7 +78,9 @@ class V1DeviceModeTests(unittest.TestCase):
 
     def test_override_is_never_auto_started(self):
         result = v1_dry.evaluate_managed_devices(
-            [self.device(management_mode="override")], data=self.data(), policy=self.policy()
+            [self.device(management_mode="override")],
+            data=self.data(),
+            policy=self.policy(),
         )
         decision = result["dry_run_decisions"][0]
         self.assertEqual(decision["decision"], "manual_override")
@@ -100,7 +102,56 @@ class V1DeviceModeTests(unittest.TestCase):
             data=self.data(),
             policy=self.policy(),
         )
-        self.assertEqual(result["dry_run_decisions"][0]["decision"], "waiting_interval")
+        self.assertEqual(
+            result["dry_run_decisions"][0]["decision"], "waiting_interval"
+        )
+
+    def test_missing_minimum_times_add_no_anti_cycle_block(self):
+        result = v1_dry.evaluate_managed_devices(
+            [
+                self.device(
+                    seconds_since_change=1,
+                    min_on_minutes=None,
+                    min_off_minutes=None,
+                )
+            ],
+            data=self.data(),
+            policy=self.policy(),
+        )
+        decision = result["dry_run_decisions"][0]
+        self.assertEqual(decision["min_on_minutes"], 0)
+        self.assertEqual(decision["min_off_minutes"], 0)
+        self.assertNotEqual(decision["decision"], "waiting_interval")
+
+    def test_optional_cycle_duration_does_not_invent_energy(self):
+        result = v1_dry.evaluate_managed_devices(
+            [self.device(expected_runtime_minutes=None)],
+            data=self.data(),
+            policy=self.policy(),
+        )
+        decision = result["dry_run_decisions"][0]
+        self.assertIsNone(decision["expected_runtime_minutes"])
+        self.assertIsNone(decision["expected_energy_kwh"])
+        self.assertEqual(result["dry_run_running_energy_commitment_kwh"], 0)
+
+    def test_priority_supports_full_one_to_one_hundred_range(self):
+        devices = [
+            self.device(subentry_id="low", name="B", priority=100),
+            self.device(subentry_id="high", name="A", priority=1),
+        ]
+        result = base_dry.evaluate_managed_devices(
+            devices, data=self.data(), policy=self.policy()
+        )
+        priorities = [item["priority"] for item in result["dry_run_decisions"]]
+        ids = [item["subentry_id"] for item in result["dry_run_decisions"]]
+        self.assertEqual(priorities, [1, 100])
+        self.assertEqual(ids, ["high", "low"])
+
+    def test_priority_is_clamped_at_one_hundred(self):
+        result = base_dry.evaluate_managed_devices(
+            [self.device(priority=999)], data=self.data(), policy=self.policy()
+        )
+        self.assertEqual(result["dry_run_decisions"][0]["priority"], 100)
 
 
 class V1PreferenceTests(unittest.TestCase):

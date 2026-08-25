@@ -12,12 +12,12 @@ from typing import Any
 
 LEGACY_PRIORITY_MAP = {
     "very_high": 1,
-    "high": 3,
-    "normal": 5,
-    "low": 7,
-    "very_low": 10,
+    "high": 25,
+    "normal": 50,
+    "low": 75,
+    "very_low": 100,
 }
-DEFAULT_NUMERIC_PRIORITY = 5
+DEFAULT_NUMERIC_PRIORITY = 50
 OFF_STATES = {"off", "unavailable", "unknown", "none", ""}
 RUNNING_POWER_THRESHOLD_W = 20.0
 
@@ -29,15 +29,24 @@ def _number(value: Any, default: float = 0.0) -> float:
         return default
 
 
+def _optional_positive_number(value: Any) -> float | None:
+    if value in (None, ""):
+        return None
+    try:
+        return max(float(value), 0.0)
+    except (TypeError, ValueError):
+        return None
+
+
 def _priority_number(value: Any) -> int:
-    """Return priority 1..10, accepting legacy text values from v0.4.0."""
+    """Return priority 1..100, accepting legacy text values."""
     if isinstance(value, str) and value in LEGACY_PRIORITY_MAP:
         return LEGACY_PRIORITY_MAP[value]
     try:
         priority = int(round(float(value)))
     except (TypeError, ValueError):
         priority = DEFAULT_NUMERIC_PRIORITY
-    return max(1, min(10, priority))
+    return max(1, min(100, priority))
 
 
 def _is_running(state: Any, current_power_w: Any = None) -> bool:
@@ -91,7 +100,6 @@ def _inside_time_window(now: datetime | None, start_value: Any, end_value: Any) 
     assert start is not None and end is not None
     if start <= end:
         return start <= current <= end
-    # Window crosses midnight, e.g. 22:00 -> 06:00.
     return current >= start or current <= end
 
 
@@ -104,10 +112,10 @@ def evaluate_managed_devices(
 ) -> dict[str, Any]:
     """Allocate current power and future energy to configured loads in priority order.
 
-    Priority is numeric: 1 is the highest priority and 10 the lowest.
-    The future energy budget only says whether a load can fit before the battery
-    target. A load is considered admissible *now* only when sufficient current
-    PV opportunity exists, unless that device explicitly allows grid energy.
+    Priority is numeric: 1 is the highest priority and 100 the lowest.
+    A cycle duration is optional. When it is omitted Casa ES never invents a
+    one-hour cycle: instantaneous admission still works, while no synthetic cycle
+    energy is reserved from the future budget.
     """
     flexible_budget = policy.get("flexible_energy_budget_kwh")
     energy_budget_known = flexible_budget is not None
@@ -135,17 +143,23 @@ def evaluate_managed_devices(
     normalized: list[dict[str, Any]] = []
     for device in devices:
         nominal = max(_number(device.get("nominal_power_w")), 0.0)
-        runtime_minutes = max(
-            _number(device.get("expected_runtime_minutes"), 60.0), 1.0
+        runtime_minutes = _optional_positive_number(
+            device.get("expected_runtime_minutes")
         )
-        expected_energy = nominal * runtime_minutes / 60_000.0
+        expected_energy = (
+            nominal * runtime_minutes / 60_000.0
+            if runtime_minutes is not None
+            else None
+        )
         current_power = device.get("current_power_w")
         normalized.append(
             {
                 **device,
                 "nominal_power_w": nominal,
                 "expected_runtime_minutes": runtime_minutes,
-                "expected_energy_kwh": round(expected_energy, 3),
+                "expected_energy_kwh": (
+                    round(expected_energy, 3) if expected_energy is not None else None
+                ),
                 "priority": _priority_number(device.get("priority")),
                 "phase": str(device.get("phase") or "unknown"),
                 "allow_grid": bool(device.get("allow_grid", False)),
@@ -166,7 +180,7 @@ def evaluate_managed_devices(
     }
 
     running_commitment = sum(
-        item["expected_energy_kwh"]
+        float(item["expected_energy_kwh"] or 0.0)
         for item in normalized
         if item["enabled"] and item["running"]
     )
@@ -242,7 +256,10 @@ def evaluate_managed_devices(
         elif not energy_budget_known:
             decision = "waiting_energy"
             reason = "Budget energetico futuro non disponibile."
-        elif item["expected_energy_kwh"] > remaining_energy_kwh + 1e-9:
+        elif (
+            item["expected_energy_kwh"] is not None
+            and item["expected_energy_kwh"] > remaining_energy_kwh + 1e-9
+        ):
             decision = "waiting_energy"
             reason = "Budget energetico flessibile insufficiente."
         elif item["nominal_power_w"] > inverter_headroom_w + 1e-9:
@@ -283,9 +300,10 @@ def evaluate_managed_devices(
                 would_start = True
 
         if would_start:
-            remaining_energy_kwh = max(
-                remaining_energy_kwh - item["expected_energy_kwh"], 0.0
-            )
+            if item["expected_energy_kwh"] is not None:
+                remaining_energy_kwh = max(
+                    remaining_energy_kwh - item["expected_energy_kwh"], 0.0
+                )
             inverter_headroom_w = max(
                 inverter_headroom_w - item["nominal_power_w"], 0.0
             )
@@ -307,8 +325,10 @@ def evaluate_managed_devices(
                 "phase": item["phase"],
                 "nominal_power_w": round(item["nominal_power_w"], 1),
                 "current_power_w": item.get("current_power_w"),
-                "expected_runtime_minutes": round(
-                    item["expected_runtime_minutes"], 1
+                "expected_runtime_minutes": (
+                    round(item["expected_runtime_minutes"], 1)
+                    if item["expected_runtime_minutes"] is not None
+                    else None
                 ),
                 "expected_energy_kwh": item["expected_energy_kwh"],
                 "allow_grid": item["allow_grid"],
