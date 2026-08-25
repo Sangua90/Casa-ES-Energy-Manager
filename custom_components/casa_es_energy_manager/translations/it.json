@@ -1,0 +1,38 @@
+{
+  "title": "Casa ES Energy Manager",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Associazione sensori energia",
+        "description": "La versione 0.1 è solo monitoraggio. Seleziona i sensori usati per calcolare i margini di rete e delle fasi.",
+        "data": {
+          "pv_power_sensor": "Sensore potenza fotovoltaico",
+          "load_power_sensor": "Sensore potenza carichi casa",
+          "grid_power_sensor": "Sensore potenza rete (positivo = prelievo)",
+          "battery_soc_sensor": "Sensore stato di carica batteria",
+          "battery_power_sensor": "Sensore potenza batteria (positivo = carica)",
+          "phase_l1_power_sensor": "Sensore potenza fase L1 (opzionale)",
+          "phase_l2_power_sensor": "Sensore potenza fase L2 (opzionale)",
+          "phase_l3_power_sensor": "Sensore potenza fase L3 (opzionale)"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "Casa ES Energy Manager è già configurato."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Limiti di protezione",
+        "description": "Nella versione 0.1 questi valori vengono solo monitorati: l'integrazione non comanda ancora alcun carico.",
+        "data": {
+          "inverter_power_limit": "Limite totale inverter (W)",
+          "phase_power_limit": "Limite operativo per fase (W)",
+          "grid_power_limit": "Limite operativo rete (W)",
+          "safety_margin": "Margine di sicurezza sottratto ai limiti (W)"
+        }
+      }
+    }
+  }
+}
