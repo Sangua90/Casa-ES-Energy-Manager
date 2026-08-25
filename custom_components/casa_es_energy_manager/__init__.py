@@ -5,11 +5,17 @@ from __future__ import annotations
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.event import async_call_later, async_track_time_interval
 
+from .ai_planner import CasaESAIPlanner
 from .const import DOMAIN
 from .coordinator import CasaESEnergyCoordinator
 
-PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BINARY_SENSOR]
+PLATFORMS: list[Platform] = [
+    Platform.SENSOR,
+    Platform.BINARY_SENSOR,
+    Platform.BUTTON,
+]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -17,9 +23,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator = CasaESEnergyCoordinator(hass, entry)
     await coordinator.async_config_entry_first_refresh()
 
+    planner = CasaESAIPlanner(hass, entry, coordinator)
+    coordinator.ai_planner = planner
+
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
+
+    if planner.enabled:
+        entry.async_on_unload(
+            async_track_time_interval(hass, planner.async_refresh, planner.interval)
+        )
+        entry.async_on_unload(async_call_later(hass, 5, planner.async_refresh))
+
     return True
 
 
