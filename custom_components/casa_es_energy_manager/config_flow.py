@@ -51,9 +51,7 @@ from .const import (
     DOMAIN,
     NAME,
 )
-
-POWER_UNITS = {"W", "kW", "MW"}
-ENERGY_UNITS = {"Wh", "kWh", "MWh"}
+from .forecast_units import ENERGY_UNITS, POWER_UNITS, WINDOW_FORECAST_UNITS
 
 OPTIONAL_ENTITY_KEYS = (
     CONF_PHASE_L1_POWER_SENSOR,
@@ -158,10 +156,24 @@ def _validate_sensor_units(
     ):
         _validate_unit(hass, values, key, POWER_UNITS, "expected_power_sensor", errors)
 
+    # Current/next-hour forecast fields may be either a power forecast (W/kW/MW)
+    # or an energy forecast (Wh/kWh/MWh). Casa ES keeps the two meanings separate.
     for key in (
-        CONF_PV_FORECAST_REMAINING_TODAY_SENSOR,
         CONF_PV_FORECAST_CURRENT_HOUR_SENSOR,
         CONF_PV_FORECAST_NEXT_HOUR_SENSOR,
+    ):
+        _validate_unit(
+            hass,
+            values,
+            key,
+            WINDOW_FORECAST_UNITS,
+            "expected_forecast_sensor",
+            errors,
+        )
+
+    # Daily/remaining totals are energy quantities and must remain energy sensors.
+    for key in (
+        CONF_PV_FORECAST_REMAINING_TODAY_SENSOR,
         CONF_PV_FORECAST_TODAY_SENSOR,
         CONF_PV_FORECAST_TOMORROW_SENSOR,
     ):

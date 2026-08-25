@@ -2,7 +2,7 @@
 
 Custom Home Assistant integration for the Casa ES photovoltaic, battery and three-phase energy system.
 
-> **Status: v0.2 alpha / advisory only.**  
+> **Status: v0.3 alpha / advisory only.**  
 > This release does **not** switch appliances, change inverter settings or start grid charging.
 
 ## Core monitoring
@@ -20,11 +20,11 @@ It creates calculated entities for grid, inverter and per-phase headroom, batter
 
 All power inputs may be in `W`, `kW` or `MW`; values are normalized to watts.
 
-## v0.2.1 solar opportunity model
+## Solar opportunity model
 
 Casa ES uses a zero-export inverter. When the battery is full and house demand is low, measured PV power can fall because the inverter curtails the array. A low measured PV value therefore does **not** always mean that little solar energy is available.
 
-Version 0.2.1 keeps two separate concepts:
+Casa ES keeps two separate concepts:
 
 - **Measured PV**: what the inverter is actually producing now.
 - **Potential PV**: a forecast/simulated estimate of what the panels could produce if the inverter were not curtailing them.
@@ -44,16 +44,18 @@ The integration calculates:
 
 The following optional sensors can be mapped in integration options:
 
-- potential PV power now (W)
-- remaining PV energy today (kWh)
-- current-hour PV energy (kWh)
-- next-hour PV energy (kWh)
-- total PV energy today (kWh)
-- PV energy tomorrow (kWh)
+- potential PV power now (`W`/`kW`/`MW`)
+- remaining PV energy today (`Wh`/`kWh`/`MWh`)
+- current-hour forecast: **power or energy**
+- next-hour forecast: **power or energy**
+- total PV energy today (`Wh`/`kWh`/`MWh`)
+- PV energy tomorrow (`Wh`/`kWh`/`MWh`)
 
-Energy inputs may be in `Wh`, `kWh` or `MWh` and are normalized to kWh.
+Current-hour and next-hour fields intentionally accept both power and energy forecasts. Casa ES detects the sensor unit automatically and stores power as watts or energy as kWh. It never silently converts a power value such as `635 W` into `635 kWh` or `0.635 kWh`, because power and energy are different physical quantities.
 
-If the selected daily forecast sensor exposes a `watts` attribute containing a timestamp-to-power dictionary, Casa ES automatically reads the next forecast points and sends the curve to the AI planner. This is optional and provider-independent: providers without that attribute continue to work through the normal forecast sensors.
+Energy inputs are normalized to kWh. Power inputs are normalized to watts.
+
+If the selected daily forecast sensor exposes a `watts` attribute containing a timestamp-to-power dictionary, Casa ES reads future forecast points and sends the curve to the planner. This is optional and provider-independent.
 
 ### Weather and extra context
 
@@ -71,9 +73,37 @@ There is also an **Additional AI context sensors** selector. It accepts multiple
 
 These additional sensors are context for planning only. They do not participate directly in electrical protection calculations.
 
-## v0.2 advisory AI planner
+## v0.3 deterministic planner policy and AI guardrails
 
-Version 0.2 adds an optional AI planner designed to be queried every 30 minutes.
+Version 0.3 keeps Gemini as a planning advisor but no longer lets the model freely choose strategies that contradict measured electrical conditions.
+
+Before every AI request, Casa ES calculates a deterministic policy including:
+
+- battery energy still required to reach the configured target SOC
+- hours remaining to the target time
+- grid, inverter and minimum per-phase headroom
+- electrical pressure (`normal`, `elevated`, `critical`)
+- solar state (`absent`, `very_low`, `low`, `useful`, `high`)
+- forecast energy to the target when the available power curve fully covers the target window
+- forecast margin before base-house consumption
+- whether a definite solar shortfall has been demonstrated
+- whether `protect_grid`, `grid_charge`, `battery_first` or `use_surplus` are justified
+
+The policy is passed to the AI as a **binding constraint**.
+
+Important guardrails:
+
+- `protect_grid` is rejected when grid, inverter and phase margins are normal.
+- A critical local electrical condition forces `protect_grid` and disables flexible loads.
+- `grid_charge` and the grid-charge recommendation are allowed only when Casa ES can demonstrate a forecast shortfall before the battery target.
+- The model may not describe solar production as absent unless the deterministic solar state is actually `absent`.
+- Raw AI strategy and final strategy are both exposed, together with the guardrail reason when a correction was applied.
+
+These guardrails are advisory-layer constraints only. Future real device control will still pass through a separate deterministic safety engine.
+
+## Advisory AI planner
+
+The optional AI planner is queried every 30 minutes by default.
 It uses Home Assistant's `AI Task` building block (`ai_task.generate_data`) so the model returns structured advice instead of directly controlling the house.
 
 The planner can return:
@@ -85,7 +115,7 @@ The planner can return:
 - confidence
 - a short reason in Italian
 
-From v0.2.1 the planner receives measured PV, potential PV, unused-potential estimate, solar forecast, optional forecast curve, weather forecast and additional context sensors. It is explicitly told that measured PV can be artificially low during zero-export curtailment.
+The planner receives measured PV, potential PV, solar forecast, optional forecast curve, weather forecast, three-phase margins and additional context sensors.
 
 The AI recommendation is **advisory only**. Electrical safety, phase limits and all future device control remain deterministic and local.
 
@@ -115,7 +145,8 @@ The file contains the information useful for Casa ES Energy Manager testing, inc
 - load, grid, battery SOC and battery power
 - L1/L2/L3 power values
 - configured inverter, grid and phase limits
-- AI planner configuration, AI context and latest advisory result
+- deterministic planner policy and AI guardrail result
+- AI context and latest raw/final advisory result
 - all values calculated by the coordinator
 - coordinator health and sign conventions
 
@@ -145,7 +176,7 @@ Casa ES Energy Manager is being developed in layers:
 
 1. deterministic electrical monitoring and protection
 2. solar opportunity and forecast model
-3. advisory AI planning
+3. advisory AI planning with deterministic guardrails
 4. device priority and per-phase admission control
 5. battery target scheduling and optional grid charging
 
