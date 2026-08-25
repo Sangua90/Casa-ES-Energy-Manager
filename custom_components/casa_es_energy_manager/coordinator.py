@@ -66,6 +66,7 @@ from .const import (
 )
 from .device_dry_run import evaluate_managed_devices
 from .forecast_units import normalize_forecast_measure
+from .phase_attribution import monitored_load_snapshots, phase_attribution
 from .planner_policy import build_planner_policy
 
 _LOGGER = logging.getLogger(__name__)
@@ -405,6 +406,20 @@ class CasaESEnergyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             ),
         )
         devices = self._managed_device_snapshots()
+        monitored = monitored_load_snapshots(
+            self.hass,
+            self.entry,
+            lambda entity_id: self._numeric_state(entity_id, power=True),
+        )
+        data.update(
+            phase_attribution(
+                monitored,
+                devices,
+                phase_l1_w=phase_l1,
+                phase_l2_w=phase_l2,
+                phase_l3_w=phase_l3,
+            )
+        )
         dry_run = evaluate_managed_devices(devices, data=data, policy=policy, now=now)
 
         # AI fields are advisory. Deterministic values below are always refreshed
