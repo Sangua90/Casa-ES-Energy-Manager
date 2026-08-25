@@ -7,6 +7,7 @@ electrical limits and the energy budget calculated by the local planner policy.
 
 from __future__ import annotations
 
+from datetime import datetime, time
 from typing import Any
 
 LEGACY_PRIORITY_MAP = {
@@ -61,11 +62,45 @@ def _phase_requirements(phase: str, nominal_power_w: float) -> dict[str, float]:
     return {}
 
 
+def _parse_time(value: Any) -> time | None:
+    if value in (None, ""):
+        return None
+    raw = str(value)
+    for fmt in ("%H:%M:%S", "%H:%M"):
+        try:
+            return datetime.strptime(raw, fmt).time()
+        except ValueError:
+            continue
+    return None
+
+
+def _inside_time_window(now: datetime | None, start_value: Any, end_value: Any) -> bool:
+    """Return whether now is inside an optional daily time window."""
+    if now is None:
+        return True
+    start = _parse_time(start_value)
+    end = _parse_time(end_value)
+    if start is None and end is None:
+        return True
+
+    current = now.timetz().replace(tzinfo=None)
+    if start is not None and end is None:
+        return current >= start
+    if start is None and end is not None:
+        return current <= end
+    assert start is not None and end is not None
+    if start <= end:
+        return start <= current <= end
+    # Window crosses midnight, e.g. 22:00 -> 06:00.
+    return current >= start or current <= end
+
+
 def evaluate_managed_devices(
     devices: list[dict[str, Any]],
     *,
     data: dict[str, Any],
     policy: dict[str, Any],
+    now: datetime | None = None,
 ) -> dict[str, Any]:
     """Allocate current power and future energy to configured loads in priority order.
 
@@ -114,11 +149,21 @@ def evaluate_managed_devices(
                 "priority": _priority_number(device.get("priority")),
                 "phase": str(device.get("phase") or "unknown"),
                 "allow_grid": bool(device.get("allow_grid", False)),
+                "max_grid_power_w": max(_number(device.get("max_grid_power_w")), 0.0),
                 "enabled": bool(device.get("enabled", True)),
                 "min_battery_soc": _number(device.get("min_battery_soc"), 0.0),
+                "switch_interval_seconds": max(
+                    _number(device.get("switch_interval_seconds"), 0.0), 0.0
+                ),
                 "running": _is_running(device.get("state"), current_power),
             }
         )
+
+    running_by_entity = {
+        str(item.get("entity_id")): item["running"]
+        for item in normalized
+        if item.get("entity_id")
+    }
 
     running_commitment = sum(
         item["expected_energy_kwh"]
@@ -141,6 +186,23 @@ def evaluate_managed_devices(
         decision = "blocked"
         reason = "Configurazione non valida."
         would_start = False
+        solar_used_w = 0.0
+        grid_needed_w = 0.0
+
+        requires_entity = str(item.get("requires_entity") or "")
+        if requires_entity:
+            dependency_running = running_by_entity.get(
+                requires_entity,
+                _is_running(item.get("requires_state")),
+            )
+        else:
+            dependency_running = True
+
+        seconds_since_change = item.get("seconds_since_change")
+        interval_ok = (
+            seconds_since_change is None
+            or _number(seconds_since_change) + 1e-9 >= item["switch_interval_seconds"]
+        )
 
         if not item["enabled"]:
             decision = "disabled"
@@ -154,6 +216,17 @@ def evaluate_managed_devices(
         elif item["nominal_power_w"] <= 0:
             decision = "blocked"
             reason = "Potenza nominale non valida."
+        elif not _inside_time_window(
+            now, item.get("start_after"), item.get("end_before")
+        ):
+            decision = "waiting_time"
+            reason = "Fuori dalla finestra oraria consentita per questo dispositivo."
+        elif not dependency_running:
+            decision = "waiting_dependency"
+            reason = "Il dispositivo richiesto come dipendenza non è attivo."
+        elif not interval_ok:
+            decision = "waiting_interval"
+            reason = "Intervallo minimo tra commutazioni non ancora trascorso."
         elif protection_required:
             decision = "blocked"
             reason = "Protezione elettrica locale attiva."
@@ -187,17 +260,24 @@ def evaluate_managed_devices(
                 decision = "blocked"
                 reason = "Margine insufficiente sulla fase assegnata."
             elif item["allow_grid"]:
-                if item["nominal_power_w"] > grid_headroom_w + 1e-9:
+                solar_used_w = min(remaining_solar_w, item["nominal_power_w"])
+                grid_needed_w = max(item["nominal_power_w"] - solar_used_w, 0.0)
+                max_grid = item["max_grid_power_w"]
+                if grid_needed_w > grid_headroom_w + 1e-9:
                     decision = "blocked"
-                    reason = "Margine rete insufficiente per il carico autorizzato a usare rete."
+                    reason = "Margine rete insufficiente per l'integrazione richiesta."
+                elif max_grid > 0 and grid_needed_w > max_grid + 1e-9:
+                    decision = "waiting_solar"
+                    reason = "Serve più FV: l'integrazione rete richiesta supera il limite del dispositivo."
                 else:
                     decision = "admissible_now"
-                    reason = "Potenza, fase e budget energetico disponibili; rete consentita."
+                    reason = "Potenza, fase e budget disponibili; integrazione rete entro il limite configurato."
                     would_start = True
             elif item["nominal_power_w"] > remaining_solar_w + 1e-9:
                 decision = "waiting_solar"
                 reason = "Budget futuro disponibile, ma potenza FV disponibile ora insufficiente."
             else:
+                solar_used_w = item["nominal_power_w"]
                 decision = "admissible_now"
                 reason = "Potenza FV, fase e budget energetico disponibili."
                 would_start = True
@@ -213,14 +293,8 @@ def evaluate_managed_devices(
                 item["phase"], item["nominal_power_w"]
             ).items():
                 phase_headroom[phase] = max(phase_headroom[phase] - required, 0.0)
-            if item["allow_grid"]:
-                grid_headroom_w = max(
-                    grid_headroom_w - item["nominal_power_w"], 0.0
-                )
-            else:
-                remaining_solar_w = max(
-                    remaining_solar_w - item["nominal_power_w"], 0.0
-                )
+            remaining_solar_w = max(remaining_solar_w - solar_used_w, 0.0)
+            grid_headroom_w = max(grid_headroom_w - grid_needed_w, 0.0)
 
         decisions.append(
             {
@@ -238,7 +312,13 @@ def evaluate_managed_devices(
                 ),
                 "expected_energy_kwh": item["expected_energy_kwh"],
                 "allow_grid": item["allow_grid"],
+                "max_grid_power_w": round(item["max_grid_power_w"], 1),
+                "estimated_grid_needed_w": round(grid_needed_w, 1),
                 "min_battery_soc": item["min_battery_soc"],
+                "requires_entity": item.get("requires_entity"),
+                "start_after": item.get("start_after"),
+                "end_before": item.get("end_before"),
+                "switch_interval_seconds": round(item["switch_interval_seconds"], 1),
                 "decision": decision,
                 "reason": reason,
                 "would_start": would_start,
@@ -250,7 +330,14 @@ def evaluate_managed_devices(
     waiting = sum(
         1
         for item in decisions
-        if item["decision"] in {"waiting_solar", "waiting_energy"}
+        if item["decision"]
+        in {
+            "waiting_solar",
+            "waiting_energy",
+            "waiting_time",
+            "waiting_dependency",
+            "waiting_interval",
+        }
     )
 
     if not decisions:
