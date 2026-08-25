@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 from .const import (
+    DEFAULT_DEVICE_MIN_OFF_MINUTES,
+    DEFAULT_DEVICE_MIN_ON_MINUTES,
     DEVICE_MODE_AUTO,
     DEVICE_MODE_OFF,
     DEVICE_MODE_OVERRIDE,
@@ -53,14 +55,17 @@ def evaluate_managed_devices(
         item["configured_nominal_power_w"] = configured_power
         item["nominal_power_w"] = admission_power
 
-        min_off_seconds = max(_number(item.get("min_off_minutes")), 0.0) * 60.0
+        min_off_minutes = max(
+            _number(item.get("min_off_minutes"), DEFAULT_DEVICE_MIN_OFF_MINUTES), 0.0
+        )
+        min_off_seconds = min_off_minutes * 60.0
         legacy_interval = max(_number(item.get("switch_interval_seconds")), 0.0)
         if not running:
             item["switch_interval_seconds"] = max(legacy_interval, min_off_seconds)
 
         if mode in {DEVICE_MODE_OVERRIDE, DEVICE_MODE_OFF}:
             item["enabled"] = False
-            if mode == DEVICE_MODE_OVERRIDE and running:
+            if running:
                 manual_running_commitment += admission_power * runtime / 60_000.0
         prepared.append(item)
 
@@ -78,16 +83,18 @@ def evaluate_managed_devices(
         source = by_id.get(str(decision.get("subentry_id")), {})
         mode = str(source.get("management_mode") or DEVICE_MODE_AUTO)
         decision["management_mode"] = mode
-        decision["configured_nominal_power_w"] = round(
-            _number(source.get("nominal_power_w")), 1
-        )
+        decision["configured_nominal_power_w"] = round(_number(source.get("nominal_power_w")), 1)
         decision["admission_power_w"] = round(
             _number(source.get("admission_power_w"), source.get("nominal_power_w", 0)), 1
         )
         decision["adaptive_profile"] = source.get("adaptive_profile")
 
-        min_on_minutes = max(_number(source.get("min_on_minutes")), 0.0)
-        min_off_minutes = max(_number(source.get("min_off_minutes")), 0.0)
+        min_on_minutes = max(
+            _number(source.get("min_on_minutes"), DEFAULT_DEVICE_MIN_ON_MINUTES), 0.0
+        )
+        min_off_minutes = max(
+            _number(source.get("min_off_minutes"), DEFAULT_DEVICE_MIN_OFF_MINUTES), 0.0
+        )
         elapsed = source.get("seconds_since_change")
         elapsed_seconds = _number(elapsed, 10**12) if elapsed is not None else 10**12
         decision["min_on_minutes"] = min_on_minutes
@@ -97,9 +104,7 @@ def evaluate_managed_devices(
 
         if mode == DEVICE_MODE_OVERRIDE:
             decision["decision"] = "manual_override"
-            decision["reason"] = (
-                "OVERRIDE manuale attivo: Casa ES osserva il consumo ma non comanda questo dispositivo."
-            )
+            decision["reason"] = "OVERRIDE manuale attivo: Casa ES osserva il consumo ma non comanda questo dispositivo."
             decision["would_start"] = False
         elif mode == DEVICE_MODE_OFF:
             decision["decision"] = "forced_off"
@@ -108,9 +113,7 @@ def evaluate_managed_devices(
             decision["would_stop"] = bool(decision.get("running"))
         elif decision.get("running") and not decision["can_auto_stop"]:
             remaining = max(min_on_minutes * 60.0 - elapsed_seconds, 0.0) / 60.0
-            decision["reason"] = (
-                f"Dispositivo attivo e protetto dal tempo minimo ON; circa {remaining:.0f} min residui."
-            )
+            decision["reason"] = f"Dispositivo attivo e protetto dal tempo minimo ON; circa {remaining:.0f} min residui."
 
     decisions = result.get("dry_run_decisions", [])
     result["managed_devices_override"] = sum(
@@ -119,11 +122,7 @@ def evaluate_managed_devices(
     result["managed_devices_forced_off"] = sum(
         1 for item in decisions if item.get("management_mode") == DEVICE_MODE_OFF
     )
-    result["manual_override_running_energy_commitment_kwh"] = round(
-        manual_running_commitment, 3
-    )
-    # Base remaining budget did not know the manual commitment; expose the
-    # correctly adjusted value for diagnostics and tomorrow's validation.
+    result["manual_override_running_energy_commitment_kwh"] = round(manual_running_commitment, 3)
     if adjusted_policy.get("flexible_energy_budget_kwh") is not None:
         result["dry_run_remaining_flexible_budget_kwh"] = round(
             max(
