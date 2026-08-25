@@ -156,6 +156,36 @@
         "invalid_current_range": "La corrente massima deve essere maggiore o uguale alla corrente minima.",
         "current_entity_required": "Per il controllo dinamico devi selezionare l'entità che imposta la corrente."
       }
+    },
+    "monitored_load": {
+      "entry_type": "Carico monitorato",
+      "initiate_flow": {
+        "user": "Aggiungi carico monitorato",
+        "reconfigure": "Modifica carico monitorato"
+      },
+      "step": {
+        "monitored_load": {
+          "title": "Configurazione carico monitorato",
+          "description": "Aggiungi un elettrodomestico che Casa ES deve solo osservare per capire come è distribuito il consumo sulle fasi. Questo carico non verrà mai acceso o spento da Casa ES.",
+          "data": {
+            "name": "Nome del carico",
+            "power_sensor": "Sensore della potenza reale del carico",
+            "phase": "Fase elettrica del carico",
+            "enabled": "Usa questo carico nell'analisi delle fasi"
+          },
+          "data_description": {
+            "name": "Inserisci un nome riconoscibile, per esempio Forno, Lavatrice, Lavastoviglie, Asciugatrice o Piano induzione.",
+            "power_sensor": "Seleziona il sensore che misura il consumo istantaneo di questo singolo elettrodomestico in W, kW o MW.",
+            "phase": "Indica la fase fisica del carico: L1, L2, L3 oppure Trifase. Casa ES userà questa informazione solo per attribuire il consumo già presente nella misura totale della fase.",
+            "enabled": "Se disattivato il carico resta configurato ma non viene usato nell'attribuzione dei consumi per fase."
+          }
+        }
+      },
+      "error": {
+        "monitored_name_required": "Inserisci un nome per il carico monitorato.",
+        "monitored_sensor_already_configured": "Questo sensore di potenza è già usato da un altro carico monitorato.",
+        "expected_power_sensor": "Il sensore di potenza deve usare W, kW o MW."
+      }
     }
   },
   "selector": {
