@@ -106,17 +106,49 @@ class DeviceDryRunTests(unittest.TestCase):
 
     def test_running_load_reserves_future_energy_budget(self):
         running = self._device(
-            subentry_id="running", state="on", nominal_power_w=2000, expected_runtime_minutes=120
+            subentry_id="running",
+            state="on",
+            nominal_power_w=2000,
+            expected_runtime_minutes=120,
         )
         candidate = self._device(
-            subentry_id="candidate", name="Candidate", nominal_power_w=1500, expected_runtime_minutes=120
+            subentry_id="candidate",
+            name="Candidate",
+            nominal_power_w=1500,
+            expected_runtime_minutes=120,
         )
         policy = self._policy()
         policy["flexible_energy_budget_kwh"] = 5.0
-        result = evaluate_managed_devices([running, candidate], data=self._data(), policy=policy)
+        result = evaluate_managed_devices(
+            [running, candidate], data=self._data(), policy=policy
+        )
         decisions = {item["subentry_id"]: item for item in result["dry_run_decisions"]}
         self.assertEqual(decisions["running"]["decision"], "already_running")
         self.assertEqual(decisions["candidate"]["decision"], "waiting_energy")
+
+    def test_power_sensor_overrides_mode_state_for_idle_climate(self):
+        climate = self._device(
+            entity_id="climate.salone",
+            state="cool",
+            current_power_w=3,
+        )
+        result = evaluate_managed_devices(
+            [climate], data=self._data(), policy=self._policy()
+        )
+        self.assertFalse(result["dry_run_decisions"][0]["running"])
+        self.assertTrue(result["dry_run_decisions"][0]["would_start"])
+
+    def test_power_sensor_marks_real_consumption_as_running(self):
+        climate = self._device(
+            entity_id="climate.salone",
+            state="cool",
+            current_power_w=700,
+        )
+        result = evaluate_managed_devices(
+            [climate], data=self._data(), policy=self._policy()
+        )
+        self.assertTrue(result["dry_run_decisions"][0]["running"])
+        self.assertEqual(result["dry_run_decisions"][0]["decision"], "already_running")
 
     def test_definite_shortfall_blocks_flexible_loads(self):
         policy = self._policy()
