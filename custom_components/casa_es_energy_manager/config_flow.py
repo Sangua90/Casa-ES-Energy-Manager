@@ -12,8 +12,14 @@ from homeassistant.core import callback
 from homeassistant.helpers import selector
 
 from .const import (
+    CONF_AI_ENABLED,
+    CONF_AI_INTERVAL_MINUTES,
+    CONF_AI_TASK_ENTITY,
+    CONF_BATTERY_CAPACITY_KWH,
     CONF_BATTERY_POWER_SENSOR,
     CONF_BATTERY_SOC_SENSOR,
+    CONF_BATTERY_TARGET_HOUR,
+    CONF_BATTERY_TARGET_SOC,
     CONF_GRID_POWER_LIMIT,
     CONF_GRID_POWER_SENSOR,
     CONF_INVERTER_POWER_LIMIT,
@@ -24,6 +30,11 @@ from .const import (
     CONF_PHASE_POWER_LIMIT,
     CONF_PV_POWER_SENSOR,
     CONF_SAFETY_MARGIN,
+    DEFAULT_AI_ENABLED,
+    DEFAULT_AI_INTERVAL_MINUTES,
+    DEFAULT_BATTERY_CAPACITY_KWH,
+    DEFAULT_BATTERY_TARGET_HOUR,
+    DEFAULT_BATTERY_TARGET_SOC,
     DEFAULT_GRID_POWER_LIMIT,
     DEFAULT_INVERTER_POWER_LIMIT,
     DEFAULT_PHASE_POWER_LIMIT,
@@ -35,6 +46,10 @@ from .const import (
 
 def _entity_selector() -> selector.EntitySelector:
     return selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor"))
+
+
+def _ai_task_selector() -> selector.EntitySelector:
+    return selector.EntitySelector(selector.EntitySelectorConfig(domain="ai_task"))
 
 
 class CasaESEnergyManagerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -81,31 +96,67 @@ class CasaESEnergyManagerOptionsFlow(OptionsFlowWithReload):
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Manage protection limits."""
+        """Manage protection limits and the optional AI planner."""
         if user_input is not None:
             return self.async_create_entry(data=user_input)
 
         current = {**self.config_entry.data, **self.config_entry.options}
-        schema = vol.Schema(
-            {
-                vol.Required(
-                    CONF_INVERTER_POWER_LIMIT,
-                    default=current.get(
-                        CONF_INVERTER_POWER_LIMIT, DEFAULT_INVERTER_POWER_LIMIT
-                    ),
-                ): vol.All(vol.Coerce(float), vol.Range(min=1000, max=30000)),
-                vol.Required(
-                    CONF_PHASE_POWER_LIMIT,
-                    default=current.get(CONF_PHASE_POWER_LIMIT, DEFAULT_PHASE_POWER_LIMIT),
-                ): vol.All(vol.Coerce(float), vol.Range(min=500, max=15000)),
-                vol.Required(
-                    CONF_GRID_POWER_LIMIT,
-                    default=current.get(CONF_GRID_POWER_LIMIT, DEFAULT_GRID_POWER_LIMIT),
-                ): vol.All(vol.Coerce(float), vol.Range(min=1000, max=30000)),
-                vol.Required(
-                    CONF_SAFETY_MARGIN,
-                    default=current.get(CONF_SAFETY_MARGIN, DEFAULT_SAFETY_MARGIN),
-                ): vol.All(vol.Coerce(float), vol.Range(min=0, max=3000)),
-            }
+        fields: dict[Any, Any] = {
+            vol.Required(
+                CONF_INVERTER_POWER_LIMIT,
+                default=current.get(
+                    CONF_INVERTER_POWER_LIMIT, DEFAULT_INVERTER_POWER_LIMIT
+                ),
+            ): vol.All(vol.Coerce(float), vol.Range(min=1000, max=30000)),
+            vol.Required(
+                CONF_PHASE_POWER_LIMIT,
+                default=current.get(CONF_PHASE_POWER_LIMIT, DEFAULT_PHASE_POWER_LIMIT),
+            ): vol.All(vol.Coerce(float), vol.Range(min=500, max=15000)),
+            vol.Required(
+                CONF_GRID_POWER_LIMIT,
+                default=current.get(CONF_GRID_POWER_LIMIT, DEFAULT_GRID_POWER_LIMIT),
+            ): vol.All(vol.Coerce(float), vol.Range(min=1000, max=30000)),
+            vol.Required(
+                CONF_SAFETY_MARGIN,
+                default=current.get(CONF_SAFETY_MARGIN, DEFAULT_SAFETY_MARGIN),
+            ): vol.All(vol.Coerce(float), vol.Range(min=0, max=3000)),
+            vol.Required(
+                CONF_AI_ENABLED,
+                default=current.get(CONF_AI_ENABLED, DEFAULT_AI_ENABLED),
+            ): selector.BooleanSelector(),
+            vol.Required(
+                CONF_AI_INTERVAL_MINUTES,
+                default=current.get(
+                    CONF_AI_INTERVAL_MINUTES, DEFAULT_AI_INTERVAL_MINUTES
+                ),
+            ): vol.All(vol.Coerce(int), vol.Range(min=15, max=180)),
+            vol.Required(
+                CONF_BATTERY_CAPACITY_KWH,
+                default=current.get(
+                    CONF_BATTERY_CAPACITY_KWH, DEFAULT_BATTERY_CAPACITY_KWH
+                ),
+            ): vol.All(vol.Coerce(float), vol.Range(min=1, max=500)),
+            vol.Required(
+                CONF_BATTERY_TARGET_SOC,
+                default=current.get(
+                    CONF_BATTERY_TARGET_SOC, DEFAULT_BATTERY_TARGET_SOC
+                ),
+            ): vol.All(vol.Coerce(float), vol.Range(min=0, max=100)),
+            vol.Required(
+                CONF_BATTERY_TARGET_HOUR,
+                default=current.get(
+                    CONF_BATTERY_TARGET_HOUR, DEFAULT_BATTERY_TARGET_HOUR
+                ),
+            ): vol.All(vol.Coerce(int), vol.Range(min=0, max=23)),
+        }
+        if current.get(CONF_AI_TASK_ENTITY):
+            fields[
+                vol.Optional(CONF_AI_TASK_ENTITY, default=current[CONF_AI_TASK_ENTITY])
+            ] = _ai_task_selector()
+        else:
+            fields[vol.Optional(CONF_AI_TASK_ENTITY)] = _ai_task_selector()
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema(fields),
         )
-        return self.async_show_form(step_id="init", data_schema=schema)
