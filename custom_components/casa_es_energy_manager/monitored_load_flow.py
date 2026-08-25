@@ -27,34 +27,47 @@ def _power_sensor_selector() -> selector.EntitySelector:
 
 
 def _schema(current: dict[str, Any]) -> vol.Schema:
-    return vol.Schema(
-        {
-            vol.Required(
-                CONF_MONITORED_LOAD_NAME,
-                default=current.get(CONF_MONITORED_LOAD_NAME, ""),
-            ): selector.TextSelector(),
-            vol.Required(
-                CONF_MONITORED_LOAD_POWER_SENSOR,
-                default=current.get(CONF_MONITORED_LOAD_POWER_SENSOR),
-            ): _power_sensor_selector(),
-            vol.Required(
-                CONF_MONITORED_LOAD_PHASE,
-                default=current.get(CONF_MONITORED_LOAD_PHASE, "l1"),
-            ): selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=list(DEVICE_PHASES),
-                    translation_key="managed_phase",
-                    mode=selector.SelectSelectorMode.DROPDOWN,
-                )
-            ),
-            vol.Required(
-                CONF_MONITORED_LOAD_ENABLED,
-                default=current.get(
-                    CONF_MONITORED_LOAD_ENABLED, DEFAULT_MONITORED_LOAD_ENABLED
-                ),
-            ): selector.BooleanSelector(),
-        }
+    fields: dict[Any, Any] = {}
+
+    if current.get(CONF_MONITORED_LOAD_NAME):
+        name_key: Any = vol.Required(
+            CONF_MONITORED_LOAD_NAME,
+            default=current[CONF_MONITORED_LOAD_NAME],
+        )
+    else:
+        name_key = vol.Required(CONF_MONITORED_LOAD_NAME)
+
+    if current.get(CONF_MONITORED_LOAD_POWER_SENSOR):
+        power_key: Any = vol.Required(
+            CONF_MONITORED_LOAD_POWER_SENSOR,
+            default=current[CONF_MONITORED_LOAD_POWER_SENSOR],
+        )
+    else:
+        power_key = vol.Required(CONF_MONITORED_LOAD_POWER_SENSOR)
+
+    fields[name_key] = selector.TextSelector()
+    fields[power_key] = _power_sensor_selector()
+    fields[
+        vol.Required(
+            CONF_MONITORED_LOAD_PHASE,
+            default=current.get(CONF_MONITORED_LOAD_PHASE, "l1"),
+        )
+    ] = selector.SelectSelector(
+        selector.SelectSelectorConfig(
+            options=list(DEVICE_PHASES),
+            translation_key="managed_phase",
+            mode=selector.SelectSelectorMode.DROPDOWN,
+        )
     )
+    fields[
+        vol.Required(
+            CONF_MONITORED_LOAD_ENABLED,
+            default=current.get(
+                CONF_MONITORED_LOAD_ENABLED, DEFAULT_MONITORED_LOAD_ENABLED
+            ),
+        )
+    ] = selector.BooleanSelector()
+    return vol.Schema(fields)
 
 
 class MonitoredLoadSubentryFlow(ConfigSubentryFlow):
