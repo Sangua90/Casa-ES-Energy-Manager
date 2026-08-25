@@ -55,7 +55,9 @@ Current-hour and next-hour fields intentionally accept both power and energy for
 
 Energy inputs are normalized to kWh. Power inputs are normalized to watts.
 
-If the selected daily forecast sensor exposes a `watts` attribute containing a timestamp-to-power dictionary, Casa ES reads future forecast points and sends the curve to the planner. This is optional and provider-independent.
+If the selected daily forecast sensors expose a `watts` attribute containing timestamp-to-power dictionaries, Casa ES reads both **today** and **tomorrow**, merges and deduplicates their points, and keeps up to 192 future points. This lets the deterministic planner integrate solar energy across midnight when the configured battery target is on the following day.
+
+The planner only marks a forecast window as complete when the merged power curve actually reaches the target time. A daily energy total by itself is not treated as proof that the energy will arrive before the configured target hour.
 
 ### Weather and extra context
 
@@ -115,7 +117,7 @@ The planner can return:
 - confidence
 - a short reason in Italian
 
-The planner receives measured PV, potential PV, solar forecast, optional forecast curve, weather forecast, three-phase margins and additional context sensors.
+The planner receives measured PV, potential PV, solar forecast, optional multi-day forecast curve, weather forecast, three-phase margins and additional context sensors.
 
 The AI recommendation is **advisory only**. Electrical safety, phase limits and all future device control remain deterministic and local.
 
@@ -140,7 +142,7 @@ The file contains the information useful for Casa ES Energy Manager testing, inc
 
 - configured source entity IDs and current states
 - measured and potential PV inputs
-- solar forecast sensor values and forecast curve when available
+- solar forecast sensor values and merged forecast curve when available
 - weather and additional context sensor mappings
 - load, grid, battery SOC and battery power
 - L1/L2/L3 power values
