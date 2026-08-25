@@ -56,6 +56,48 @@ class PlannerPolicyTests(unittest.TestCase):
         self.assertEqual(energy, 2.0)
         self.assertTrue(complete)
 
+    def test_integrates_curve_across_midnight_to_next_day_target(self):
+        now = datetime(2026, 8, 25, 18, 0, tzinfo=timezone.utc)
+        target = datetime(2026, 8, 26, 15, 0, tzinfo=timezone.utc)
+        curve = [
+            {"time": now.isoformat(), "power_w": 0},
+            {"time": datetime(2026, 8, 26, 5, 0, tzinfo=timezone.utc).isoformat(), "power_w": 0},
+            {"time": datetime(2026, 8, 26, 7, 0, tzinfo=timezone.utc).isoformat(), "power_w": 2000},
+            {"time": datetime(2026, 8, 26, 11, 0, tzinfo=timezone.utc).isoformat(), "power_w": 4000},
+            {"time": target.isoformat(), "power_w": 2000},
+        ]
+        energy, complete = integrate_forecast_curve_kwh(curve, now=now, target=target)
+        self.assertIsNotNone(energy)
+        self.assertGreater(energy, 10.0)
+        self.assertTrue(complete)
+
+    def test_cross_day_forecast_can_prove_target_has_solar_margin(self):
+        now = datetime(2026, 8, 25, 18, 0, tzinfo=timezone.utc)
+        target = datetime(2026, 8, 26, 15, 0, tzinfo=timezone.utc)
+        data = self._base_data()
+        data["battery_soc"] = 79
+        data["pv_power_w"] = 0
+        data["pv_potential_w"] = 30
+        data["forecast_remaining_kwh"] = 0
+        data["forecast_curve"] = [
+            {"time": now.isoformat(), "power_w": 0},
+            {"time": datetime(2026, 8, 26, 5, 0, tzinfo=timezone.utc).isoformat(), "power_w": 0},
+            {"time": datetime(2026, 8, 26, 8, 0, tzinfo=timezone.utc).isoformat(), "power_w": 3000},
+            {"time": datetime(2026, 8, 26, 12, 0, tzinfo=timezone.utc).isoformat(), "power_w": 5000},
+            {"time": target.isoformat(), "power_w": 2500},
+        ]
+        policy = build_planner_policy(
+            data,
+            now=now,
+            target=target,
+            battery_capacity_kwh=14.3,
+            battery_target_soc=100,
+        )
+        self.assertTrue(policy["forecast_curve_complete_to_target"])
+        self.assertGreater(policy["forecast_energy_to_target_kwh"], 3.003)
+        self.assertFalse(policy["grid_charge_allowed"])
+        self.assertFalse(policy["battery_first_preferred"])
+
     def test_protect_grid_not_allowed_with_large_headroom(self):
         data = self._base_data()
         policy = build_planner_policy(
