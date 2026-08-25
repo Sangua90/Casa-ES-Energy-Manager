@@ -28,6 +28,7 @@ from .const import (
     CONF_DEVICE_ENTITY,
     CONF_DEVICE_NAME,
     CONF_DEVICE_POWER_SENSOR,
+    CONF_DEVICE_REQUIRES_ENTITY,
     CONF_EXPECTED_BASE_LOAD_W,
     CONF_EXTRA_CONTEXT_SENSORS,
     CONF_GRID_POWER_LIMIT,
@@ -224,6 +225,7 @@ class CasaESEnergyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def _managed_device_snapshots(self) -> list[dict[str, Any]]:
         """Read repeatable managed-device subentries without controlling them."""
         devices: list[dict[str, Any]] = []
+        now_utc = dt_util.utcnow()
         for subentry in self.entry.subentries.values():
             if subentry.subentry_type != SUBENTRY_TYPE_MANAGED_DEVICE:
                 continue
@@ -234,6 +236,15 @@ class CasaESEnergyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             current_power = self._numeric_state(
                 str(power_sensor) if power_sensor else None, power=True
             )
+            requires_entity = config.get(CONF_DEVICE_REQUIRES_ENTITY)
+            requires_state = (
+                self.hass.states.get(str(requires_entity)) if requires_entity else None
+            )
+            seconds_since_change = None
+            if state is not None:
+                seconds_since_change = max(
+                    (now_utc - state.last_changed).total_seconds(), 0.0
+                )
             devices.append(
                 {
                     **config,
@@ -246,6 +257,10 @@ class CasaESEnergyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         and state.state not in (STATE_UNKNOWN, STATE_UNAVAILABLE)
                     ),
                     "current_power_w": current_power,
+                    "requires_state": (
+                        requires_state.state if requires_state is not None else None
+                    ),
+                    "seconds_since_change": seconds_since_change,
                 }
             )
         return devices
@@ -390,7 +405,7 @@ class CasaESEnergyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             ),
         )
         devices = self._managed_device_snapshots()
-        dry_run = evaluate_managed_devices(devices, data=data, policy=policy)
+        dry_run = evaluate_managed_devices(devices, data=data, policy=policy, now=now)
 
         # AI fields are advisory. Deterministic values below are always refreshed
         # after them so a 30-minute AI snapshot cannot overwrite 5-second policy.
