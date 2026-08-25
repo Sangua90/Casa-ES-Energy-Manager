@@ -24,6 +24,7 @@ class CasaESSensorDescription:
     unit: str | None = None
     device_class: SensorDeviceClass | None = None
     state_class: SensorStateClass | None = None
+    attributes_key: str | None = None
 
 
 _POWER = {
@@ -77,6 +78,18 @@ SENSORS = (
     CasaESSensorDescription(key="planner_target_reachability", name="Raggiungibilità target batteria"),
     CasaESSensorDescription(key="planner_grid_pressure", name="Pressione elettrica planner"),
     CasaESSensorDescription(key="planner_solar_state", name="Stato FV planner"),
+    CasaESSensorDescription(
+        key="dry_run_status",
+        name="Stato dry-run dispositivi",
+        attributes_key="dry_run_decisions",
+    ),
+    CasaESSensorDescription(key="managed_device_count", name="Dispositivi gestiti dry-run"),
+    CasaESSensorDescription(key="managed_devices_running", name="Dispositivi gestiti già attivi"),
+    CasaESSensorDescription(key="managed_devices_admissible_now", name="Dispositivi ammessi ora dry-run"),
+    CasaESSensorDescription(key="managed_devices_waiting", name="Dispositivi in attesa dry-run"),
+    CasaESSensorDescription(key="dry_run_solar_opportunity_w", name="Potenza FV disponibile per nuovi carichi dry-run", **_POWER),
+    CasaESSensorDescription(key="dry_run_running_energy_commitment_kwh", name="Impegno energia dispositivi già attivi", **_ENERGY),
+    CasaESSensorDescription(key="dry_run_remaining_flexible_budget_kwh", name="Budget flessibile residuo dry-run", **_ENERGY),
 )
 
 
@@ -118,3 +131,11 @@ class CasaESEnergySensor(CoordinatorEntity[CasaESEnergyCoordinator], SensorEntit
     @property
     def native_value(self) -> Any:
         return self.coordinator.data.get(self.description.key)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Expose detailed per-device dry-run decisions on the summary sensor."""
+        if not self.description.attributes_key:
+            return None
+        value = self.coordinator.data.get(self.description.attributes_key)
+        return {"devices": value if isinstance(value, list) else []}
