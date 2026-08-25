@@ -18,6 +18,7 @@ PRIORITY_RANK = {
 }
 
 OFF_STATES = {"off", "unavailable", "unknown", "none", ""}
+RUNNING_POWER_THRESHOLD_W = 20.0
 
 
 def _number(value: Any, default: float = 0.0) -> float:
@@ -27,8 +28,15 @@ def _number(value: Any, default: float = 0.0) -> float:
         return default
 
 
-def _is_running(state: Any) -> bool:
-    """Return a conservative generic running state for supported load entities."""
+def _is_running(state: Any, current_power_w: Any = None) -> bool:
+    """Return whether a managed load is currently active.
+
+    A configured real-power sensor wins over generic entity state. This avoids
+    treating a climate/water-heater mode as active consumption when the compressor
+    or heater is actually idle.
+    """
+    if current_power_w is not None:
+        return _number(current_power_w) >= RUNNING_POWER_THRESHOLD_W
     return str(state or "").strip().lower() not in OFF_STATES
 
 
@@ -80,8 +88,11 @@ def evaluate_managed_devices(
     normalized: list[dict[str, Any]] = []
     for device in devices:
         nominal = max(_number(device.get("nominal_power_w")), 0.0)
-        runtime_minutes = max(_number(device.get("expected_runtime_minutes"), 60.0), 1.0)
+        runtime_minutes = max(
+            _number(device.get("expected_runtime_minutes"), 60.0), 1.0
+        )
         expected_energy = nominal * runtime_minutes / 60_000.0
+        current_power = device.get("current_power_w")
         normalized.append(
             {
                 **device,
@@ -93,11 +104,10 @@ def evaluate_managed_devices(
                 "allow_grid": bool(device.get("allow_grid", False)),
                 "enabled": bool(device.get("enabled", True)),
                 "min_battery_soc": _number(device.get("min_battery_soc"), 0.0),
-                "running": _is_running(device.get("state")),
+                "running": _is_running(device.get("state"), current_power),
             }
         )
 
-    # Reserve the expected remaining session energy of loads that are already on.
     running_commitment = sum(
         item["expected_energy_kwh"]
         for item in normalized
@@ -211,7 +221,9 @@ def evaluate_managed_devices(
                 "phase": item["phase"],
                 "nominal_power_w": round(item["nominal_power_w"], 1),
                 "current_power_w": item.get("current_power_w"),
-                "expected_runtime_minutes": round(item["expected_runtime_minutes"], 1),
+                "expected_runtime_minutes": round(
+                    item["expected_runtime_minutes"], 1
+                ),
                 "expected_energy_kwh": item["expected_energy_kwh"],
                 "allow_grid": item["allow_grid"],
                 "min_battery_soc": item["min_battery_soc"],
