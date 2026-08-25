@@ -156,6 +156,13 @@ class CasaESAIPlanner:
             "phase_l1_headroom_w": data.get("phase_l1_headroom_w"),
             "phase_l2_headroom_w": data.get("phase_l2_headroom_w"),
             "phase_l3_headroom_w": data.get("phase_l3_headroom_w"),
+            "phase_known_load_l1_w": data.get("phase_known_load_l1_w"),
+            "phase_known_load_l2_w": data.get("phase_known_load_l2_w"),
+            "phase_known_load_l3_w": data.get("phase_known_load_l3_w"),
+            "phase_other_load_l1_w": data.get("phase_other_load_l1_w"),
+            "phase_other_load_l2_w": data.get("phase_other_load_l2_w"),
+            "phase_other_load_l3_w": data.get("phase_other_load_l3_w"),
+            "phase_load_breakdown": data.get("phase_load_breakdown") or [],
             "manager_status": data.get("status"),
             "forecast_remaining_today_kwh": data.get("forecast_remaining_kwh"),
             "forecast_current_hour_power_w": data.get("forecast_current_hour_power_w"),
@@ -178,6 +185,9 @@ class CasaESAIPlanner:
             "inverter o ricarica rete. Proponi una strategia per i prossimi 30 minuti usando "
             "solo i dati forniti. La sicurezza locale ha sempre priorità. Non inventare dati. "
             "La sezione policy è calcolata deterministicamente ed è VINCOLANTE. "
+            "Il breakdown dei carichi per fase serve solo a spiegare quali elettrodomestici "
+            "stanno contribuendo al consumo già misurato: NON sommarlo ai totali L1/L2/L3 e "
+            "non usarlo al posto dei margini fase calcolati dai sensori elettrici principali. "
             "forecast_margin_after_base_load_kwh sottrae dal FV previsto sia l'energia richiesta "
             "alla batteria, corretta per efficienza, sia il consumo base previsto della casa. "
             "flexible_energy_budget_kwh è il budget energetico prudente residuo per futuri carichi "

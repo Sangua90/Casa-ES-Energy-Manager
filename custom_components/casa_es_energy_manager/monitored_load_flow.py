@@ -1,0 +1,143 @@
+"""Config-subentry flow for read-only Casa ES monitored loads."""
+
+from __future__ import annotations
+
+from typing import Any
+
+import voluptuous as vol
+
+from homeassistant.config_entries import ConfigSubentryFlow, SubentryFlowResult
+from homeassistant.const import ATTR_UNIT_OF_MEASUREMENT
+from homeassistant.helpers import selector
+
+from .const import (
+    CONF_MONITORED_LOAD_ENABLED,
+    CONF_MONITORED_LOAD_NAME,
+    CONF_MONITORED_LOAD_PHASE,
+    CONF_MONITORED_LOAD_POWER_SENSOR,
+    DEFAULT_MONITORED_LOAD_ENABLED,
+    DEVICE_PHASES,
+    SUBENTRY_TYPE_MONITORED_LOAD,
+)
+from .forecast_units import POWER_UNITS
+
+
+def _power_sensor_selector() -> selector.EntitySelector:
+    return selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor"))
+
+
+def _schema(current: dict[str, Any]) -> vol.Schema:
+    fields: dict[Any, Any] = {}
+
+    if current.get(CONF_MONITORED_LOAD_NAME):
+        name_key: Any = vol.Required(
+            CONF_MONITORED_LOAD_NAME,
+            default=current[CONF_MONITORED_LOAD_NAME],
+        )
+    else:
+        name_key = vol.Required(CONF_MONITORED_LOAD_NAME)
+
+    if current.get(CONF_MONITORED_LOAD_POWER_SENSOR):
+        power_key: Any = vol.Required(
+            CONF_MONITORED_LOAD_POWER_SENSOR,
+            default=current[CONF_MONITORED_LOAD_POWER_SENSOR],
+        )
+    else:
+        power_key = vol.Required(CONF_MONITORED_LOAD_POWER_SENSOR)
+
+    fields[name_key] = selector.TextSelector()
+    fields[power_key] = _power_sensor_selector()
+    fields[
+        vol.Required(
+            CONF_MONITORED_LOAD_PHASE,
+            default=current.get(CONF_MONITORED_LOAD_PHASE, "l1"),
+        )
+    ] = selector.SelectSelector(
+        selector.SelectSelectorConfig(
+            options=list(DEVICE_PHASES),
+            translation_key="managed_phase",
+            mode=selector.SelectSelectorMode.DROPDOWN,
+        )
+    )
+    fields[
+        vol.Required(
+            CONF_MONITORED_LOAD_ENABLED,
+            default=current.get(
+                CONF_MONITORED_LOAD_ENABLED, DEFAULT_MONITORED_LOAD_ENABLED
+            ),
+        )
+    ] = selector.BooleanSelector()
+    return vol.Schema(fields)
+
+
+class MonitoredLoadSubentryFlow(ConfigSubentryFlow):
+    """Add or edit one read-only monitored load."""
+
+    async def async_step_monitored_load(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        return await self.async_step_user(user_input)
+
+    async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        return await self._async_form(user_input, reconfigure=False)
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        return await self._async_form(user_input, reconfigure=True)
+
+    async def _async_form(
+        self, user_input: dict[str, Any] | None, *, reconfigure: bool
+    ) -> SubentryFlowResult:
+        current = self._get_reconfigure_subentry().data.copy() if reconfigure else {}
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            values = dict(user_input)
+            values[CONF_MONITORED_LOAD_NAME] = str(
+                values.get(CONF_MONITORED_LOAD_NAME, "")
+            ).strip()
+            if not values[CONF_MONITORED_LOAD_NAME]:
+                errors[CONF_MONITORED_LOAD_NAME] = "monitored_name_required"
+
+            power_sensor = str(values.get(CONF_MONITORED_LOAD_POWER_SENSOR, ""))
+            state = self.hass.states.get(power_sensor) if power_sensor else None
+            if state is not None:
+                unit = state.attributes.get(ATTR_UNIT_OF_MEASUREMENT)
+                if unit is not None and str(unit) not in POWER_UNITS:
+                    errors[CONF_MONITORED_LOAD_POWER_SENSOR] = "expected_power_sensor"
+
+            current_id = (
+                self._get_reconfigure_subentry().subentry_id if reconfigure else None
+            )
+            for subentry in self._get_entry().subentries.values():
+                if subentry.subentry_type != SUBENTRY_TYPE_MONITORED_LOAD:
+                    continue
+                if subentry.subentry_id == current_id:
+                    continue
+                if str(subentry.data.get(CONF_MONITORED_LOAD_POWER_SENSOR, "")) == power_sensor:
+                    errors[CONF_MONITORED_LOAD_POWER_SENSOR] = "monitored_sensor_already_configured"
+                    break
+
+            if not errors:
+                if reconfigure:
+                    return self.async_update_and_abort(
+                        self._get_entry(),
+                        self._get_reconfigure_subentry(),
+                        data=values,
+                        title=values[CONF_MONITORED_LOAD_NAME],
+                    )
+                return self.async_create_entry(
+                    title=values[CONF_MONITORED_LOAD_NAME],
+                    data=values,
+                    unique_id=power_sensor,
+                )
+            current.update(values)
+
+        return self.async_show_form(
+            step_id="monitored_load",
+            data_schema=_schema(current),
+            errors=errors,
+        )
