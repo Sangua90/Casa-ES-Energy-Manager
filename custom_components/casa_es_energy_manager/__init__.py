@@ -28,8 +28,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    entry.async_on_unload(entry.add_update_listener(_async_update_listener))
 
+    # CasaESEnergyManagerOptionsFlow inherits from OptionsFlowWithReload,
+    # therefore Home Assistant already reloads this config entry after options
+    # are saved. Do not register a second update listener here: concurrent
+    # reloads can race when the AI planner, timer and button platform are set up.
     if planner.enabled:
         entry.async_on_unload(
             async_track_time_interval(hass, planner.async_refresh, planner.interval)
@@ -45,8 +48,3 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if unloaded:
         hass.data[DOMAIN].pop(entry.entry_id, None)
     return unloaded
-
-
-async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Reload when options change."""
-    await hass.config_entries.async_reload(entry.entry_id)

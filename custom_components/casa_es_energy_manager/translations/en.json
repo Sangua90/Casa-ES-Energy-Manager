@@ -22,6 +22,12 @@
     }
   },
   "options": {
+    "error": {
+      "ai_task_required": "To enable the AI planner, select an AI Task entity.",
+      "invalid_ai_task": "The selected entity is not a valid AI Task entity.",
+      "ai_task_not_found": "The selected AI Task entity is not available in Home Assistant.",
+      "ai_task_unavailable": "The AI Task service is unavailable. Configure a compatible AI provider first, for example Google Gemini."
+    },
     "step": {
       "init": {
         "title": "Sensors, protection and AI planner",
