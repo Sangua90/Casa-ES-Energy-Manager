@@ -38,33 +38,79 @@ _ENERGY = {
 }
 
 SENSORS = (
-    CasaESSensorDescription(key="solar_after_house_w", name="FV misurato dopo i carichi casa", **_POWER),
-    CasaESSensorDescription(key="pv_potential_w", name="Potenza FV potenziale stimata", **_POWER),
-    CasaESSensorDescription(key="pv_potential_gap_w", name="Potenziale FV non sfruttato stimato", **_POWER),
-    CasaESSensorDescription(key="pv_potential_after_house_w", name="FV potenziale dopo i carichi casa", **_POWER),
-    CasaESSensorDescription(key="forecast_remaining_kwh", name="Previsione FV residua oggi", **_ENERGY),
-    CasaESSensorDescription(key="forecast_current_hour_kwh", name="Previsione FV ora corrente", **_ENERGY),
-    CasaESSensorDescription(key="forecast_next_hour_kwh", name="Previsione FV prossima ora", **_ENERGY),
-    CasaESSensorDescription(key="forecast_today_kwh", name="Previsione FV totale oggi", **_ENERGY),
-    CasaESSensorDescription(key="forecast_tomorrow_kwh", name="Previsione FV domani", **_ENERGY),
+    CasaESSensorDescription(
+        key="solar_after_house_w", name="FV misurato dopo i carichi casa", **_POWER
+    ),
+    CasaESSensorDescription(
+        key="pv_potential_w", name="Potenza FV potenziale stimata", **_POWER
+    ),
+    CasaESSensorDescription(
+        key="pv_potential_gap_w", name="Potenziale FV non sfruttato stimato", **_POWER
+    ),
+    CasaESSensorDescription(
+        key="pv_potential_after_house_w",
+        name="FV potenziale dopo i carichi casa",
+        **_POWER,
+    ),
+    CasaESSensorDescription(
+        key="forecast_remaining_kwh", name="Previsione FV residua oggi", **_ENERGY
+    ),
+    CasaESSensorDescription(
+        key="forecast_current_hour_power_w",
+        name="Potenza FV prevista ora corrente",
+        **_POWER,
+    ),
+    CasaESSensorDescription(
+        key="forecast_current_hour_kwh", name="Energia FV prevista ora corrente", **_ENERGY
+    ),
+    CasaESSensorDescription(
+        key="forecast_next_hour_power_w",
+        name="Potenza FV prevista prossima ora",
+        **_POWER,
+    ),
+    CasaESSensorDescription(
+        key="forecast_next_hour_kwh", name="Energia FV prevista prossima ora", **_ENERGY
+    ),
+    CasaESSensorDescription(
+        key="forecast_today_kwh", name="Previsione FV totale oggi", **_ENERGY
+    ),
+    CasaESSensorDescription(
+        key="forecast_tomorrow_kwh", name="Previsione FV domani", **_ENERGY
+    ),
     CasaESSensorDescription(key="grid_import_w", name="Prelievo rete", **_POWER),
     CasaESSensorDescription(key="grid_headroom_w", name="Margine rete", **_POWER),
-    CasaESSensorDescription(key="inverter_headroom_w", name="Margine inverter", **_POWER),
-    CasaESSensorDescription(key="battery_charge_w", name="Potenza carica batteria", **_POWER),
-    CasaESSensorDescription(key="battery_discharge_w", name="Potenza scarica batteria", **_POWER),
+    CasaESSensorDescription(
+        key="inverter_headroom_w", name="Margine inverter", **_POWER
+    ),
+    CasaESSensorDescription(
+        key="battery_charge_w", name="Potenza carica batteria", **_POWER
+    ),
+    CasaESSensorDescription(
+        key="battery_discharge_w", name="Potenza scarica batteria", **_POWER
+    ),
     CasaESSensorDescription(
         key="battery_soc",
         name="SOC batteria",
         unit=PERCENTAGE,
         state_class=SensorStateClass.MEASUREMENT,
     ),
-    CasaESSensorDescription(key="phase_l1_headroom_w", name="Margine fase L1", **_POWER),
-    CasaESSensorDescription(key="phase_l2_headroom_w", name="Margine fase L2", **_POWER),
-    CasaESSensorDescription(key="phase_l3_headroom_w", name="Margine fase L3", **_POWER),
+    CasaESSensorDescription(
+        key="phase_l1_headroom_w", name="Margine fase L1", **_POWER
+    ),
+    CasaESSensorDescription(
+        key="phase_l2_headroom_w", name="Margine fase L2", **_POWER
+    ),
+    CasaESSensorDescription(
+        key="phase_l3_headroom_w", name="Margine fase L3", **_POWER
+    ),
     CasaESSensorDescription(key="status", name="Stato gestore energia"),
     CasaESSensorDescription(key="ai_status", name="Stato planner AI"),
-    CasaESSensorDescription(key="ai_strategy", name="Strategia AI"),
-    CasaESSensorDescription(key="ai_reason", name="Motivazione AI"),
+    CasaESSensorDescription(key="ai_strategy", name="Strategia AI finale"),
+    CasaESSensorDescription(key="ai_raw_strategy", name="Strategia AI grezza"),
+    CasaESSensorDescription(key="ai_reason", name="Motivazione AI finale"),
+    CasaESSensorDescription(
+        key="ai_guardrail_reason", name="Motivo correzione guardrail AI"
+    ),
     CasaESSensorDescription(key="ai_last_update", name="Ultimo aggiornamento AI"),
     CasaESSensorDescription(
         key="ai_battery_reserve_w",
@@ -77,6 +123,25 @@ SENSORS = (
         unit=PERCENTAGE,
         state_class=SensorStateClass.MEASUREMENT,
     ),
+    CasaESSensorDescription(
+        key="battery_energy_needed_kwh",
+        name="Energia necessaria batteria al target",
+        **_ENERGY,
+    ),
+    CasaESSensorDescription(
+        key="forecast_energy_to_target_kwh",
+        name="FV previsto fino al target",
+        **_ENERGY,
+    ),
+    CasaESSensorDescription(
+        key="forecast_margin_before_base_load_kwh",
+        name="Margine FV al target prima dei carichi base",
+        **_ENERGY,
+    ),
+    CasaESSensorDescription(
+        key="planner_grid_pressure", name="Pressione elettrica planner"
+    ),
+    CasaESSensorDescription(key="planner_solar_state", name="Stato FV planner"),
 )
 
 
