@@ -2,7 +2,7 @@
 
 DOMAIN = "casa_es_energy_manager"
 NAME = "Casa ES Energy Manager"
-VERSION = "0.4.0"
+VERSION = "0.4.1"
 
 # Core electrical sensors.
 CONF_PV_POWER_SENSOR = "pv_power_sensor"
@@ -40,7 +40,7 @@ CONF_BATTERY_TARGET_HOUR = "battery_target_hour"
 CONF_EXPECTED_BASE_LOAD_W = "expected_base_load_w"
 CONF_BATTERY_CHARGE_EFFICIENCY_PCT = "battery_charge_efficiency_pct"
 
-# Managed flexible-load subentries (v0.4 dry-run only).
+# Managed flexible-load subentries (dry-run only).
 SUBENTRY_TYPE_MANAGED_DEVICE = "managed_device"
 CONF_DEVICE_NAME = "name"
 CONF_DEVICE_ENTITY = "entity_id"
@@ -53,7 +53,9 @@ CONF_DEVICE_MIN_BATTERY_SOC = "min_battery_soc"
 CONF_DEVICE_ALLOW_GRID = "allow_grid"
 CONF_DEVICE_ENABLED = "enabled"
 
-DEVICE_PRIORITIES = ("very_high", "high", "normal", "low", "very_low")
+# Numeric priority: 1 = highest, 10 = lowest.
+DEVICE_PRIORITY_MIN = 1
+DEVICE_PRIORITY_MAX = 10
 DEVICE_PHASES = ("l1", "l2", "l3", "three_phase")
 
 DEFAULT_INVERTER_POWER_LIMIT = 10_000.0
@@ -69,7 +71,7 @@ DEFAULT_BATTERY_TARGET_HOUR = 17
 DEFAULT_EXPECTED_BASE_LOAD_W = 500.0
 DEFAULT_BATTERY_CHARGE_EFFICIENCY_PCT = 95.0
 
-DEFAULT_DEVICE_PRIORITY = "normal"
+DEFAULT_DEVICE_PRIORITY = 5
 DEFAULT_DEVICE_EXPECTED_RUNTIME_MINUTES = 60
 DEFAULT_DEVICE_MIN_BATTERY_SOC = 40.0
 DEFAULT_DEVICE_ALLOW_GRID = False
