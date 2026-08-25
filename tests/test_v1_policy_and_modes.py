@@ -96,6 +96,43 @@ class V1DeviceModeTests(unittest.TestCase):
         self.assertEqual(decision["decision"], "forced_off")
         self.assertTrue(decision["would_stop"])
 
+    def test_off_mode_does_not_reserve_future_energy(self):
+        result = v1_dry.evaluate_managed_devices(
+            [
+                self.device(
+                    management_mode="off",
+                    state="cool",
+                    current_power_w=700,
+                    expected_runtime_minutes=120,
+                )
+            ],
+            data=self.data(),
+            policy=self.policy(),
+        )
+        self.assertEqual(
+            result["manual_override_running_energy_commitment_kwh"], 0
+        )
+        self.assertEqual(result["dry_run_running_energy_commitment_kwh"], 0)
+        self.assertEqual(result["dry_run_remaining_flexible_budget_kwh"], 8.0)
+
+    def test_override_running_load_can_reserve_known_cycle_energy(self):
+        result = v1_dry.evaluate_managed_devices(
+            [
+                self.device(
+                    management_mode="override",
+                    state="cool",
+                    current_power_w=700,
+                    expected_runtime_minutes=60,
+                )
+            ],
+            data=self.data(),
+            policy=self.policy(),
+        )
+        self.assertGreater(
+            result["manual_override_running_energy_commitment_kwh"], 0
+        )
+        self.assertLess(result["dry_run_remaining_flexible_budget_kwh"], 8.0)
+
     def test_minimum_off_time_blocks_auto_restart(self):
         result = v1_dry.evaluate_managed_devices(
             [self.device(seconds_since_change=60, min_off_minutes=20)],
