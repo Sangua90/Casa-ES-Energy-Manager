@@ -6,14 +6,14 @@
         "title": "Energy sensor mapping",
         "description": "Select the main electrical sensors. Solar-potential and weather/context sensors are configured later in options.",
         "data": {
-          "pv_power_sensor": "Measured PV power sensor from inverter",
-          "load_power_sensor": "House/load power sensor",
-          "grid_power_sensor": "Grid power sensor (positive = import)",
-          "battery_soc_sensor": "Battery state of charge sensor",
-          "battery_power_sensor": "Battery power sensor (positive = charging)",
-          "phase_l1_power_sensor": "Phase L1 load power sensor (optional)",
-          "phase_l2_power_sensor": "Phase L2 load power sensor (optional)",
-          "phase_l3_power_sensor": "Phase L3 load power sensor (optional)"
+          "pv_power_sensor": "Measured PV power from inverter (W)",
+          "load_power_sensor": "House/load power (W)",
+          "grid_power_sensor": "Grid power (W, positive = import)",
+          "battery_soc_sensor": "Battery state of charge (%)",
+          "battery_power_sensor": "Battery power (W, positive = charging)",
+          "phase_l1_power_sensor": "Phase L1 power (W, optional)",
+          "phase_l2_power_sensor": "Phase L2 power (W, optional)",
+          "phase_l3_power_sensor": "Phase L3 power (W, optional)"
         }
       }
     },
@@ -26,21 +26,31 @@
       "ai_task_required": "To enable the AI planner, select an AI Task entity.",
       "invalid_ai_task": "The selected entity is not a valid AI Task entity.",
       "ai_task_not_found": "The selected AI Task entity is not available in Home Assistant.",
-      "ai_task_unavailable": "The AI Task service is unavailable. Configure a compatible AI provider first, for example Google Gemini."
+      "ai_task_unavailable": "The AI Task service is unavailable. Configure a compatible AI provider first, for example Google Gemini.",
+      "expected_power_sensor": "This field requires a power sensor using W, kW or MW.",
+      "expected_energy_sensor": "This field requires an energy sensor using Wh, kWh or MWh. Do not use a power sensor in W."
     },
     "step": {
       "init": {
         "title": "Sensors, protection and AI planner",
-        "description": "Measured PV remains separate from estimated potential PV. Forecast, weather and extra context help the planner maximize self-consumption when the zero-export inverter curtails the array. AI remains advisory only.",
+        "description": "You can also correct the main electrical sensors here. Measured PV must be the real inverter production; potential PV is the estimate of what the array could produce without zero-export curtailment. Energy fields require Wh/kWh/MWh.",
         "data": {
+          "pv_power_sensor": "Measured PV power from inverter (W)",
+          "load_power_sensor": "House/load power (W)",
+          "grid_power_sensor": "Grid power (W, positive = import)",
+          "battery_soc_sensor": "Battery state of charge (%)",
+          "battery_power_sensor": "Battery power (W, positive = charging)",
+          "phase_l1_power_sensor": "Phase L1 power (W, optional)",
+          "phase_l2_power_sensor": "Phase L2 power (W, optional)",
+          "phase_l3_power_sensor": "Phase L3 power (W, optional)",
           "inverter_power_limit": "Inverter total limit (W)",
           "phase_power_limit": "Per-phase working limit (W)",
           "grid_power_limit": "Grid working limit (W)",
           "safety_margin": "Safety margin subtracted from limits (W)",
-          "pv_potential_power_sensor": "Potential PV now - estimate without inverter curtailment (W)",
+          "pv_potential_power_sensor": "Potential/forecast PV now (W) - not measured PV",
           "pv_forecast_remaining_today_sensor": "Remaining PV energy forecast today (kWh)",
-          "pv_forecast_current_hour_sensor": "Current-hour PV energy forecast (kWh)",
-          "pv_forecast_next_hour_sensor": "Next-hour PV energy forecast (kWh)",
+          "pv_forecast_current_hour_sensor": "PV energy forecast for current hour (kWh) - not power W",
+          "pv_forecast_next_hour_sensor": "PV energy forecast for next hour (kWh)",
           "pv_forecast_today_sensor": "Total PV energy forecast today (kWh)",
           "pv_forecast_tomorrow_sensor": "PV energy forecast tomorrow (kWh)",
           "weather_entity": "Weather entity for hourly forecast (optional)",
