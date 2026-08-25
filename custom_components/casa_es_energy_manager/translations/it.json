@@ -77,19 +77,31 @@
       },
       "step": {
         "managed_device": {
-          "title": "Dispositivo gestito in dry-run",
-          "description": "Casa ES userà questi dati solo per simulare l'ammissione del carico. In v0.4 non verrà eseguito alcun comando sul dispositivo.",
+          "title": "Dispositivo gestito - simulazione dry-run",
+          "description": "Inserisci i dati del carico. Casa ES li usa per decidere se il dispositivo sarebbe avviabile, ma in questa versione non invia ancora alcun comando reale. La priorità è numerica: 1 = massima, 10 = minima.",
           "data": {
-            "name": "Nome dispositivo",
-            "entity_id": "Entità da gestire",
-            "power_sensor": "Sensore potenza reale (W, opzionale)",
-            "nominal_power_w": "Potenza nominale prevista (W)",
-            "priority": "Priorità",
-            "phase": "Fase elettrica",
-            "expected_runtime_minutes": "Durata prevista di un ciclo (minuti)",
-            "min_battery_soc": "SOC batteria minimo per consentire il carico (%)",
-            "allow_grid": "Consenti uso della rete per questo dispositivo",
-            "enabled": "Abilita dispositivo nella gestione Casa ES"
+            "name": "Nome del dispositivo",
+            "entity_id": "Entità del dispositivo da gestire",
+            "power_sensor": "Sensore della potenza reale del dispositivo (opzionale)",
+            "nominal_power_w": "Potenza nominale da considerare (W)",
+            "priority": "Priorità numerica (1 = massima, 10 = minima)",
+            "phase": "Fase elettrica del dispositivo",
+            "expected_runtime_minutes": "Durata prevista di un ciclo o utilizzo (minuti)",
+            "min_battery_soc": "SOC batteria minimo per permettere il dispositivo (%)",
+            "allow_grid": "Consenti l'uso della rete elettrica per questo dispositivo",
+            "enabled": "Abilita questo dispositivo nella gestione Casa ES"
+          },
+          "data_description": {
+            "name": "Scrivi un nome facile da riconoscere, per esempio Boiler, Deumidificatore, Clima salotto o Lavastoviglie.",
+            "entity_id": "Seleziona l'entità che in futuro Casa ES dovrà comandare, per esempio switch.boiler o climate.salone. In dry-run viene solo letta e simulata.",
+            "power_sensor": "Opzionale ma consigliato. Se hai un sensore che misura solo il consumo di questo apparecchio in W, kW o MW, selezionalo qui. Serve a capire se il dispositivo sta consumando davvero. Se non esiste, lascia vuoto.",
+            "nominal_power_w": "Inserisci l'assorbimento elettrico tipico quando il dispositivo è attivo. Casa ES usa questo valore per verificare se c'è abbastanza potenza disponibile per avviarlo e per stimare l'energia del ciclo.",
+            "priority": "Numero da 1 a 10. Il numero più basso ha precedenza: 1 viene valutato prima di 2, 2 prima di 3, fino a 10. Puoi assegnare lo stesso numero a più dispositivi.",
+            "phase": "Seleziona la fase fisica su cui è collegato il carico: L1, L2 o L3. Scegli Trifase solo se il dispositivo è realmente alimentato sulle tre fasi.",
+            "expected_runtime_minutes": "Indica per quanti minuti, mediamente, il dispositivo resta in funzione quando parte. Serve a stimare quanti kWh deve prenotare dal budget energetico disponibile.",
+            "min_battery_soc": "Sotto questa percentuale di batteria Casa ES non considererà il dispositivo avviabile. È una protezione specifica del singolo carico.",
+            "allow_grid": "Disattivato: il carico può essere ammesso solo quando la potenza FV disponibile è sufficiente. Attivato: può essere ammesso anche usando energia dalla rete, sempre rispettando i limiti elettrici e il budget.",
+            "enabled": "Se lo disattivi, il dispositivo resta configurato ma viene escluso dalle decisioni di Casa ES senza doverlo cancellare."
           }
         }
       },
@@ -101,15 +113,6 @@
     }
   },
   "selector": {
-    "managed_priority": {
-      "options": {
-        "very_high": "Molto alta",
-        "high": "Alta",
-        "normal": "Normale",
-        "low": "Bassa",
-        "very_low": "Molto bassa"
-      }
-    },
     "managed_phase": {
       "options": {
         "l1": "L1",

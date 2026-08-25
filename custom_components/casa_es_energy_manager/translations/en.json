@@ -77,19 +77,31 @@
       },
       "step": {
         "managed_device": {
-          "title": "Managed device dry-run",
-          "description": "Casa ES uses these values only to simulate load admission. Version 0.4 does not send any command to the configured device.",
+          "title": "Managed device - dry-run simulation",
+          "description": "Enter the load data. Casa ES only simulates whether it could start; this version does not send real commands. Numeric priority: 1 = highest, 10 = lowest.",
           "data": {
             "name": "Device name",
-            "entity_id": "Entity to manage",
-            "power_sensor": "Real power sensor (W, optional)",
-            "nominal_power_w": "Expected nominal power (W)",
-            "priority": "Priority",
-            "phase": "Electrical phase",
-            "expected_runtime_minutes": "Expected cycle duration (minutes)",
-            "min_battery_soc": "Minimum battery SOC to allow this load (%)",
+            "entity_id": "Device entity to manage",
+            "power_sensor": "Real device power sensor (optional)",
+            "nominal_power_w": "Nominal power to consider (W)",
+            "priority": "Numeric priority (1 = highest, 10 = lowest)",
+            "phase": "Device electrical phase",
+            "expected_runtime_minutes": "Expected cycle/runtime duration (minutes)",
+            "min_battery_soc": "Minimum battery SOC to allow the device (%)",
             "allow_grid": "Allow grid energy for this device",
-            "enabled": "Enable device in Casa ES management"
+            "enabled": "Enable this device in Casa ES management"
+          },
+          "data_description": {
+            "name": "Use a recognizable name, for example Boiler, Dehumidifier, Living room AC or Dishwasher.",
+            "entity_id": "Select the entity Casa ES may control in the future, such as switch.boiler or climate.living_room. In dry-run it is only read and simulated.",
+            "power_sensor": "Optional but recommended. Select a sensor measuring only this appliance in W, kW or MW. It helps determine whether the appliance is actually consuming. Leave empty if unavailable.",
+            "nominal_power_w": "Enter the typical electrical draw while active. Casa ES uses it to test instantaneous start headroom and estimate cycle energy.",
+            "priority": "Number from 1 to 10. Lower numbers run first: 1 before 2, 2 before 3, through 10. Multiple devices may share the same number.",
+            "phase": "Select the physical phase the load is connected to: L1, L2 or L3. Select Three-phase only for a real three-phase load.",
+            "expected_runtime_minutes": "Enter the typical number of minutes the device runs after starting. This estimates how many kWh must be reserved from the flexible-energy budget.",
+            "min_battery_soc": "Below this battery percentage Casa ES will not consider the device admissible. This is a per-device battery protection threshold.",
+            "allow_grid": "Off: the device is admissible only when current PV power can cover it. On: it may also use grid energy, while still respecting electrical limits and the energy budget.",
+            "enabled": "Turn this off to keep the device configured but exclude it from Casa ES decisions without deleting it."
           }
         }
       },
@@ -101,15 +113,6 @@
     }
   },
   "selector": {
-    "managed_priority": {
-      "options": {
-        "very_high": "Very high",
-        "high": "High",
-        "normal": "Normal",
-        "low": "Low",
-        "very_low": "Very low"
-      }
-    },
     "managed_phase": {
       "options": {
         "l1": "L1",

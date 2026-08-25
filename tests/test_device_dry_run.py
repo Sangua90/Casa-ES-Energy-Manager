@@ -47,7 +47,7 @@ class DeviceDryRunTests(unittest.TestCase):
             "available": True,
             "nominal_power_w": 1500,
             "expected_runtime_minutes": 60,
-            "priority": "normal",
+            "priority": 5,
             "phase": "l1",
             "allow_grid": False,
             "enabled": True,
@@ -72,20 +72,38 @@ class DeviceDryRunTests(unittest.TestCase):
         self.assertEqual(result["managed_devices_admissible_now"], 0)
         self.assertEqual(result["dry_run_decisions"][0]["decision"], "waiting_solar")
 
-    def test_priority_allocates_limited_current_solar(self):
+    def test_numeric_priority_allocates_limited_current_solar(self):
         data = self._data()
         data["pv_potential_after_house_w"] = 2000
         low = self._device(
-            subentry_id="low", name="Low", priority="low", nominal_power_w=1200
+            subentry_id="low", name="Low", priority=8, nominal_power_w=1200
         )
         high = self._device(
-            subentry_id="high", name="High", priority="high", nominal_power_w=1200
+            subentry_id="high", name="High", priority=2, nominal_power_w=1200
         )
         result = evaluate_managed_devices([low, high], data=data, policy=self._policy())
         decisions = {item["subentry_id"]: item for item in result["dry_run_decisions"]}
         self.assertTrue(decisions["high"]["would_start"])
         self.assertFalse(decisions["low"]["would_start"])
         self.assertEqual(decisions["low"]["decision"], "waiting_solar")
+        self.assertEqual(decisions["high"]["priority"], 2)
+        self.assertEqual(decisions["low"]["priority"], 8)
+
+    def test_legacy_text_priority_remains_compatible(self):
+        data = self._data()
+        data["pv_potential_after_house_w"] = 2000
+        old_low = self._device(
+            subentry_id="old_low", name="Old low", priority="low", nominal_power_w=1200
+        )
+        old_high = self._device(
+            subentry_id="old_high", name="Old high", priority="high", nominal_power_w=1200
+        )
+        result = evaluate_managed_devices(
+            [old_low, old_high], data=data, policy=self._policy()
+        )
+        decisions = {item["subentry_id"]: item for item in result["dry_run_decisions"]}
+        self.assertTrue(decisions["old_high"]["would_start"])
+        self.assertFalse(decisions["old_low"]["would_start"])
 
     def test_phase_limit_blocks_start(self):
         data = self._data()

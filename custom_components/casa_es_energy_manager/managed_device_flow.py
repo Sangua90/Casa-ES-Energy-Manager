@@ -28,10 +28,19 @@ from .const import (
     DEFAULT_DEVICE_MIN_BATTERY_SOC,
     DEFAULT_DEVICE_PRIORITY,
     DEVICE_PHASES,
-    DEVICE_PRIORITIES,
+    DEVICE_PRIORITY_MAX,
+    DEVICE_PRIORITY_MIN,
     SUBENTRY_TYPE_MANAGED_DEVICE,
 )
 from .forecast_units import POWER_UNITS
+
+LEGACY_PRIORITY_MAP = {
+    "very_high": 1,
+    "high": 3,
+    "normal": 5,
+    "low": 7,
+    "very_low": 10,
+}
 
 
 class ManagedDeviceSubentrySupport:
@@ -58,6 +67,17 @@ def _managed_entity_selector() -> selector.EntitySelector:
 
 def _power_sensor_selector() -> selector.EntitySelector:
     return selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor"))
+
+
+def _priority_value(value: Any) -> int:
+    """Normalize numeric priority while accepting v0.4 legacy text priorities."""
+    if isinstance(value, str) and value in LEGACY_PRIORITY_MAP:
+        return LEGACY_PRIORITY_MAP[value]
+    try:
+        number = int(round(float(value)))
+    except (TypeError, ValueError):
+        number = DEFAULT_DEVICE_PRIORITY
+    return max(DEVICE_PRIORITY_MIN, min(DEVICE_PRIORITY_MAX, number))
 
 
 def _schema(current: dict[str, Any]) -> vol.Schema:
@@ -102,12 +122,15 @@ def _schema(current: dict[str, Any]) -> vol.Schema:
             ),
             vol.Required(
                 CONF_DEVICE_PRIORITY,
-                default=current.get(CONF_DEVICE_PRIORITY, DEFAULT_DEVICE_PRIORITY),
-            ): selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=list(DEVICE_PRIORITIES),
-                    translation_key="managed_priority",
-                    mode=selector.SelectSelectorMode.DROPDOWN,
+                default=_priority_value(
+                    current.get(CONF_DEVICE_PRIORITY, DEFAULT_DEVICE_PRIORITY)
+                ),
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=DEVICE_PRIORITY_MIN,
+                    max=DEVICE_PRIORITY_MAX,
+                    step=1,
+                    mode=selector.NumberSelectorMode.BOX,
                 )
             ),
             vol.Required(
@@ -189,6 +212,9 @@ class ManagedDeviceSubentryFlow(ConfigSubentryFlow):
         if user_input is not None:
             values = dict(user_input)
             values[CONF_DEVICE_NAME] = str(values.get(CONF_DEVICE_NAME, "")).strip()
+            values[CONF_DEVICE_PRIORITY] = _priority_value(
+                values.get(CONF_DEVICE_PRIORITY)
+            )
             if not values[CONF_DEVICE_NAME]:
                 errors[CONF_DEVICE_NAME] = "device_name_required"
 
