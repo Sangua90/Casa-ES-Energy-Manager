@@ -37,6 +37,10 @@ BINARY_SENSORS = (
         key="ai_grid_charge_recommended",
         name="AI consiglia ricarica rete",
     ),
+    CasaESBinaryDescription(
+        key="ai_guardrail_applied",
+        name="Correzione guardrail AI applicata",
+    ),
 )
 
 
