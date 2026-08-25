@@ -76,7 +76,14 @@ def evaluate_managed_devices(
 
         if mode in {DEVICE_MODE_OVERRIDE, DEVICE_MODE_OFF}:
             item["enabled"] = False
-            if running and runtime is not None:
+            # Manuale remains an observed user-controlled load, so when a cycle
+            # duration is known its running energy can still be reserved. Spento
+            # is deliberately removed from the optimization/budget entirely.
+            if (
+                mode == DEVICE_MODE_OVERRIDE
+                and running
+                and runtime is not None
+            ):
                 manual_running_commitment += admission_power * runtime / 60_000.0
         prepared.append(item)
 
