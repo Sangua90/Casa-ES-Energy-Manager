@@ -71,7 +71,33 @@ class CasaESAIPlanner:
         value = self._config(CONF_AI_TASK_ENTITY)
         return str(value) if value else None
 
-    def _planner_context(self) -> dict[str, Any]:
+    async def _weather_forecast(self, weather_entity: str | None) -> list[dict[str, Any]]:
+        """Fetch a short hourly weather forecast when the selected entity supports it."""
+        if not weather_entity:
+            return []
+        try:
+            response = await self.hass.services.async_call(
+                "weather",
+                "get_forecasts",
+                {"entity_id": weather_entity, "type": "hourly"},
+                blocking=True,
+                return_response=True,
+            )
+        except Exception as err:  # Weather is optional context only.
+            _LOGGER.debug("Weather forecast unavailable for AI context: %s", err)
+            return []
+
+        if not isinstance(response, dict):
+            return []
+        entity_result = response.get(weather_entity)
+        if not isinstance(entity_result, dict):
+            return []
+        forecast = entity_result.get("forecast")
+        if not isinstance(forecast, list):
+            return []
+        return [item for item in forecast[:6] if isinstance(item, dict)]
+
+    async def _planner_context(self) -> dict[str, Any]:
         data = self.coordinator.data or {}
         soc = float(data.get("battery_soc") or 0.0)
         capacity_kwh = float(
@@ -92,6 +118,11 @@ class CasaESAIPlanner:
             target += timedelta(days=1)
         hours_to_target = max((target - now).total_seconds() / 3600.0, 0.0)
 
+        weather_entity = data.get("weather_entity")
+        weather_forecast = await self._weather_forecast(
+            str(weather_entity) if weather_entity else None
+        )
+
         return {
             "now": now.isoformat(),
             "target_time": target.isoformat(),
@@ -99,20 +130,32 @@ class CasaESAIPlanner:
             "battery_capacity_kwh": capacity_kwh,
             "battery_target_soc": target_soc,
             "battery_energy_needed_kwh": round(energy_needed_kwh, 3),
-            "pv_power_w": data.get("pv_power_w"),
+            "pv_measured_power_w": data.get("pv_power_w"),
+            "pv_potential_power_w": data.get("pv_potential_w"),
+            "pv_potential_gap_w": data.get("pv_potential_gap_w"),
+            "pv_potential_after_house_w": data.get("pv_potential_after_house_w"),
+            "pv_curtailment_likely": data.get("pv_curtailment_likely"),
             "load_power_w": data.get("load_power_w"),
             "grid_import_w": data.get("grid_import_w"),
             "battery_soc": data.get("battery_soc"),
             "battery_charge_w": data.get("battery_charge_w"),
             "battery_discharge_w": data.get("battery_discharge_w"),
-            "solar_after_house_w": data.get("solar_after_house_w"),
+            "solar_after_house_measured_w": data.get("solar_after_house_w"),
             "grid_headroom_w": data.get("grid_headroom_w"),
             "inverter_headroom_w": data.get("inverter_headroom_w"),
             "phase_l1_headroom_w": data.get("phase_l1_headroom_w"),
             "phase_l2_headroom_w": data.get("phase_l2_headroom_w"),
             "phase_l3_headroom_w": data.get("phase_l3_headroom_w"),
             "manager_status": data.get("status"),
-            "forecast_remaining_kwh": data.get("forecast_remaining_kwh"),
+            "forecast_remaining_today_kwh": data.get("forecast_remaining_kwh"),
+            "forecast_current_hour_kwh": data.get("forecast_current_hour_kwh"),
+            "forecast_next_hour_kwh": data.get("forecast_next_hour_kwh"),
+            "forecast_today_kwh": data.get("forecast_today_kwh"),
+            "forecast_tomorrow_kwh": data.get("forecast_tomorrow_kwh"),
+            "forecast_power_curve": data.get("forecast_curve") or [],
+            "weather_current": data.get("weather_current"),
+            "weather_hourly_next_6": weather_forecast,
+            "extra_context_sensors": data.get("extra_context") or [],
         }
 
     def _instructions(self, context: dict[str, Any]) -> str:
@@ -122,11 +165,19 @@ class CasaESAIPlanner:
             "Non puoi e non devi comandare dispositivi, inverter o ricarica rete. "
             "Analizza esclusivamente i dati forniti e proponi la strategia energetica "
             "per i prossimi 30 minuti. La sicurezza elettrica e i limiti di fase hanno "
-            "sempre priorità. Non inventare dati mancanti o previsioni meteo/FV. "
+            "sempre priorità. Non inventare dati mancanti. "
+            "IMPORTANTE: pv_measured_power_w è la produzione realmente erogata dall'inverter, "
+            "mentre pv_potential_power_w è una stima della produzione che i pannelli potrebbero "
+            "erogare se il sistema zero-export non li stesse limitando. Quando batteria è piena "
+            "o quasi piena, un valore FV misurato basso NON significa automaticamente poco sole. "
+            "Usa pv_potential_power_w, forecast e meteo per valutare l'opportunità energetica, "
+            "ma considera sempre il forecast come stima e non come misura certa. "
+            "Se pv_curtailment_likely=true, cerca di privilegiare l'uso locale dell'energia "
+            "potenzialmente persa, senza violare alcun limite elettrico. "
             "Se manca un dato essenziale, usa strategy=insufficient_data. "
             "Obiettivi in ordine: 1) evitare sovraccarico rete/fasi/inverter; "
-            "2) raggiungere il target batteria; 3) massimizzare autoconsumo FV; "
-            "4) usare i carichi flessibili solo quando ragionevole. "
+            "2) raggiungere il target batteria; 3) massimizzare autoconsumo FV e ridurre "
+            "la limitazione dei pannelli; 4) usare i carichi flessibili quando ragionevole. "
             "Il campo reason deve essere in italiano e massimo 180 caratteri.\n\n"
             f"Dati correnti: {context}"
         )
@@ -205,7 +256,7 @@ class CasaESAIPlanner:
         self.coordinator.update_ai_data({"ai_status": "running", "ai_error": None})
 
         try:
-            context = self._planner_context()
+            context = await self._planner_context()
             response = await self.hass.services.async_call(
                 "ai_task",
                 "generate_data",

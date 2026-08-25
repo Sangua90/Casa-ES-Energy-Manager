@@ -26,6 +26,10 @@ BINARY_SENSORS = (
     CasaESBinaryDescription(key="phase_warning", name="Allarme limite fase"),
     CasaESBinaryDescription(key="inverter_warning", name="Allarme limite inverter"),
     CasaESBinaryDescription(
+        key="pv_curtailment_likely",
+        name="Limitazione FV probabile",
+    ),
+    CasaESBinaryDescription(
         key="ai_allow_flexible_loads",
         name="AI consiglia carichi flessibili",
     ),
@@ -50,7 +54,7 @@ async def async_setup_entry(
 
 
 class CasaESBinarySensor(CoordinatorEntity[CasaESEnergyCoordinator], BinarySensorEntity):
-    """A Casa ES protection warning or read-only AI recommendation."""
+    """A Casa ES protection warning or read-only recommendation."""
 
     _attr_has_entity_name = True
 

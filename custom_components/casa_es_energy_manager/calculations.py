@@ -18,24 +18,51 @@ def calculate_metrics(
     phase_limit_w: float,
     grid_limit_w: float,
     safety_margin_w: float,
+    pv_potential_power_w: float | None = None,
+    battery_soc: float | None = None,
+    curtailment_soc_threshold: float = 98.0,
+    curtailment_potential_gap_w: float = 400.0,
+    curtailment_grid_import_max_w: float = 150.0,
 ) -> dict[str, Any]:
-    """Calculate read-only energy and protection metrics.
+    """Calculate read-only energy, solar-opportunity and protection metrics.
 
     Sign conventions are intentionally fixed for the Casa ES installation:
     * grid_power_w > 0 means grid import
     * grid_power_w < 0 means grid export
     * battery_power_w > 0 means battery charging
     * battery_power_w < 0 means battery discharging
+
+    ``pv_power_w`` is measured inverter production. ``pv_potential_power_w`` is an
+    optional forecast/simulated estimate of what the array could produce if the
+    zero-export inverter were not curtailing production. The potential value is
+    never allowed to reduce the measured value.
     """
     grid_import_w = max(grid_power_w, 0.0)
     grid_export_w = max(-grid_power_w, 0.0)
     battery_charge_w = max(battery_power_w, 0.0)
     battery_discharge_w = max(-battery_power_w, 0.0)
 
-    # PV currently produced after the measured house load. On Casa ES this
-    # power is commonly being directed to the battery. It is NOT a claim
-    # about curtailed PV potential; that will be modelled in a later release.
+    # Measured PV remaining after the current measured house load.
     solar_after_house_w = max(pv_power_w - load_power_w, 0.0)
+
+    # The forecast can be pessimistic. Actual measured PV is therefore always the
+    # lower bound of our estimated production opportunity.
+    potential_input = (
+        pv_power_w if pv_potential_power_w is None else max(pv_potential_power_w, 0.0)
+    )
+    pv_potential_w = max(pv_power_w, potential_input)
+    pv_potential_gap_w = max(pv_potential_w - pv_power_w, 0.0)
+    pv_potential_after_house_w = max(pv_potential_w - load_power_w, 0.0)
+
+    # This is deliberately only a hint, not proof of curtailment. A forecast error
+    # can create the same pattern. It becomes useful for diagnostics and later
+    # conservative load-admission logic.
+    pv_curtailment_likely = bool(
+        battery_soc is not None
+        and battery_soc >= curtailment_soc_threshold
+        and grid_import_w <= curtailment_grid_import_max_w
+        and pv_potential_gap_w >= curtailment_potential_gap_w
+    )
 
     safe_grid_limit_w = max(grid_limit_w - safety_margin_w, 0.0)
     safe_phase_limit_w = max(phase_limit_w - safety_margin_w, 0.0)
@@ -76,6 +103,8 @@ def calculate_metrics(
         status = "phase_warning"
     elif inverter_warning:
         status = "inverter_warning"
+    elif pv_curtailment_likely:
+        status = "pv_curtailment_likely"
     else:
         status = "monitoring"
 
@@ -85,6 +114,10 @@ def calculate_metrics(
         "battery_charge_w": battery_charge_w,
         "battery_discharge_w": battery_discharge_w,
         "solar_after_house_w": solar_after_house_w,
+        "pv_potential_w": pv_potential_w,
+        "pv_potential_gap_w": pv_potential_gap_w,
+        "pv_potential_after_house_w": pv_potential_after_house_w,
+        "pv_curtailment_likely": pv_curtailment_likely,
         "grid_headroom_w": grid_headroom_w,
         "inverter_headroom_w": inverter_headroom_w,
         "phase_l1_headroom_w": phase_headroom["l1"],

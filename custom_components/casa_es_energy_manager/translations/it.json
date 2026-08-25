@@ -4,9 +4,9 @@
     "step": {
       "user": {
         "title": "Associazione sensori energia",
-        "description": "Seleziona i sensori usati per monitorare FV, batteria, rete e margini delle tre fasi.",
+        "description": "Seleziona i sensori elettrici principali. Il modello FV potenziale e i sensori meteo si configurano successivamente nelle opzioni.",
         "data": {
-          "pv_power_sensor": "Sensore potenza fotovoltaico",
+          "pv_power_sensor": "Sensore FV misurato dall'inverter",
           "load_power_sensor": "Sensore potenza carichi casa",
           "grid_power_sensor": "Sensore potenza rete (positivo = prelievo)",
           "battery_soc_sensor": "Sensore stato di carica batteria",
@@ -24,13 +24,21 @@
   "options": {
     "step": {
       "init": {
-        "title": "Protezione e planner AI",
-        "description": "Il planner AI è solo consultivo: non può comandare carichi o inverter. Se abilitato, interroga l'entità AI Task scelta alla cadenza configurata.",
+        "title": "Sensori, protezione e planner AI",
+        "description": "Il FV misurato resta separato dal FV potenziale stimato. Forecast, meteo e sensori extra aiutano il planner a massimizzare l'autoconsumo anche quando l'inverter limita i pannelli. L'AI resta consultiva.",
         "data": {
           "inverter_power_limit": "Limite totale inverter (W)",
           "phase_power_limit": "Limite operativo per fase (W)",
           "grid_power_limit": "Limite operativo rete (W)",
           "safety_margin": "Margine di sicurezza sottratto ai limiti (W)",
+          "pv_potential_power_sensor": "FV potenziale adesso - stima senza limitazione inverter (W)",
+          "pv_forecast_remaining_today_sensor": "Previsione energia FV residua oggi (kWh)",
+          "pv_forecast_current_hour_sensor": "Previsione energia FV ora corrente (kWh)",
+          "pv_forecast_next_hour_sensor": "Previsione energia FV prossima ora (kWh)",
+          "pv_forecast_today_sensor": "Previsione energia FV totale oggi (kWh)",
+          "pv_forecast_tomorrow_sensor": "Previsione energia FV domani (kWh)",
+          "weather_entity": "Entità meteo per previsione oraria (opzionale)",
+          "extra_context_sensors": "Sensori contesto aggiuntivi per AI (meteo, irraggiamento, temperatura, vento, ecc.)",
           "ai_enabled": "Abilita planner AI consultivo",
           "ai_interval_minutes": "Intervallo planner AI (minuti)",
           "battery_capacity_kwh": "Capacità batteria (kWh)",

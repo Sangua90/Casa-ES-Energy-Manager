@@ -17,6 +17,7 @@ from .const import (
     CONF_BATTERY_SOC_SENSOR,
     CONF_BATTERY_TARGET_HOUR,
     CONF_BATTERY_TARGET_SOC,
+    CONF_EXTRA_CONTEXT_SENSORS,
     CONF_GRID_POWER_LIMIT,
     CONF_GRID_POWER_SENSOR,
     CONF_INVERTER_POWER_LIMIT,
@@ -25,8 +26,15 @@ from .const import (
     CONF_PHASE_L2_POWER_SENSOR,
     CONF_PHASE_L3_POWER_SENSOR,
     CONF_PHASE_POWER_LIMIT,
+    CONF_PV_FORECAST_CURRENT_HOUR_SENSOR,
+    CONF_PV_FORECAST_NEXT_HOUR_SENSOR,
+    CONF_PV_FORECAST_REMAINING_TODAY_SENSOR,
+    CONF_PV_FORECAST_TODAY_SENSOR,
+    CONF_PV_FORECAST_TOMORROW_SENSOR,
+    CONF_PV_POTENTIAL_POWER_SENSOR,
     CONF_PV_POWER_SENSOR,
     CONF_SAFETY_MARGIN,
+    CONF_WEATHER_ENTITY,
     DEFAULT_AI_ENABLED,
     DEFAULT_AI_INTERVAL_MINUTES,
     DEFAULT_BATTERY_CAPACITY_KWH,
@@ -75,7 +83,25 @@ async def async_get_config_entry_diagnostics(
     coordinator = hass.data.get(DOMAIN, {}).get(entry.entry_id)
 
     inputs = {
-        "pv_power": _entity_snapshot(hass, config.get(CONF_PV_POWER_SENSOR)),
+        "pv_measured_power": _entity_snapshot(hass, config.get(CONF_PV_POWER_SENSOR)),
+        "pv_potential_power": _entity_snapshot(
+            hass, config.get(CONF_PV_POTENTIAL_POWER_SENSOR)
+        ),
+        "pv_forecast_remaining_today": _entity_snapshot(
+            hass, config.get(CONF_PV_FORECAST_REMAINING_TODAY_SENSOR)
+        ),
+        "pv_forecast_current_hour": _entity_snapshot(
+            hass, config.get(CONF_PV_FORECAST_CURRENT_HOUR_SENSOR)
+        ),
+        "pv_forecast_next_hour": _entity_snapshot(
+            hass, config.get(CONF_PV_FORECAST_NEXT_HOUR_SENSOR)
+        ),
+        "pv_forecast_today": _entity_snapshot(
+            hass, config.get(CONF_PV_FORECAST_TODAY_SENSOR)
+        ),
+        "pv_forecast_tomorrow": _entity_snapshot(
+            hass, config.get(CONF_PV_FORECAST_TOMORROW_SENSOR)
+        ),
         "load_power": _entity_snapshot(hass, config.get(CONF_LOAD_POWER_SENSOR)),
         "grid_power": _entity_snapshot(hass, config.get(CONF_GRID_POWER_SENSOR)),
         "battery_soc": _entity_snapshot(hass, config.get(CONF_BATTERY_SOC_SENSOR)),
@@ -83,6 +109,11 @@ async def async_get_config_entry_diagnostics(
         "phase_l1_power": _entity_snapshot(hass, config.get(CONF_PHASE_L1_POWER_SENSOR)),
         "phase_l2_power": _entity_snapshot(hass, config.get(CONF_PHASE_L2_POWER_SENSOR)),
         "phase_l3_power": _entity_snapshot(hass, config.get(CONF_PHASE_L3_POWER_SENSOR)),
+        "weather": _entity_snapshot(hass, config.get(CONF_WEATHER_ENTITY)),
+        "extra_context": [
+            _entity_snapshot(hass, entity_id)
+            for entity_id in (config.get(CONF_EXTRA_CONTEXT_SENSORS, []) or [])
+        ],
     }
 
     limits = {
@@ -145,5 +176,7 @@ async def async_get_config_entry_diagnostics(
         "sign_conventions": {
             "grid_power": "positive = import, negative = export",
             "battery_power": "positive = charging, negative = discharging",
+            "pv_measured_power": "actual inverter production",
+            "pv_potential_power": "forecast/simulated unconstrained production estimate",
         },
     }

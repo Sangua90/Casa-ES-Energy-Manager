@@ -75,6 +75,49 @@ class CalculationTests(unittest.TestCase):
         self.assertEqual(data["battery_discharge_w"], 700)
         self.assertEqual(data["solar_after_house_w"], 2500)
 
+    def test_potential_pv_never_below_measured(self):
+        data = calculate_metrics(
+            pv_power_w=5000,
+            pv_potential_power_w=4000,
+            load_power_w=1500,
+            grid_power_w=0,
+            battery_power_w=1000,
+            battery_soc=80,
+            phase_l1_w=None,
+            phase_l2_w=None,
+            phase_l3_w=None,
+            inverter_limit_w=10000,
+            phase_limit_w=3000,
+            grid_limit_w=6000,
+            safety_margin_w=250,
+        )
+        self.assertEqual(data["pv_potential_w"], 5000)
+        self.assertEqual(data["pv_potential_gap_w"], 0)
+        self.assertEqual(data["pv_potential_after_house_w"], 3500)
+        self.assertFalse(data["pv_curtailment_likely"])
+
+    def test_likely_zero_export_curtailment(self):
+        data = calculate_metrics(
+            pv_power_w=800,
+            pv_potential_power_w=5000,
+            load_power_w=700,
+            grid_power_w=0,
+            battery_power_w=0,
+            battery_soc=100,
+            phase_l1_w=300,
+            phase_l2_w=200,
+            phase_l3_w=200,
+            inverter_limit_w=10000,
+            phase_limit_w=3000,
+            grid_limit_w=6000,
+            safety_margin_w=250,
+        )
+        self.assertEqual(data["pv_potential_w"], 5000)
+        self.assertEqual(data["pv_potential_gap_w"], 4200)
+        self.assertEqual(data["pv_potential_after_house_w"], 4300)
+        self.assertTrue(data["pv_curtailment_likely"])
+        self.assertEqual(data["status"], "pv_curtailment_likely")
+
 
 if __name__ == "__main__":
     unittest.main()
