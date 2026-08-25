@@ -1,4 +1,4 @@
-"""Multi-step managed-device subentry flow for Casa ES Energy Manager."""
+"""Simplified managed-device subentry flow for Casa ES Energy Manager."""
 
 from __future__ import annotations
 
@@ -16,21 +16,14 @@ from .const import (
     CONF_DEVICE_AVERAGING_WINDOW_SECONDS,
     CONF_DEVICE_BATTERY_DISCHARGE_OVERRIDE_W,
     CONF_DEVICE_BIG_CONSUMER,
-    CONF_DEVICE_CURRENT_ENTITY,
-    CONF_DEVICE_DYNAMIC_CURRENT,
     CONF_DEVICE_ENABLED,
     CONF_DEVICE_END_BEFORE,
     CONF_DEVICE_ENTITY,
-    CONF_DEVICE_EV_CONNECTED_SENSOR,
-    CONF_DEVICE_EV_SOC_SENSOR,
-    CONF_DEVICE_EV_TARGET_SOC,
     CONF_DEVICE_EXPECTED_RUNTIME_MINUTES,
-    CONF_DEVICE_MAX_CURRENT_A,
     CONF_DEVICE_MAX_DAILY_ACTIVATIONS,
     CONF_DEVICE_MAX_DAILY_RUNTIME_MINUTES,
     CONF_DEVICE_MAX_GRID_POWER_W,
     CONF_DEVICE_MIN_BATTERY_SOC,
-    CONF_DEVICE_MIN_CURRENT_A,
     CONF_DEVICE_MIN_DAILY_RUNTIME_MINUTES,
     CONF_DEVICE_MIN_OFF_MINUTES,
     CONF_DEVICE_MIN_ON_MINUTES,
@@ -41,7 +34,6 @@ from .const import (
     CONF_DEVICE_POWER_SENSOR,
     CONF_DEVICE_PRIORITY,
     CONF_DEVICE_PROTECT_PREEMPTION,
-    CONF_DEVICE_REQUIRES_ENTITY,
     CONF_DEVICE_SCHEDULE_DEADLINE,
     CONF_DEVICE_START_AFTER,
     CONF_DEVICE_SWITCH_INTERVAL_SECONDS,
@@ -50,36 +42,41 @@ from .const import (
     DEFAULT_DEVICE_AVERAGING_WINDOW_SECONDS,
     DEFAULT_DEVICE_BATTERY_DISCHARGE_OVERRIDE_W,
     DEFAULT_DEVICE_BIG_CONSUMER,
-    DEFAULT_DEVICE_DYNAMIC_CURRENT,
     DEFAULT_DEVICE_ENABLED,
-    DEFAULT_DEVICE_EV_TARGET_SOC,
-    DEFAULT_DEVICE_EXPECTED_RUNTIME_MINUTES,
-    DEFAULT_DEVICE_MAX_CURRENT_A,
     DEFAULT_DEVICE_MAX_DAILY_ACTIVATIONS,
     DEFAULT_DEVICE_MAX_DAILY_RUNTIME_MINUTES,
     DEFAULT_DEVICE_MAX_GRID_POWER_W,
     DEFAULT_DEVICE_MIN_BATTERY_SOC,
-    DEFAULT_DEVICE_MIN_CURRENT_A,
     DEFAULT_DEVICE_MIN_DAILY_RUNTIME_MINUTES,
-    DEFAULT_DEVICE_MIN_OFF_MINUTES,
-    DEFAULT_DEVICE_MIN_ON_MINUTES,
     DEFAULT_DEVICE_ON_ONLY,
     DEFAULT_DEVICE_PRIORITY,
     DEFAULT_DEVICE_PROTECT_PREEMPTION,
     DEVICE_PHASES,
     DEVICE_PRIORITY_MAX,
     DEVICE_PRIORITY_MIN,
+    LEGACY_REMOVED_DEVICE_KEYS,
     SUBENTRY_TYPE_MANAGED_DEVICE,
 )
 from .forecast_units import POWER_UNITS
 
 LEGACY_PRIORITY_MAP = {
     "very_high": 1,
-    "high": 3,
-    "normal": 5,
-    "low": 7,
-    "very_low": 10,
+    "high": 25,
+    "normal": 50,
+    "low": 75,
+    "very_low": 100,
 }
+
+OPTIONAL_BASIC_NUMBERS = (
+    CONF_DEVICE_EXPECTED_RUNTIME_MINUTES,
+    CONF_DEVICE_MIN_ON_MINUTES,
+    CONF_DEVICE_MIN_OFF_MINUTES,
+)
+OPTIONAL_CONSTRAINT_KEYS = (
+    CONF_DEVICE_SCHEDULE_DEADLINE,
+    CONF_DEVICE_START_AFTER,
+    CONF_DEVICE_END_BEFORE,
+)
 
 
 def _entity(domains: str | list[str]) -> selector.EntitySelector:
@@ -113,7 +110,7 @@ def _optional(
 def _required_entity(
     fields: dict[Any, Any], key: str, current: dict[str, Any], value_selector: Any
 ) -> None:
-    """Add a required entity selector without ever serializing default=None."""
+    """Add a required entity selector without serializing default=None."""
     value = current.get(key)
     if value not in (None, ""):
         fields[vol.Required(key, default=value)] = value_selector
@@ -127,29 +124,30 @@ def _num(
     step: float,
     unit: str | None = None,
 ) -> selector.NumberSelector:
-    """Build a HA 2026.8-compatible number selector.
+    """Build a HA 2026.8-compatible number selector."""
+    config: dict[str, Any] = {
+        "min": minimum,
+        "max": maximum,
+        "step": step,
+        "mode": selector.NumberSelectorMode.BOX,
+    }
+    if unit is not None:
+        config["unit_of_measurement"] = unit
+    return selector.NumberSelector(selector.NumberSelectorConfig(**config))
 
-    NumberSelectorConfig rejects an explicit unit_of_measurement=None. Unit-less
-    fields (for example priority or activation count) must omit the key entirely.
-    """
-    if unit is None:
-        return selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=minimum,
-                max=maximum,
-                step=step,
-                mode=selector.NumberSelectorMode.BOX,
-            )
-        )
-    return selector.NumberSelector(
-        selector.NumberSelectorConfig(
-            min=minimum,
-            max=maximum,
-            step=step,
-            unit_of_measurement=unit,
-            mode=selector.NumberSelectorMode.BOX,
-        )
-    )
+
+def _clean_optional(values: dict[str, Any], keys: tuple[str, ...]) -> dict[str, Any]:
+    cleaned = dict(values)
+    for key in keys:
+        if cleaned.get(key) in (None, ""):
+            cleaned.pop(key, None)
+    return cleaned
+
+
+def _remove_legacy_features(values: dict[str, Any]) -> None:
+    """Drop v1.0 wallbox/EV and dependency keys from the active model."""
+    for key in LEGACY_REMOVED_DEVICE_KEYS:
+        values.pop(key, None)
 
 
 def _basic_schema(current: dict[str, Any]) -> vol.Schema:
@@ -192,25 +190,6 @@ def _basic_schema(current: dict[str, Any]) -> vol.Schema:
                 )
             ),
             vol.Required(
-                CONF_DEVICE_EXPECTED_RUNTIME_MINUTES,
-                default=current.get(
-                    CONF_DEVICE_EXPECTED_RUNTIME_MINUTES,
-                    DEFAULT_DEVICE_EXPECTED_RUNTIME_MINUTES,
-                ),
-            ): _num(1, 1440, 5, "min"),
-            vol.Required(
-                CONF_DEVICE_MIN_ON_MINUTES,
-                default=current.get(
-                    CONF_DEVICE_MIN_ON_MINUTES, DEFAULT_DEVICE_MIN_ON_MINUTES
-                ),
-            ): _num(0, 240, 1, "min"),
-            vol.Required(
-                CONF_DEVICE_MIN_OFF_MINUTES,
-                default=current.get(
-                    CONF_DEVICE_MIN_OFF_MINUTES, DEFAULT_DEVICE_MIN_OFF_MINUTES
-                ),
-            ): _num(0, 240, 1, "min"),
-            vol.Required(
                 CONF_DEVICE_MIN_BATTERY_SOC,
                 default=current.get(
                     CONF_DEVICE_MIN_BATTERY_SOC, DEFAULT_DEVICE_MIN_BATTERY_SOC
@@ -232,6 +211,15 @@ def _basic_schema(current: dict[str, Any]) -> vol.Schema:
             ): selector.BooleanSelector(),
         }
     )
+
+    _optional(
+        fields,
+        CONF_DEVICE_EXPECTED_RUNTIME_MINUTES,
+        current,
+        _num(1, 1440, 5, "min"),
+    )
+    _optional(fields, CONF_DEVICE_MIN_ON_MINUTES, current, _num(0, 240, 1, "min"))
+    _optional(fields, CONF_DEVICE_MIN_OFF_MINUTES, current, _num(0, 240, 1, "min"))
     return vol.Schema(fields)
 
 
@@ -262,7 +250,6 @@ def _constraints_schema(current: dict[str, Any]) -> vol.Schema:
     _optional(fields, CONF_DEVICE_SCHEDULE_DEADLINE, current, selector.TimeSelector())
     _optional(fields, CONF_DEVICE_START_AFTER, current, selector.TimeSelector())
     _optional(fields, CONF_DEVICE_END_BEFORE, current, selector.TimeSelector())
-    _optional(fields, CONF_DEVICE_REQUIRES_ENTITY, current, _managed_entity())
     fields.update(
         {
             vol.Required(
@@ -301,50 +288,8 @@ def _constraints_schema(current: dict[str, Any]) -> vol.Schema:
     return vol.Schema(fields)
 
 
-def _advanced_schema(current: dict[str, Any]) -> vol.Schema:
-    fields: dict[Any, Any] = {
-        vol.Required(
-            CONF_DEVICE_DYNAMIC_CURRENT,
-            default=current.get(
-                CONF_DEVICE_DYNAMIC_CURRENT, DEFAULT_DEVICE_DYNAMIC_CURRENT
-            ),
-        ): selector.BooleanSelector(),
-    }
-    _optional(fields, CONF_DEVICE_CURRENT_ENTITY, current, _entity("number"))
-    fields.update(
-        {
-            vol.Required(
-                CONF_DEVICE_MIN_CURRENT_A,
-                default=current.get(
-                    CONF_DEVICE_MIN_CURRENT_A, DEFAULT_DEVICE_MIN_CURRENT_A
-                ),
-            ): _num(1, 64, 1, "A"),
-            vol.Required(
-                CONF_DEVICE_MAX_CURRENT_A,
-                default=current.get(
-                    CONF_DEVICE_MAX_CURRENT_A, DEFAULT_DEVICE_MAX_CURRENT_A
-                ),
-            ): _num(1, 64, 1, "A"),
-        }
-    )
-    _optional(fields, CONF_DEVICE_EV_SOC_SENSOR, current, _entity("sensor"))
-    _optional(
-        fields,
-        CONF_DEVICE_EV_CONNECTED_SENSOR,
-        current,
-        _entity("binary_sensor"),
-    )
-    fields[
-        vol.Required(
-            CONF_DEVICE_EV_TARGET_SOC,
-            default=current.get(CONF_DEVICE_EV_TARGET_SOC, DEFAULT_DEVICE_EV_TARGET_SOC),
-        )
-    ] = _num(0, 100, 1, "%")
-    return vol.Schema(fields)
-
-
 class ManagedDeviceSubentryFlow(ConfigSubentryFlow):
-    """Configure one managed appliance using standard HA subentry steps."""
+    """Configure one managed appliance using two focused HA subentry steps."""
 
     def __init__(self) -> None:
         super().__init__()
@@ -375,10 +320,11 @@ class ManagedDeviceSubentryFlow(ConfigSubentryFlow):
         self._reconfigure = reconfigure
         if reconfigure and not self._values:
             self._values.update(self._get_reconfigure_subentry().data)
+            _remove_legacy_features(self._values)
 
         errors: dict[str, str] = {}
         if user_input is not None:
-            values = dict(user_input)
+            values = _clean_optional(dict(user_input), OPTIONAL_BASIC_NUMBERS)
             values[CONF_DEVICE_NAME] = str(values.get(CONF_DEVICE_NAME, "")).strip()
             values[CONF_DEVICE_PRIORITY] = _priority(values.get(CONF_DEVICE_PRIORITY))
 
@@ -410,6 +356,7 @@ class ManagedDeviceSubentryFlow(ConfigSubentryFlow):
 
             if not errors:
                 self._values.update(values)
+                _remove_legacy_features(self._values)
                 return await self.async_step_constraints()
             self._values.update(values)
 
@@ -422,70 +369,20 @@ class ManagedDeviceSubentryFlow(ConfigSubentryFlow):
     async def async_step_constraints(
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
-        """Collect scheduling and anti-preemption constraints."""
+        """Collect the useful daily scheduling and protection constraints."""
         errors: dict[str, str] = {}
         if user_input is not None:
-            values = dict(user_input)
-            for key in (
-                CONF_DEVICE_SCHEDULE_DEADLINE,
-                CONF_DEVICE_START_AFTER,
-                CONF_DEVICE_END_BEFORE,
-                CONF_DEVICE_REQUIRES_ENTITY,
-            ):
-                if values.get(key) in (None, ""):
-                    values.pop(key, None)
+            values = _clean_optional(dict(user_input), OPTIONAL_CONSTRAINT_KEYS)
 
             if float(values.get(CONF_DEVICE_MIN_DAILY_RUNTIME_MINUTES, 0)) > float(
                 values.get(CONF_DEVICE_MAX_DAILY_RUNTIME_MINUTES, 1440)
             ):
                 errors[CONF_DEVICE_MAX_DAILY_RUNTIME_MINUTES] = "invalid_runtime_range"
 
-            if values.get(CONF_DEVICE_REQUIRES_ENTITY) == self._values.get(
-                CONF_DEVICE_ENTITY
-            ):
-                errors[CONF_DEVICE_REQUIRES_ENTITY] = "dependency_self"
-
             if not errors:
                 self._values.update(values)
-                return await self.async_step_advanced()
-            self._values.update(values)
-
-        return self.async_show_form(
-            step_id="constraints",
-            data_schema=_constraints_schema(self._values),
-            errors=errors,
-        )
-
-    async def async_step_advanced(
-        self, user_input: dict[str, Any] | None = None
-    ) -> SubentryFlowResult:
-        """Collect optional EV/current-control settings and save."""
-        errors: dict[str, str] = {}
-        if user_input is not None:
-            values = dict(user_input)
-            for key in (
-                CONF_DEVICE_CURRENT_ENTITY,
-                CONF_DEVICE_EV_SOC_SENSOR,
-                CONF_DEVICE_EV_CONNECTED_SENSOR,
-            ):
-                if values.get(key) in (None, ""):
-                    values.pop(key, None)
-
-            if float(
-                values.get(CONF_DEVICE_MIN_CURRENT_A, DEFAULT_DEVICE_MIN_CURRENT_A)
-            ) > float(
-                values.get(CONF_DEVICE_MAX_CURRENT_A, DEFAULT_DEVICE_MAX_CURRENT_A)
-            ):
-                errors[CONF_DEVICE_MAX_CURRENT_A] = "invalid_current_range"
-
-            if values.get(CONF_DEVICE_DYNAMIC_CURRENT) and not values.get(
-                CONF_DEVICE_CURRENT_ENTITY
-            ):
-                errors[CONF_DEVICE_CURRENT_ENTITY] = "current_entity_required"
-
-            if not errors:
-                self._values.update(values)
-                self._values.setdefault(CONF_DEVICE_SWITCH_INTERVAL_SECONDS, 0)
+                _remove_legacy_features(self._values)
+                self._values[CONF_DEVICE_SWITCH_INTERVAL_SECONDS] = 0
                 if self._reconfigure:
                     return self.async_update_and_abort(
                         self._get_entry(),
@@ -501,8 +398,8 @@ class ManagedDeviceSubentryFlow(ConfigSubentryFlow):
             self._values.update(values)
 
         return self.async_show_form(
-            step_id="advanced",
-            data_schema=_advanced_schema(self._values),
+            step_id="constraints",
+            data_schema=_constraints_schema(self._values),
             errors=errors,
             last_step=True,
         )
