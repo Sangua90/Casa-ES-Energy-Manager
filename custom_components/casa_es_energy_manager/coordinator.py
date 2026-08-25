@@ -49,6 +49,7 @@ from .const import (
     DOMAIN,
     UPDATE_INTERVAL_SECONDS,
 )
+from .forecast_units import normalize_forecast_measure
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -109,6 +110,22 @@ class CasaESEnergyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             elif unit == "MWh":
                 value *= 1_000.0
         return value
+
+    def _forecast_measure(
+        self, entity_id: str | None
+    ) -> tuple[float | None, float | None]:
+        """Read an hourly forecast as either power W or energy kWh.
+
+        Power and energy are intentionally kept distinct. A value in watts is
+        never silently converted into kWh.
+        """
+        if not entity_id:
+            return None, None
+        state = self.hass.states.get(entity_id)
+        if state is None or state.state in (STATE_UNKNOWN, STATE_UNAVAILABLE):
+            return None, None
+        unit = state.attributes.get(ATTR_UNIT_OF_MEASUREMENT)
+        return normalize_forecast_measure(state.state, str(unit) if unit else None)
 
     def _entity_snapshot(self, entity_id: str) -> dict[str, Any]:
         """Return a compact, safe context snapshot for an arbitrary entity."""
@@ -196,11 +213,11 @@ class CasaESEnergyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         forecast_remaining = self._numeric_state(
             self._config(CONF_PV_FORECAST_REMAINING_TODAY_SENSOR), energy=True
         )
-        forecast_current_hour = self._numeric_state(
-            self._config(CONF_PV_FORECAST_CURRENT_HOUR_SENSOR), energy=True
+        forecast_current_power, forecast_current_energy = self._forecast_measure(
+            self._config(CONF_PV_FORECAST_CURRENT_HOUR_SENSOR)
         )
-        forecast_next_hour = self._numeric_state(
-            self._config(CONF_PV_FORECAST_NEXT_HOUR_SENSOR), energy=True
+        forecast_next_power, forecast_next_energy = self._forecast_measure(
+            self._config(CONF_PV_FORECAST_NEXT_HOUR_SENSOR)
         )
         forecast_today = self._numeric_state(
             self._config(CONF_PV_FORECAST_TODAY_SENSOR), energy=True
@@ -228,8 +245,10 @@ class CasaESEnergyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "phase_l3_power_w": phase_l3,
             "pv_potential_input_w": pv_potential,
             "forecast_remaining_kwh": forecast_remaining,
-            "forecast_current_hour_kwh": forecast_current_hour,
-            "forecast_next_hour_kwh": forecast_next_hour,
+            "forecast_current_hour_power_w": forecast_current_power,
+            "forecast_current_hour_kwh": forecast_current_energy,
+            "forecast_next_hour_power_w": forecast_next_power,
+            "forecast_next_hour_kwh": forecast_next_energy,
             "forecast_today_kwh": forecast_today,
             "forecast_tomorrow_kwh": forecast_tomorrow,
             "forecast_curve": forecast_curve,
