@@ -50,11 +50,33 @@ class PlannerPolicyTests(unittest.TestCase):
             {"time": (self.now + timedelta(hours=1)).isoformat(), "power_w": 1000},
             {"time": target.isoformat(), "power_w": 1000},
         ]
-        energy, complete = integrate_forecast_curve_kwh(
-            curve, now=self.now, target=target
-        )
+        energy, complete = integrate_forecast_curve_kwh(curve, now=self.now, target=target)
         self.assertEqual(energy, 2.0)
         self.assertTrue(complete)
+
+    def test_energy_balance_subtracts_base_load_and_charge_losses(self):
+        target = self.now + timedelta(hours=4)
+        data = self._base_data()
+        data["forecast_curve"] = [
+            {"time": self.now.isoformat(), "power_w": 4000},
+            {"time": target.isoformat(), "power_w": 4000},
+        ]
+        policy = build_planner_policy(
+            data,
+            now=self.now,
+            target=target,
+            battery_capacity_kwh=14.3,
+            battery_target_soc=100,
+            expected_base_load_w=500,
+            battery_charge_efficiency_pct=95,
+        )
+        self.assertEqual(policy["forecast_energy_to_target_kwh"], 16.0)
+        self.assertEqual(policy["base_load_energy_to_target_kwh"], 2.0)
+        self.assertAlmostEqual(policy["battery_energy_needed_kwh"], 2.86, places=3)
+        self.assertAlmostEqual(policy["battery_input_energy_needed_kwh"], 3.011, places=3)
+        self.assertAlmostEqual(policy["forecast_margin_after_base_load_kwh"], 10.989, places=3)
+        self.assertAlmostEqual(policy["flexible_energy_budget_kwh"], 9.989, places=3)
+        self.assertEqual(policy["target_reachability"], "comfortable")
 
     def test_integrates_curve_across_midnight_to_next_day_target(self):
         now = datetime(2026, 8, 25, 18, 0, tzinfo=timezone.utc)
@@ -94,9 +116,31 @@ class PlannerPolicyTests(unittest.TestCase):
             battery_target_soc=100,
         )
         self.assertTrue(policy["forecast_curve_complete_to_target"])
-        self.assertGreater(policy["forecast_energy_to_target_kwh"], 3.003)
+        self.assertGreater(policy["forecast_margin_after_base_load_kwh"], 1.5)
+        self.assertGreater(policy["flexible_energy_budget_kwh"], 0)
         self.assertFalse(policy["grid_charge_allowed"])
         self.assertFalse(policy["battery_first_preferred"])
+
+    def test_base_load_can_create_definite_shortfall(self):
+        target = self.now + timedelta(hours=3)
+        data = self._base_data()
+        data["battery_soc"] = 80
+        data["forecast_curve"] = [
+            {"time": self.now.isoformat(), "power_w": 1500},
+            {"time": target.isoformat(), "power_w": 1500},
+        ]
+        policy = build_planner_policy(
+            data,
+            now=self.now,
+            target=target,
+            battery_capacity_kwh=14.3,
+            battery_target_soc=100,
+            expected_base_load_w=1000,
+            battery_charge_efficiency_pct=95,
+        )
+        self.assertEqual(policy["target_reachability"], "definite_shortfall")
+        self.assertTrue(policy["grid_charge_allowed"])
+        self.assertEqual(policy["flexible_energy_budget_kwh"], 0.0)
 
     def test_protect_grid_not_allowed_with_large_headroom(self):
         data = self._base_data()
@@ -126,11 +170,7 @@ class PlannerPolicyTests(unittest.TestCase):
         )
         self.assertTrue(policy["protect_grid_required"])
         guarded = apply_ai_guardrails(
-            {
-                "strategy": "balanced",
-                "allow_flexible_loads": True,
-                "grid_charge_recommended": True,
-            },
+            {"strategy": "balanced", "allow_flexible_loads": True, "grid_charge_recommended": True},
             policy,
         )
         self.assertEqual(guarded["strategy"], "protect_grid")
