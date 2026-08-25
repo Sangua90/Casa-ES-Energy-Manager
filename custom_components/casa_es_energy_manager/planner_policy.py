@@ -18,6 +18,7 @@ SOLAR_LOW_W = 800.0
 SOLAR_USEFUL_W = 2500.0
 DEFINITE_SHORTFALL_MARGIN_KWH = 0.25
 BATTERY_FIRST_MARGIN_KWH = 1.5
+FLEXIBLE_ENERGY_SAFETY_BUFFER_KWH = 1.0
 
 
 def _float(value: Any) -> float | None:
@@ -33,11 +34,7 @@ def integrate_forecast_curve_kwh(
     now: datetime,
     target: datetime,
 ) -> tuple[float | None, bool]:
-    """Integrate a power forecast curve up to target using trapezoids.
-
-    Returns ``(energy_kwh, complete_to_target)``. The result is only considered
-    complete when the curve reaches the requested target time.
-    """
+    """Integrate a power forecast curve up to target using trapezoids."""
     points: list[tuple[datetime, float]] = []
     for item in curve:
         if not isinstance(item, dict):
@@ -65,11 +62,9 @@ def integrate_forecast_curve_kwh(
         if time_a >= target:
             break
         end = min(time_b, target)
-        if end <= time_a:
+        if end <= time_a or time_b == time_a:
             continue
         duration_h = (end - time_a).total_seconds() / 3600.0
-        if time_b == time_a:
-            continue
         if end < time_b:
             fraction = (end - time_a).total_seconds() / (time_b - time_a).total_seconds()
             end_power = power_a + (power_b - power_a) * fraction
@@ -94,11 +89,20 @@ def build_planner_policy(
     target: datetime,
     battery_capacity_kwh: float,
     battery_target_soc: float,
+    expected_base_load_w: float = 500.0,
+    battery_charge_efficiency_pct: float = 95.0,
 ) -> dict[str, Any]:
-    """Build deterministic facts that constrain the advisory AI planner."""
+    """Build deterministic energy facts that constrain the advisory AI planner."""
     soc = _float(data.get("battery_soc")) or 0.0
-    energy_needed = max(battery_target_soc - soc, 0.0) / 100.0 * battery_capacity_kwh
+    battery_energy_needed = (
+        max(battery_target_soc - soc, 0.0) / 100.0 * battery_capacity_kwh
+    )
     hours_to_target = max((target - now).total_seconds() / 3600.0, 0.0)
+
+    base_load_w = max(float(expected_base_load_w), 0.0)
+    base_load_energy = base_load_w * hours_to_target / 1000.0
+    efficiency = max(0.5, min(float(battery_charge_efficiency_pct) / 100.0, 1.0))
+    battery_input_energy_needed = battery_energy_needed / efficiency
 
     grid_headroom = _float(data.get("grid_headroom_w"))
     inverter_headroom = _float(data.get("inverter_headroom_w"))
@@ -120,25 +124,13 @@ def build_planner_policy(
     )
     protection_allowed = warning or bool(
         (grid_headroom is not None and grid_headroom <= GRID_HEADROOM_PROTECT_W)
-        or (
-            inverter_headroom is not None
-            and inverter_headroom <= INVERTER_HEADROOM_PROTECT_W
-        )
-        or (
-            min_phase_headroom is not None
-            and min_phase_headroom <= PHASE_HEADROOM_PROTECT_W
-        )
+        or (inverter_headroom is not None and inverter_headroom <= INVERTER_HEADROOM_PROTECT_W)
+        or (min_phase_headroom is not None and min_phase_headroom <= PHASE_HEADROOM_PROTECT_W)
     )
     protection_required = warning or bool(
         (grid_headroom is not None and grid_headroom <= GRID_HEADROOM_CRITICAL_W)
-        or (
-            inverter_headroom is not None
-            and inverter_headroom <= INVERTER_HEADROOM_CRITICAL_W
-        )
-        or (
-            min_phase_headroom is not None
-            and min_phase_headroom <= PHASE_HEADROOM_CRITICAL_W
-        )
+        or (inverter_headroom is not None and inverter_headroom <= INVERTER_HEADROOM_CRITICAL_W)
+        or (min_phase_headroom is not None and min_phase_headroom <= PHASE_HEADROOM_CRITICAL_W)
     )
 
     if protection_required:
@@ -167,25 +159,41 @@ def build_planner_policy(
     forecast_to_target, curve_complete = integrate_forecast_curve_kwh(
         data.get("forecast_curve") or [], now=now, target=target
     )
-    forecast_margin = (
-        round(forecast_to_target - energy_needed, 3)
-        if forecast_to_target is not None and curve_complete
-        else None
-    )
+
+    margin_before_base = None
+    margin_after_base = None
+    flexible_budget = None
+    if forecast_to_target is not None and curve_complete:
+        margin_before_base = round(forecast_to_target - battery_input_energy_needed, 3)
+        margin_after_base = round(
+            forecast_to_target - battery_input_energy_needed - base_load_energy, 3
+        )
+        flexible_budget = round(
+            max(margin_after_base - FLEXIBLE_ENERGY_SAFETY_BUFFER_KWH, 0.0), 3
+        )
 
     definite_shortfall = bool(
         curve_complete
-        and forecast_margin is not None
-        and forecast_margin < -DEFINITE_SHORTFALL_MARGIN_KWH
+        and margin_after_base is not None
+        and margin_after_base < -DEFINITE_SHORTFALL_MARGIN_KWH
     )
+    if not curve_complete or margin_after_base is None:
+        target_reachability = "unknown"
+    elif definite_shortfall:
+        target_reachability = "definite_shortfall"
+    elif margin_after_base <= BATTERY_FIRST_MARGIN_KWH:
+        target_reachability = "tight"
+    else:
+        target_reachability = "comfortable"
+
     grid_charge_allowed = bool(
         definite_shortfall and hours_to_target <= 6.0 and soc < battery_target_soc
     )
     battery_first_preferred = bool(
         soc < battery_target_soc
         and curve_complete
-        and forecast_margin is not None
-        and forecast_margin <= BATTERY_FIRST_MARGIN_KWH
+        and margin_after_base is not None
+        and margin_after_base <= BATTERY_FIRST_MARGIN_KWH
     )
 
     potential_after_house = _float(data.get("pv_potential_after_house_w")) or 0.0
@@ -201,12 +209,19 @@ def build_planner_policy(
         fallback_strategy = "balanced"
 
     return {
-        "battery_energy_needed_kwh": round(energy_needed, 3),
+        "battery_energy_needed_kwh": round(battery_energy_needed, 3),
+        "battery_input_energy_needed_kwh": round(battery_input_energy_needed, 3),
+        "battery_charge_efficiency_pct": round(efficiency * 100.0, 1),
         "hours_to_target": round(hours_to_target, 2),
+        "expected_base_load_w": round(base_load_w, 1),
+        "base_load_energy_to_target_kwh": round(base_load_energy, 3),
         "forecast_energy_to_target_kwh": forecast_to_target,
         "forecast_curve_complete_to_target": curve_complete,
-        "forecast_margin_before_base_load_kwh": forecast_margin,
-        "target_reachability": "definite_shortfall" if definite_shortfall else "not_proven_shortfall",
+        "forecast_margin_before_base_load_kwh": margin_before_base,
+        "forecast_margin_after_base_load_kwh": margin_after_base,
+        "flexible_energy_budget_kwh": flexible_budget,
+        "flexible_energy_safety_buffer_kwh": FLEXIBLE_ENERGY_SAFETY_BUFFER_KWH,
+        "target_reachability": target_reachability,
         "grid_pressure": grid_pressure,
         "protect_grid_allowed": protection_allowed,
         "protect_grid_required": protection_required,
@@ -236,10 +251,10 @@ def apply_ai_guardrails(
         guardrail_reason = "protect_grid rifiutata: margini rete/fasi/inverter normali."
     elif strategy == "grid_charge" and not policy.get("grid_charge_allowed"):
         strategy = str(policy.get("fallback_strategy") or "balanced")
-        guardrail_reason = "grid_charge rifiutata: carenza FV al target non dimostrata."
+        guardrail_reason = "grid_charge rifiutata: carenza energetica al target non dimostrata."
 
     allow_flexible = bool(generated.get("allow_flexible_loads", False))
-    if policy.get("protect_grid_required"):
+    if policy.get("protect_grid_required") or policy.get("target_reachability") == "definite_shortfall":
         allow_flexible = False
 
     grid_charge_recommended = bool(generated.get("grid_charge_recommended", False))
