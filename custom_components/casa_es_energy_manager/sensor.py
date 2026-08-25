@@ -14,7 +14,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, NAME, VERSION
-from .coordinator import CasaESEnergyCoordinator
+from .coordinator_v1 import CasaESEnergyCoordinator
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -27,16 +27,8 @@ class CasaESSensorDescription:
     attributes_key: str | None = None
 
 
-_POWER = {
-    "unit": UnitOfPower.WATT,
-    "device_class": SensorDeviceClass.POWER,
-    "state_class": SensorStateClass.MEASUREMENT,
-}
-_ENERGY = {
-    "unit": UnitOfEnergy.KILO_WATT_HOUR,
-    "device_class": SensorDeviceClass.ENERGY,
-    "state_class": SensorStateClass.MEASUREMENT,
-}
+_POWER = {"unit": UnitOfPower.WATT, "device_class": SensorDeviceClass.POWER, "state_class": SensorStateClass.MEASUREMENT}
+_ENERGY = {"unit": UnitOfEnergy.KILO_WATT_HOUR, "device_class": SensorDeviceClass.ENERGY, "state_class": SensorStateClass.MEASUREMENT}
 
 SENSORS = (
     CasaESSensorDescription(key="solar_after_house_w", name="FV misurato dopo i carichi casa", **_POWER),
@@ -67,6 +59,7 @@ SENSORS = (
     CasaESSensorDescription(key="phase_other_load_l2_w", name="Altri carichi fase L2", **_POWER),
     CasaESSensorDescription(key="phase_other_load_l3_w", name="Altri carichi fase L3", **_POWER),
     CasaESSensorDescription(key="status", name="Stato gestore energia"),
+    CasaESSensorDescription(key="energy_preference", name="Preferenza energetica"),
     CasaESSensorDescription(key="ai_status", name="Stato planner AI"),
     CasaESSensorDescription(key="ai_strategy", name="Strategia AI finale"),
     CasaESSensorDescription(key="ai_raw_strategy", name="Strategia AI grezza"),
@@ -85,41 +78,33 @@ SENSORS = (
     CasaESSensorDescription(key="planner_target_reachability", name="Raggiungibilità target batteria"),
     CasaESSensorDescription(key="planner_grid_pressure", name="Pressione elettrica planner"),
     CasaESSensorDescription(key="planner_solar_state", name="Stato FV planner"),
-    CasaESSensorDescription(
-        key="dry_run_status",
-        name="Stato dry-run dispositivi",
-        attributes_key="dry_run_decisions",
-    ),
+    CasaESSensorDescription(key="dry_run_status", name="Stato dry-run dispositivi", attributes_key="dry_run_decisions"),
     CasaESSensorDescription(key="managed_device_count", name="Dispositivi gestiti dry-run"),
     CasaESSensorDescription(key="managed_devices_running", name="Dispositivi gestiti già attivi"),
     CasaESSensorDescription(key="managed_devices_admissible_now", name="Dispositivi ammessi ora dry-run"),
     CasaESSensorDescription(key="managed_devices_waiting", name="Dispositivi in attesa dry-run"),
+    CasaESSensorDescription(key="managed_devices_override", name="Dispositivi in OVERRIDE"),
+    CasaESSensorDescription(key="managed_devices_forced_off", name="Dispositivi in OFF"),
     CasaESSensorDescription(key="dry_run_solar_opportunity_w", name="Potenza FV disponibile per nuovi carichi dry-run", **_POWER),
     CasaESSensorDescription(key="dry_run_running_energy_commitment_kwh", name="Impegno energia dispositivi già attivi", **_ENERGY),
+    CasaESSensorDescription(key="manual_override_running_energy_commitment_kwh", name="Impegno energia carichi manuali in OVERRIDE", **_ENERGY),
     CasaESSensorDescription(key="dry_run_remaining_flexible_budget_kwh", name="Budget flessibile residuo dry-run", **_ENERGY),
+    CasaESSensorDescription(key="emergency_charge_power_w", name="Potenza ricarica emergenza impostata", **_POWER),
+    CasaESSensorDescription(key="emergency_charge_target_soc", name="SOC obiettivo ricarica emergenza", unit=PERCENTAGE, state_class=SensorStateClass.MEASUREMENT),
+    CasaESSensorDescription(key="emergency_charge_deadline", name="Scadenza ricarica emergenza"),
+    CasaESSensorDescription(key="emergency_charge_stop_reason", name="Motivo ultimo arresto ricarica emergenza"),
 )
 
 
-async def async_setup_entry(
-    hass: HomeAssistant,
-    entry: ConfigEntry,
-    async_add_entities: AddEntitiesCallback,
-) -> None:
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
     coordinator: CasaESEnergyCoordinator = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities(
-        CasaESEnergySensor(coordinator, entry, description) for description in SENSORS
-    )
+    async_add_entities(CasaESEnergySensor(coordinator, entry, description) for description in SENSORS)
 
 
 class CasaESEnergySensor(CoordinatorEntity[CasaESEnergyCoordinator], SensorEntity):
     _attr_has_entity_name = True
 
-    def __init__(
-        self,
-        coordinator: CasaESEnergyCoordinator,
-        entry: ConfigEntry,
-        description: CasaESSensorDescription,
-    ) -> None:
+    def __init__(self, coordinator: CasaESEnergyCoordinator, entry: ConfigEntry, description: CasaESSensorDescription) -> None:
         super().__init__(coordinator)
         self.description = description
         self._attr_unique_id = f"{entry.entry_id}_{description.key}"
@@ -141,7 +126,6 @@ class CasaESEnergySensor(CoordinatorEntity[CasaESEnergyCoordinator], SensorEntit
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
-        """Expose detailed per-device dry-run decisions on the summary sensor."""
         if not self.description.attributes_key:
             return None
         value = self.coordinator.data.get(self.description.attributes_key)
