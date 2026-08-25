@@ -15,7 +15,9 @@ class TestUIContract(unittest.TestCase):
     """Keep the HACS UI contract explicit and regression-safe."""
 
     def setUp(self) -> None:
-        self.strings = json.loads((INTEGRATION / "strings.json").read_text(encoding="utf-8"))
+        self.strings = json.loads(
+            (INTEGRATION / "strings.json").read_text(encoding="utf-8")
+        )
         self.it = json.loads(
             (INTEGRATION / "translations" / "it.json").read_text(encoding="utf-8")
         )
@@ -74,13 +76,12 @@ class TestUIContract(unittest.TestCase):
         }
         managed_optional = {
             "power_sensor",
+            "expected_runtime_minutes",
+            "min_on_minutes",
+            "min_off_minutes",
             "schedule_deadline",
             "start_after",
             "end_before",
-            "requires_entity",
-            "current_entity",
-            "ev_soc_sensor",
-            "ev_connected_sensor",
         }
 
         all_config_labels: dict[str, str] = {}
@@ -106,27 +107,56 @@ class TestUIContract(unittest.TestCase):
         self.assertIn("monitorato", monitored)
         self.assertIn("solo lettura", monitored)
 
-    def test_subentry_step_ids_match_home_assistant_pattern(self) -> None:
-        """Initial and reconfigure steps must use the standard HA ids."""
+    def test_managed_flow_is_two_steps_without_ev_or_dependency(self) -> None:
+        """v1.1 must stay focused on the loads actually managed in Casa ES."""
         managed_steps = self.it["config_subentries"]["managed_device"]["step"]
         monitored_steps = self.it["config_subentries"]["monitored_load"]["step"]
-        self.assertTrue({"user", "reconfigure", "constraints", "advanced"} <= set(managed_steps))
+        self.assertTrue({"user", "reconfigure", "constraints"} <= set(managed_steps))
+        self.assertNotIn("advanced", managed_steps)
         self.assertTrue({"user", "reconfigure"} <= set(monitored_steps))
 
-        managed_source = (INTEGRATION / "managed_device_flow_v1.py").read_text(encoding="utf-8")
-        self.assertIn('step_id="user"', managed_source)
-        self.assertNotIn(
-            "vol.Required(CONF_DEVICE_ENTITY, default=current.get(CONF_DEVICE_ENTITY))",
-            managed_source,
+        all_fields: set[str] = set()
+        for step in managed_steps.values():
+            all_fields.update(step.get("data", {}))
+        removed = {
+            "requires_entity",
+            "dynamic_current",
+            "current_entity",
+            "min_current_a",
+            "max_current_a",
+            "ev_soc_sensor",
+            "ev_connected_sensor",
+            "ev_target_soc",
+        }
+        self.assertTrue(removed.isdisjoint(all_fields))
+
+        managed_source = (INTEGRATION / "managed_device_flow_v1.py").read_text(
+            encoding="utf-8"
         )
+        self.assertIn('step_id="user"', managed_source)
+        self.assertNotIn("async_step_advanced", managed_source)
+
+    def test_priority_and_optional_cycle_contract(self) -> None:
+        managed = self.it["config_subentries"]["managed_device"]["step"]["user"]
+        self.assertIn("1-100", managed["data"]["priority"])
+        self.assertIn("1 a 100", managed["data_description"]["priority"])
+        for key in (
+            "expected_runtime_minutes",
+            "min_on_minutes",
+            "min_off_minutes",
+        ):
+            self.assertIn("*", managed["data"][key])
+            self.assertIn("Facoltativo", managed["data_description"][key])
 
     def test_manifest_and_const_versions_match(self) -> None:
-        manifest = json.loads((INTEGRATION / "manifest.json").read_text(encoding="utf-8"))
+        manifest = json.loads(
+            (INTEGRATION / "manifest.json").read_text(encoding="utf-8")
+        )
         const_text = (INTEGRATION / "const.py").read_text(encoding="utf-8")
         match = re.search(r'^VERSION = "([^"]+)"$', const_text, re.MULTILINE)
         self.assertIsNotNone(match)
         self.assertEqual(manifest["version"], match.group(1))
-        self.assertEqual("1.0.2", manifest["version"])
+        self.assertEqual("1.1.0", manifest["version"])
 
 
 if __name__ == "__main__":
