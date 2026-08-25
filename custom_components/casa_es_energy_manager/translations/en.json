@@ -4,9 +4,9 @@
     "step": {
       "user": {
         "title": "Energy sensor mapping",
-        "description": "Select the sensors used to monitor PV, battery, grid and three-phase headroom.",
+        "description": "Select the main electrical sensors. Solar-potential and weather/context sensors are configured later in options.",
         "data": {
-          "pv_power_sensor": "PV power sensor",
+          "pv_power_sensor": "Measured PV power sensor from inverter",
           "load_power_sensor": "House/load power sensor",
           "grid_power_sensor": "Grid power sensor (positive = import)",
           "battery_soc_sensor": "Battery state of charge sensor",
@@ -24,13 +24,21 @@
   "options": {
     "step": {
       "init": {
-        "title": "Protection and AI planner",
-        "description": "The AI planner is advisory only and cannot control loads or the inverter. When enabled, it queries the selected AI Task entity at the configured interval.",
+        "title": "Sensors, protection and AI planner",
+        "description": "Measured PV remains separate from estimated potential PV. Forecast, weather and extra context help the planner maximize self-consumption when the zero-export inverter curtails the array. AI remains advisory only.",
         "data": {
           "inverter_power_limit": "Inverter total limit (W)",
           "phase_power_limit": "Per-phase working limit (W)",
           "grid_power_limit": "Grid working limit (W)",
           "safety_margin": "Safety margin subtracted from limits (W)",
+          "pv_potential_power_sensor": "Potential PV now - estimate without inverter curtailment (W)",
+          "pv_forecast_remaining_today_sensor": "Remaining PV energy forecast today (kWh)",
+          "pv_forecast_current_hour_sensor": "Current-hour PV energy forecast (kWh)",
+          "pv_forecast_next_hour_sensor": "Next-hour PV energy forecast (kWh)",
+          "pv_forecast_today_sensor": "Total PV energy forecast today (kWh)",
+          "pv_forecast_tomorrow_sensor": "PV energy forecast tomorrow (kWh)",
+          "weather_entity": "Weather entity for hourly forecast (optional)",
+          "extra_context_sensors": "Additional AI context sensors (weather, irradiance, temperature, wind, etc.)",
           "ai_enabled": "Enable advisory AI planner",
           "ai_interval_minutes": "AI planner interval (minutes)",
           "battery_capacity_kwh": "Battery capacity (kWh)",
