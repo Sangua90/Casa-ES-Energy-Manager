@@ -28,12 +28,13 @@
       "ai_task_not_found": "L'entità AI Task selezionata non è disponibile in Home Assistant.",
       "ai_task_unavailable": "Il servizio AI Task non è disponibile. Configura prima un provider AI compatibile, ad esempio Google Gemini.",
       "expected_power_sensor": "Questo campo richiede un sensore di potenza con unità W, kW o MW.",
-      "expected_energy_sensor": "Questo campo richiede un sensore di energia con unità Wh, kWh o MWh. Non usare un sensore di potenza in W."
+      "expected_energy_sensor": "Questo campo richiede un sensore di energia con unità Wh, kWh o MWh.",
+      "expected_forecast_sensor": "Questo campo accetta una previsione di potenza (W/kW/MW) oppure energia (Wh/kWh/MWh)."
     },
     "step": {
       "init": {
         "title": "Sensori, protezione e planner AI",
-        "description": "Puoi correggere qui anche i sensori elettrici principali. Il FV misurato deve essere la produzione reale dell'inverter; il FV potenziale è invece la stima di ciò che i pannelli potrebbero produrre senza limitazione zero-export. I campi energia richiedono Wh/kWh/MWh.",
+        "description": "Puoi correggere qui anche i sensori elettrici principali. Il FV misurato è la produzione reale dell'inverter; il FV potenziale è la stima senza limitazione zero-export. Ora corrente e prossima ora accettano sia W sia kWh e Casa ES mantiene automaticamente separate potenza ed energia.",
         "data": {
           "pv_power_sensor": "FV misurato reale dall'inverter (W)",
           "load_power_sensor": "Potenza carichi casa (W)",
@@ -48,11 +49,11 @@
           "grid_power_limit": "Limite operativo rete (W)",
           "safety_margin": "Margine di sicurezza sottratto ai limiti (W)",
           "pv_potential_power_sensor": "FV potenziale/forecast adesso (W) - non FV misurato",
-          "pv_forecast_remaining_today_sensor": "Energia FV residua prevista oggi (kWh)",
-          "pv_forecast_current_hour_sensor": "Energia FV prevista nell'ora corrente (kWh) - non potenza W",
-          "pv_forecast_next_hour_sensor": "Energia FV prevista nella prossima ora (kWh)",
-          "pv_forecast_today_sensor": "Energia FV prevista totale oggi (kWh)",
-          "pv_forecast_tomorrow_sensor": "Energia FV prevista domani (kWh)",
+          "pv_forecast_remaining_today_sensor": "Energia FV residua prevista oggi (Wh/kWh/MWh)",
+          "pv_forecast_current_hour_sensor": "Forecast FV ora corrente (W oppure Wh/kWh)",
+          "pv_forecast_next_hour_sensor": "Forecast FV prossima ora (W oppure Wh/kWh)",
+          "pv_forecast_today_sensor": "Energia FV prevista totale oggi (Wh/kWh/MWh)",
+          "pv_forecast_tomorrow_sensor": "Energia FV prevista domani (Wh/kWh/MWh)",
           "weather_entity": "Entità meteo per previsione oraria (opzionale)",
           "extra_context_sensors": "Sensori contesto aggiuntivi per AI (meteo, irraggiamento, temperatura, vento, ecc.)",
           "ai_enabled": "Abilita planner AI consultivo",
