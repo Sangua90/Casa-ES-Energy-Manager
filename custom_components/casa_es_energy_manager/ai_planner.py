@@ -15,13 +15,17 @@ from .const import (
     CONF_AI_INTERVAL_MINUTES,
     CONF_AI_TASK_ENTITY,
     CONF_BATTERY_CAPACITY_KWH,
+    CONF_BATTERY_CHARGE_EFFICIENCY_PCT,
     CONF_BATTERY_TARGET_HOUR,
     CONF_BATTERY_TARGET_SOC,
+    CONF_EXPECTED_BASE_LOAD_W,
     DEFAULT_AI_ENABLED,
     DEFAULT_AI_INTERVAL_MINUTES,
     DEFAULT_BATTERY_CAPACITY_KWH,
+    DEFAULT_BATTERY_CHARGE_EFFICIENCY_PCT,
     DEFAULT_BATTERY_TARGET_HOUR,
     DEFAULT_BATTERY_TARGET_SOC,
+    DEFAULT_EXPECTED_BASE_LOAD_W,
 )
 from .planner_policy import apply_ai_guardrails, build_planner_policy
 
@@ -40,12 +44,7 @@ ALLOWED_STRATEGIES = {
 class CasaESAIPlanner:
     """Ask an AI Task entity for a read-only energy strategy."""
 
-    def __init__(
-        self,
-        hass: HomeAssistant,
-        entry: ConfigEntry,
-        coordinator: Any,
-    ) -> None:
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, coordinator: Any) -> None:
         self.hass = hass
         self.entry = entry
         self.coordinator = coordinator
@@ -62,9 +61,7 @@ class CasaESAIPlanner:
 
     @property
     def interval(self) -> timedelta:
-        minutes = int(
-            self._config(CONF_AI_INTERVAL_MINUTES, DEFAULT_AI_INTERVAL_MINUTES)
-        )
+        minutes = int(self._config(CONF_AI_INTERVAL_MINUTES, DEFAULT_AI_INTERVAL_MINUTES))
         return timedelta(minutes=max(15, minutes))
 
     @property
@@ -84,10 +81,9 @@ class CasaESAIPlanner:
                 blocking=True,
                 return_response=True,
             )
-        except Exception as err:  # Weather is optional context only.
+        except Exception as err:
             _LOGGER.debug("Weather forecast unavailable for AI context: %s", err)
             return []
-
         if not isinstance(response, dict):
             return []
         entity_result = response.get(weather_entity)
@@ -100,14 +96,17 @@ class CasaESAIPlanner:
 
     async def _planner_context(self) -> dict[str, Any]:
         data = self.coordinator.data or {}
-        capacity_kwh = float(
-            self._config(CONF_BATTERY_CAPACITY_KWH, DEFAULT_BATTERY_CAPACITY_KWH)
+        capacity_kwh = float(self._config(CONF_BATTERY_CAPACITY_KWH, DEFAULT_BATTERY_CAPACITY_KWH))
+        target_soc = float(self._config(CONF_BATTERY_TARGET_SOC, DEFAULT_BATTERY_TARGET_SOC))
+        target_hour = int(self._config(CONF_BATTERY_TARGET_HOUR, DEFAULT_BATTERY_TARGET_HOUR))
+        expected_base_load_w = float(
+            self._config(CONF_EXPECTED_BASE_LOAD_W, DEFAULT_EXPECTED_BASE_LOAD_W)
         )
-        target_soc = float(
-            self._config(CONF_BATTERY_TARGET_SOC, DEFAULT_BATTERY_TARGET_SOC)
-        )
-        target_hour = int(
-            self._config(CONF_BATTERY_TARGET_HOUR, DEFAULT_BATTERY_TARGET_HOUR)
+        charge_efficiency_pct = float(
+            self._config(
+                CONF_BATTERY_CHARGE_EFFICIENCY_PCT,
+                DEFAULT_BATTERY_CHARGE_EFFICIENCY_PCT,
+            )
         )
 
         now = dt_util.now()
@@ -121,6 +120,8 @@ class CasaESAIPlanner:
             target=target,
             battery_capacity_kwh=capacity_kwh,
             battery_target_soc=target_soc,
+            expected_base_load_w=expected_base_load_w,
+            battery_charge_efficiency_pct=charge_efficiency_pct,
         )
 
         weather_entity = data.get("weather_entity")
@@ -135,6 +136,10 @@ class CasaESAIPlanner:
             "battery_capacity_kwh": capacity_kwh,
             "battery_target_soc": target_soc,
             "battery_energy_needed_kwh": policy["battery_energy_needed_kwh"],
+            "battery_input_energy_needed_kwh": policy["battery_input_energy_needed_kwh"],
+            "expected_base_load_w": policy["expected_base_load_w"],
+            "base_load_energy_to_target_kwh": policy["base_load_energy_to_target_kwh"],
+            "battery_charge_efficiency_pct": policy["battery_charge_efficiency_pct"],
             "pv_measured_power_w": data.get("pv_power_w"),
             "pv_potential_power_w": data.get("pv_potential_w"),
             "pv_potential_gap_w": data.get("pv_potential_gap_w"),
@@ -172,20 +177,19 @@ class CasaESAIPlanner:
             "Sei il planner energetico consultivo di Casa ES. Non puoi comandare dispositivi, "
             "inverter o ricarica rete. Proponi una strategia per i prossimi 30 minuti usando "
             "solo i dati forniti. La sicurezza locale ha sempre priorità. Non inventare dati. "
-            "pv_measured_power_w è la produzione FV realmente erogata; pv_potential_power_w "
-            "è la produzione potenziale stimata senza limitazione zero-export. I campi "
-            "forecast_*_power_w sono potenza in W e forecast_*_energy_kwh sono energia in kWh: "
-            "non trattarli come equivalenti. La sezione policy è calcolata deterministicamente "
-            "da Casa ES ed è VINCOLANTE. Puoi scegliere protect_grid SOLO se "
-            "policy.protect_grid_allowed=true. Puoi scegliere grid_charge o consigliare "
-            "ricarica rete SOLO se policy.grid_charge_allowed=true. Se "
-            "policy.protect_grid_required=true devi scegliere protect_grid e vietare i carichi "
+            "La sezione policy è calcolata deterministicamente ed è VINCOLANTE. "
+            "forecast_margin_after_base_load_kwh sottrae dal FV previsto sia l'energia richiesta "
+            "alla batteria, corretta per efficienza, sia il consumo base previsto della casa. "
+            "flexible_energy_budget_kwh è il budget energetico prudente residuo per futuri carichi "
+            "flessibili dopo un buffer di sicurezza: usalo come riferimento energetico principale. "
+            "Puoi scegliere protect_grid SOLO se policy.protect_grid_allowed=true. Puoi scegliere "
+            "grid_charge o consigliarlo SOLO se policy.grid_charge_allowed=true. Se "
+            "policy.protect_grid_required=true devi scegliere protect_grid e vietare carichi "
             "flessibili. Non dire che il FV è assente a meno che policy.solar_state=absent. "
-            "Se policy.use_surplus_allowed=true puoi favorire autoconsumo, soprattutto con "
-            "pv_curtailment_likely=true. Se policy.battery_first_preferred=true considera "
-            "battery_first. Se manca un dato essenziale usa insufficient_data. Obiettivi: "
-            "1) sicurezza elettrica; 2) target batteria; 3) massimo autoconsumo FV; 4) carichi "
-            "flessibili. reason in italiano, massimo 180 caratteri.\n\n"
+            "Se policy.target_reachability=definite_shortfall non consentire carichi flessibili. "
+            "Se policy.battery_first_preferred=true considera battery_first. Se manca un dato "
+            "essenziale usa insufficient_data. Obiettivi: 1) sicurezza; 2) target batteria; "
+            "3) massimo autoconsumo FV; 4) carichi flessibili. reason in italiano, max 180 caratteri.\n\n"
             f"Dati correnti: {context}"
         )
 
@@ -193,10 +197,7 @@ class CasaESAIPlanner:
     def _structure() -> dict[str, Any]:
         return {
             "strategy": {
-                "description": (
-                    "Una tra battery_first, balanced, use_surplus, protect_grid, "
-                    "grid_charge, insufficient_data"
-                ),
+                "description": "Una tra battery_first, balanced, use_surplus, protect_grid, grid_charge, insufficient_data",
                 "required": True,
                 "selector": {"text": {}},
             },
@@ -304,15 +305,18 @@ class CasaESAIPlanner:
                     "ai_policy": policy,
                     "ai_raw_result": generated,
                     "battery_energy_needed_kwh": policy["battery_energy_needed_kwh"],
+                    "battery_input_energy_needed_kwh": policy["battery_input_energy_needed_kwh"],
+                    "base_load_energy_to_target_kwh": policy["base_load_energy_to_target_kwh"],
                     "forecast_energy_to_target_kwh": policy["forecast_energy_to_target_kwh"],
-                    "forecast_margin_before_base_load_kwh": policy[
-                        "forecast_margin_before_base_load_kwh"
-                    ],
+                    "forecast_margin_before_base_load_kwh": policy["forecast_margin_before_base_load_kwh"],
+                    "forecast_margin_after_base_load_kwh": policy["forecast_margin_after_base_load_kwh"],
+                    "flexible_energy_budget_kwh": policy["flexible_energy_budget_kwh"],
+                    "planner_target_reachability": policy["target_reachability"],
                     "planner_grid_pressure": policy["grid_pressure"],
                     "planner_solar_state": policy["solar_state"],
                 }
             )
-        except Exception as err:  # The advisor must never affect local control.
+        except Exception as err:
             _LOGGER.warning("AI planner update failed: %s", err)
             self.coordinator.update_ai_data(
                 {
