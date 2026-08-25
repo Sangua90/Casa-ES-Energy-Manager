@@ -28,7 +28,10 @@ cards:
         icon: mdi:battery-charging-high
         show_state: false
         tap_action:
-          action: toggle
+          action: perform-action
+          perform_action: button.press
+          target:
+            entity_id: button.SOSTITUISCI_AVVIA_RICARICA_EMERGENZA
           confirmation:
             text: Avviare la ricarica della batteria da Enel?
       - type: button
@@ -37,7 +40,10 @@ cards:
         icon: mdi:battery-off-outline
         show_state: false
         tap_action:
-          action: toggle
+          action: perform-action
+          perform_action: button.press
+          target:
+            entity_id: button.SOSTITUISCI_INTERROMPI_RICARICA_EMERGENZA
           confirmation:
             text: Interrompere la ricarica da Enel?
 
