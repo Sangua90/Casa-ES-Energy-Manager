@@ -76,6 +76,13 @@ CONF_DEVICE_EV_SOC_SENSOR = "ev_soc_sensor"
 CONF_DEVICE_EV_CONNECTED_SENSOR = "ev_connected_sensor"
 CONF_DEVICE_EV_TARGET_SOC = "ev_target_soc"
 
+# Read-only monitored loads: useful for phase attribution, never controlled.
+SUBENTRY_TYPE_MONITORED_LOAD = "monitored_load"
+CONF_MONITORED_LOAD_NAME = "name"
+CONF_MONITORED_LOAD_POWER_SENSOR = "power_sensor"
+CONF_MONITORED_LOAD_PHASE = "phase"
+CONF_MONITORED_LOAD_ENABLED = "enabled"
+
 # Numeric priority: 1 = highest, 10 = lowest.
 DEVICE_PRIORITY_MIN = 1
 DEVICE_PRIORITY_MAX = 10
@@ -113,6 +120,7 @@ DEFAULT_DEVICE_DYNAMIC_CURRENT = False
 DEFAULT_DEVICE_MIN_CURRENT_A = 6.0
 DEFAULT_DEVICE_MAX_CURRENT_A = 16.0
 DEFAULT_DEVICE_EV_TARGET_SOC = 80.0
+DEFAULT_MONITORED_LOAD_ENABLED = True
 
 # Read-only heuristic used only to flag a likely zero-export curtailment condition.
 CURTAILMENT_SOC_THRESHOLD = 98.0
