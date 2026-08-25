@@ -2,7 +2,7 @@
 
 DOMAIN = "casa_es_energy_manager"
 NAME = "Casa ES Energy Manager"
-VERSION = "0.4.2"
+VERSION = "1.0.0"
 
 # Core electrical sensors.
 CONF_PV_POWER_SENSOR = "pv_power_sensor"
@@ -26,11 +26,13 @@ CONF_PV_FORECAST_TOMORROW_SENSOR = "pv_forecast_tomorrow_sensor"
 CONF_WEATHER_ENTITY = "weather_entity"
 CONF_EXTRA_CONTEXT_SENSORS = "extra_context_sensors"
 
+# Electrical limits.
 CONF_INVERTER_POWER_LIMIT = "inverter_power_limit"
 CONF_PHASE_POWER_LIMIT = "phase_power_limit"
 CONF_GRID_POWER_LIMIT = "grid_power_limit"
 CONF_SAFETY_MARGIN = "safety_margin"
 
+# AI / battery planner.
 CONF_AI_ENABLED = "ai_enabled"
 CONF_AI_TASK_ENTITY = "ai_task_entity"
 CONF_AI_INTERVAL_MINUTES = "ai_interval_minutes"
@@ -39,8 +41,26 @@ CONF_BATTERY_TARGET_SOC = "battery_target_soc"
 CONF_BATTERY_TARGET_HOUR = "battery_target_hour"
 CONF_EXPECTED_BASE_LOAD_W = "expected_base_load_w"
 CONF_BATTERY_CHARGE_EFFICIENCY_PCT = "battery_charge_efficiency_pct"
+CONF_ENERGY_PREFERENCE = "energy_preference"
+ENERGY_PREFERENCE_BATTERY = "battery_first"
+ENERGY_PREFERENCE_BALANCED = "balanced"
+ENERGY_PREFERENCE_LOADS = "loads_first"
+ENERGY_PREFERENCES = (
+    ENERGY_PREFERENCE_BATTERY,
+    ENERGY_PREFERENCE_BALANCED,
+    ENERGY_PREFERENCE_LOADS,
+)
 
-# Managed flexible-load subentries (dry-run only).
+# Manual emergency grid-charge hooks. The integration calls user-configured HA
+# scripts so inverter-specific service details remain explicit and safe.
+CONF_EMERGENCY_CHARGE_START_SCRIPT = "emergency_charge_start_script"
+CONF_EMERGENCY_CHARGE_STOP_SCRIPT = "emergency_charge_stop_script"
+CONF_EMERGENCY_CHARGE_TARGET_SOC = "emergency_charge_target_soc"
+CONF_EMERGENCY_CHARGE_POWER_W = "emergency_charge_power_w"
+CONF_EMERGENCY_CHARGE_MAX_MINUTES = "emergency_charge_max_minutes"
+
+# Managed flexible-load subentries. Automatic real service calls remain disabled;
+# v1.0 validates behaviour through deterministic dry-run first.
 SUBENTRY_TYPE_MANAGED_DEVICE = "managed_device"
 CONF_DEVICE_NAME = "name"
 CONF_DEVICE_ENTITY = "entity_id"
@@ -52,6 +72,15 @@ CONF_DEVICE_EXPECTED_RUNTIME_MINUTES = "expected_runtime_minutes"
 CONF_DEVICE_MIN_BATTERY_SOC = "min_battery_soc"
 CONF_DEVICE_ALLOW_GRID = "allow_grid"
 CONF_DEVICE_ENABLED = "enabled"
+CONF_DEVICE_ADAPTIVE_POWER = "adaptive_power_profile"
+CONF_DEVICE_MIN_ON_MINUTES = "min_on_minutes"
+CONF_DEVICE_MIN_OFF_MINUTES = "min_off_minutes"
+
+# Runtime per-device modes exposed as select entities.
+DEVICE_MODE_AUTO = "auto"
+DEVICE_MODE_OVERRIDE = "override"
+DEVICE_MODE_OFF = "off"
+DEVICE_MODES = (DEVICE_MODE_AUTO, DEVICE_MODE_OVERRIDE, DEVICE_MODE_OFF)
 
 # Options retained from the original PV Excess appliance model.
 CONF_DEVICE_MIN_DAILY_RUNTIME_MINUTES = "min_daily_runtime_minutes"
@@ -66,7 +95,7 @@ CONF_DEVICE_BIG_CONSUMER = "big_consumer"
 CONF_DEVICE_BATTERY_DISCHARGE_OVERRIDE_W = "battery_discharge_override_w"
 CONF_DEVICE_ON_ONLY = "on_only"
 CONF_DEVICE_PROTECT_PREEMPTION = "protect_preemption"
-CONF_DEVICE_SWITCH_INTERVAL_SECONDS = "switch_interval_seconds"
+CONF_DEVICE_SWITCH_INTERVAL_SECONDS = "switch_interval_seconds"  # legacy compatibility
 CONF_DEVICE_MAX_GRID_POWER_W = "max_grid_power_w"
 CONF_DEVICE_DYNAMIC_CURRENT = "dynamic_current"
 CONF_DEVICE_CURRENT_ENTITY = "current_entity"
@@ -100,12 +129,22 @@ DEFAULT_BATTERY_TARGET_SOC = 100.0
 DEFAULT_BATTERY_TARGET_HOUR = 17
 DEFAULT_EXPECTED_BASE_LOAD_W = 500.0
 DEFAULT_BATTERY_CHARGE_EFFICIENCY_PCT = 95.0
+DEFAULT_ENERGY_PREFERENCE = ENERGY_PREFERENCE_BALANCED
+
+DEFAULT_EMERGENCY_CHARGE_TARGET_SOC = 100.0
+DEFAULT_EMERGENCY_CHARGE_POWER_W = 3000.0
+DEFAULT_EMERGENCY_CHARGE_MAX_MINUTES = 240
 
 DEFAULT_DEVICE_PRIORITY = 5
 DEFAULT_DEVICE_EXPECTED_RUNTIME_MINUTES = 60
 DEFAULT_DEVICE_MIN_BATTERY_SOC = 40.0
 DEFAULT_DEVICE_ALLOW_GRID = False
 DEFAULT_DEVICE_ENABLED = True
+DEFAULT_DEVICE_ADAPTIVE_POWER = True
+# Conservative anti-cycling defaults. They are especially appropriate for heat
+# pumps / inverter climates and can be reduced to zero for loads that do not need it.
+DEFAULT_DEVICE_MIN_ON_MINUTES = 20
+DEFAULT_DEVICE_MIN_OFF_MINUTES = 20
 DEFAULT_DEVICE_MIN_DAILY_RUNTIME_MINUTES = 0
 DEFAULT_DEVICE_MAX_DAILY_RUNTIME_MINUTES = 1440
 DEFAULT_DEVICE_MAX_DAILY_ACTIVATIONS = 0
@@ -114,13 +153,18 @@ DEFAULT_DEVICE_BIG_CONSUMER = False
 DEFAULT_DEVICE_BATTERY_DISCHARGE_OVERRIDE_W = 0.0
 DEFAULT_DEVICE_ON_ONLY = False
 DEFAULT_DEVICE_PROTECT_PREEMPTION = False
-DEFAULT_DEVICE_SWITCH_INTERVAL_SECONDS = 300
+DEFAULT_DEVICE_SWITCH_INTERVAL_SECONDS = 0
 DEFAULT_DEVICE_MAX_GRID_POWER_W = 0.0
 DEFAULT_DEVICE_DYNAMIC_CURRENT = False
 DEFAULT_DEVICE_MIN_CURRENT_A = 6.0
 DEFAULT_DEVICE_MAX_CURRENT_A = 16.0
 DEFAULT_DEVICE_EV_TARGET_SOC = 80.0
 DEFAULT_MONITORED_LOAD_ENABLED = True
+
+# Adaptive climate learning.
+ADAPTIVE_ACTIVE_POWER_THRESHOLD_W = 20.0
+ADAPTIVE_PROFILE_MIN_SAMPLES = 20
+ADAPTIVE_SAVE_EVERY_OBSERVATIONS = 60
 
 # Read-only heuristic used only to flag a likely zero-export curtailment condition.
 CURTAILMENT_SOC_THRESHOLD = 98.0
