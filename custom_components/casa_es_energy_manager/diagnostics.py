@@ -9,8 +9,14 @@ from homeassistant.const import ATTR_UNIT_OF_MEASUREMENT, STATE_UNAVAILABLE, STA
 from homeassistant.core import HomeAssistant
 
 from .const import (
+    CONF_AI_ENABLED,
+    CONF_AI_INTERVAL_MINUTES,
+    CONF_AI_TASK_ENTITY,
+    CONF_BATTERY_CAPACITY_KWH,
     CONF_BATTERY_POWER_SENSOR,
     CONF_BATTERY_SOC_SENSOR,
+    CONF_BATTERY_TARGET_HOUR,
+    CONF_BATTERY_TARGET_SOC,
     CONF_GRID_POWER_LIMIT,
     CONF_GRID_POWER_SENSOR,
     CONF_INVERTER_POWER_LIMIT,
@@ -21,6 +27,11 @@ from .const import (
     CONF_PHASE_POWER_LIMIT,
     CONF_PV_POWER_SENSOR,
     CONF_SAFETY_MARGIN,
+    DEFAULT_AI_ENABLED,
+    DEFAULT_AI_INTERVAL_MINUTES,
+    DEFAULT_BATTERY_CAPACITY_KWH,
+    DEFAULT_BATTERY_TARGET_HOUR,
+    DEFAULT_BATTERY_TARGET_SOC,
     DEFAULT_GRID_POWER_LIMIT,
     DEFAULT_INVERTER_POWER_LIMIT,
     DEFAULT_PHASE_POWER_LIMIT,
@@ -30,8 +41,8 @@ from .const import (
 )
 
 
-def _sensor_snapshot(hass: HomeAssistant, entity_id: str | None) -> dict[str, Any] | None:
-    """Return a compact snapshot of one configured source sensor."""
+def _entity_snapshot(hass: HomeAssistant, entity_id: str | None) -> dict[str, Any] | None:
+    """Return a compact snapshot of one configured source entity."""
     if not entity_id:
         return None
 
@@ -64,14 +75,14 @@ async def async_get_config_entry_diagnostics(
     coordinator = hass.data.get(DOMAIN, {}).get(entry.entry_id)
 
     inputs = {
-        "pv_power": _sensor_snapshot(hass, config.get(CONF_PV_POWER_SENSOR)),
-        "load_power": _sensor_snapshot(hass, config.get(CONF_LOAD_POWER_SENSOR)),
-        "grid_power": _sensor_snapshot(hass, config.get(CONF_GRID_POWER_SENSOR)),
-        "battery_soc": _sensor_snapshot(hass, config.get(CONF_BATTERY_SOC_SENSOR)),
-        "battery_power": _sensor_snapshot(hass, config.get(CONF_BATTERY_POWER_SENSOR)),
-        "phase_l1_power": _sensor_snapshot(hass, config.get(CONF_PHASE_L1_POWER_SENSOR)),
-        "phase_l2_power": _sensor_snapshot(hass, config.get(CONF_PHASE_L2_POWER_SENSOR)),
-        "phase_l3_power": _sensor_snapshot(hass, config.get(CONF_PHASE_L3_POWER_SENSOR)),
+        "pv_power": _entity_snapshot(hass, config.get(CONF_PV_POWER_SENSOR)),
+        "load_power": _entity_snapshot(hass, config.get(CONF_LOAD_POWER_SENSOR)),
+        "grid_power": _entity_snapshot(hass, config.get(CONF_GRID_POWER_SENSOR)),
+        "battery_soc": _entity_snapshot(hass, config.get(CONF_BATTERY_SOC_SENSOR)),
+        "battery_power": _entity_snapshot(hass, config.get(CONF_BATTERY_POWER_SENSOR)),
+        "phase_l1_power": _entity_snapshot(hass, config.get(CONF_PHASE_L1_POWER_SENSOR)),
+        "phase_l2_power": _entity_snapshot(hass, config.get(CONF_PHASE_L2_POWER_SENSOR)),
+        "phase_l3_power": _entity_snapshot(hass, config.get(CONF_PHASE_L3_POWER_SENSOR)),
     }
 
     limits = {
@@ -87,10 +98,26 @@ async def async_get_config_entry_diagnostics(
         "safety_margin_w": float(config.get(CONF_SAFETY_MARGIN, DEFAULT_SAFETY_MARGIN)),
     }
 
-    calculated: dict[str, Any] = {}
-    coordinator_status: dict[str, Any] = {
-        "loaded": coordinator is not None,
+    ai_planner = {
+        "enabled": bool(config.get(CONF_AI_ENABLED, DEFAULT_AI_ENABLED)),
+        "ai_task_entity": _entity_snapshot(hass, config.get(CONF_AI_TASK_ENTITY)),
+        "interval_minutes": int(
+            config.get(CONF_AI_INTERVAL_MINUTES, DEFAULT_AI_INTERVAL_MINUTES)
+        ),
+        "battery_capacity_kwh": float(
+            config.get(CONF_BATTERY_CAPACITY_KWH, DEFAULT_BATTERY_CAPACITY_KWH)
+        ),
+        "battery_target_soc": float(
+            config.get(CONF_BATTERY_TARGET_SOC, DEFAULT_BATTERY_TARGET_SOC)
+        ),
+        "battery_target_hour": int(
+            config.get(CONF_BATTERY_TARGET_HOUR, DEFAULT_BATTERY_TARGET_HOUR)
+        ),
+        "advisory_only": True,
     }
+
+    calculated: dict[str, Any] = {}
+    coordinator_status: dict[str, Any] = {"loaded": coordinator is not None}
     if coordinator is not None:
         calculated = dict(coordinator.data or {})
         coordinator_status.update(
@@ -112,6 +139,7 @@ async def async_get_config_entry_diagnostics(
         },
         "source_sensors": inputs,
         "configured_limits": limits,
+        "ai_planner": ai_planner,
         "calculated_values": calculated,
         "coordinator": coordinator_status,
         "sign_conventions": {
