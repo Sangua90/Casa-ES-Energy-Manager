@@ -127,6 +127,20 @@ def _num(
     step: float,
     unit: str | None = None,
 ) -> selector.NumberSelector:
+    """Build a HA 2026.8-compatible number selector.
+
+    NumberSelectorConfig rejects an explicit unit_of_measurement=None. Unit-less
+    fields (for example priority or activation count) must omit the key entirely.
+    """
+    if unit is None:
+        return selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=minimum,
+                max=maximum,
+                step=step,
+                mode=selector.NumberSelectorMode.BOX,
+            )
+        )
     return selector.NumberSelector(
         selector.NumberSelectorConfig(
             min=minimum,
