@@ -7,7 +7,8 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.data_entry_flow import FlowResult
+from homeassistant.config_entries import ConfigFlowResult, OptionsFlowWithReload
+from homeassistant.core import callback
 from homeassistant.helpers import selector
 
 from .const import (
@@ -41,7 +42,9 @@ class CasaESEnergyManagerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
 
-    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+    async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
         """Create the Casa ES Energy Manager entry."""
         await self.async_set_unique_id(DOMAIN)
         self._abort_if_unique_id_configured()
@@ -64,21 +67,23 @@ class CasaESEnergyManagerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(step_id="user", data_schema=schema)
 
     @staticmethod
-    def async_get_options_flow(config_entry: config_entries.ConfigEntry) -> config_entries.OptionsFlow:
+    @callback
+    def async_get_options_flow(
+        config_entry: config_entries.ConfigEntry,
+    ) -> config_entries.OptionsFlow:
         """Return the options flow."""
-        return CasaESEnergyManagerOptionsFlow(config_entry)
+        return CasaESEnergyManagerOptionsFlow()
 
 
-class CasaESEnergyManagerOptionsFlow(config_entries.OptionsFlow):
+class CasaESEnergyManagerOptionsFlow(OptionsFlowWithReload):
     """Handle Casa ES Energy Manager options."""
 
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        self.config_entry = config_entry
-
-    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
         """Manage protection limits."""
         if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
+            return self.async_create_entry(data=user_input)
 
         current = {**self.config_entry.data, **self.config_entry.options}
         schema = vol.Schema(
