@@ -29,24 +29,24 @@ def _power_sensor_selector() -> selector.EntitySelector:
 def _schema(current: dict[str, Any]) -> vol.Schema:
     fields: dict[Any, Any] = {}
 
-    if current.get(CONF_MONITORED_LOAD_NAME):
-        name_key: Any = vol.Required(
-            CONF_MONITORED_LOAD_NAME,
-            default=current[CONF_MONITORED_LOAD_NAME],
-        )
+    name = current.get(CONF_MONITORED_LOAD_NAME)
+    if name:
+        fields[
+            vol.Required(CONF_MONITORED_LOAD_NAME, default=name)
+        ] = selector.TextSelector()
     else:
-        name_key = vol.Required(CONF_MONITORED_LOAD_NAME)
+        fields[vol.Required(CONF_MONITORED_LOAD_NAME)] = selector.TextSelector()
 
-    if current.get(CONF_MONITORED_LOAD_POWER_SENSOR):
-        power_key: Any = vol.Required(
-            CONF_MONITORED_LOAD_POWER_SENSOR,
-            default=current[CONF_MONITORED_LOAD_POWER_SENSOR],
-        )
+    power_sensor = current.get(CONF_MONITORED_LOAD_POWER_SENSOR)
+    if power_sensor:
+        fields[
+            vol.Required(CONF_MONITORED_LOAD_POWER_SENSOR, default=power_sensor)
+        ] = _power_sensor_selector()
     else:
-        power_key = vol.Required(CONF_MONITORED_LOAD_POWER_SENSOR)
+        fields[
+            vol.Required(CONF_MONITORED_LOAD_POWER_SENSOR)
+        ] = _power_sensor_selector()
 
-    fields[name_key] = selector.TextSelector()
-    fields[power_key] = _power_sensor_selector()
     fields[
         vol.Required(
             CONF_MONITORED_LOAD_PHASE,
@@ -73,23 +73,26 @@ def _schema(current: dict[str, Any]) -> vol.Schema:
 class MonitoredLoadSubentryFlow(ConfigSubentryFlow):
     """Add or edit one read-only monitored load."""
 
-    async def async_step_monitored_load(
-        self, user_input: dict[str, Any] | None = None
-    ) -> SubentryFlowResult:
-        return await self.async_step_user(user_input)
-
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
-        return await self._async_form(user_input, reconfigure=False)
+        """Add a monitored load."""
+        return await self._async_form(user_input, reconfigure=False, step_id="user")
 
     async def async_step_reconfigure(
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
-        return await self._async_form(user_input, reconfigure=True)
+        """Edit a monitored load."""
+        return await self._async_form(
+            user_input, reconfigure=True, step_id="reconfigure"
+        )
 
     async def _async_form(
-        self, user_input: dict[str, Any] | None, *, reconfigure: bool
+        self,
+        user_input: dict[str, Any] | None,
+        *,
+        reconfigure: bool,
+        step_id: str,
     ) -> SubentryFlowResult:
         current = self._get_reconfigure_subentry().data.copy() if reconfigure else {}
         errors: dict[str, str] = {}
@@ -117,8 +120,13 @@ class MonitoredLoadSubentryFlow(ConfigSubentryFlow):
                     continue
                 if subentry.subentry_id == current_id:
                     continue
-                if str(subentry.data.get(CONF_MONITORED_LOAD_POWER_SENSOR, "")) == power_sensor:
-                    errors[CONF_MONITORED_LOAD_POWER_SENSOR] = "monitored_sensor_already_configured"
+                if (
+                    str(subentry.data.get(CONF_MONITORED_LOAD_POWER_SENSOR, ""))
+                    == power_sensor
+                ):
+                    errors[CONF_MONITORED_LOAD_POWER_SENSOR] = (
+                        "monitored_sensor_already_configured"
+                    )
                     break
 
             if not errors:
@@ -137,7 +145,8 @@ class MonitoredLoadSubentryFlow(ConfigSubentryFlow):
             current.update(values)
 
         return self.async_show_form(
-            step_id="monitored_load",
+            step_id=step_id,
             data_schema=_schema(current),
             errors=errors,
+            last_step=True,
         )
