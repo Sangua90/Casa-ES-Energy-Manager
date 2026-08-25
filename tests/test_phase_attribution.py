@@ -8,9 +8,9 @@ MODULE_PATH = (
     Path(__file__).parents[1]
     / "custom_components"
     / "casa_es_energy_manager"
-    / "phase_attribution.py"
+    / "phase_attribution_math.py"
 )
-SPEC = importlib.util.spec_from_file_location("casa_es_phase_attribution", MODULE_PATH)
+SPEC = importlib.util.spec_from_file_location("casa_es_phase_attribution_math", MODULE_PATH)
 MODULE = importlib.util.module_from_spec(SPEC)
 assert SPEC and SPEC.loader
 SPEC.loader.exec_module(MODULE)
