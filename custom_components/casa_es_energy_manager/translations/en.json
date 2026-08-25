@@ -4,7 +4,7 @@
     "step": {
       "user": {
         "title": "Energy sensor mapping",
-        "description": "Version 0.1 is read-only. Select the sensors used to calculate grid and phase safety margins.",
+        "description": "Select the sensors used to monitor PV, battery, grid and three-phase headroom.",
         "data": {
           "pv_power_sensor": "PV power sensor",
           "load_power_sensor": "House/load power sensor",
@@ -24,13 +24,19 @@
   "options": {
     "step": {
       "init": {
-        "title": "Protection limits",
-        "description": "These values are only monitored in version 0.1; the integration does not switch any load.",
+        "title": "Protection and AI planner",
+        "description": "The AI planner is advisory only and cannot control loads or the inverter. When enabled, it queries the selected AI Task entity at the configured interval.",
         "data": {
           "inverter_power_limit": "Inverter total limit (W)",
           "phase_power_limit": "Per-phase working limit (W)",
           "grid_power_limit": "Grid working limit (W)",
-          "safety_margin": "Safety margin subtracted from limits (W)"
+          "safety_margin": "Safety margin subtracted from limits (W)",
+          "ai_enabled": "Enable advisory AI planner",
+          "ai_interval_minutes": "AI planner interval (minutes)",
+          "battery_capacity_kwh": "Battery capacity (kWh)",
+          "battery_target_soc": "Battery target SOC (%)",
+          "battery_target_hour": "Battery target hour (0-23)",
+          "ai_task_entity": "AI Task entity to use (Gemini)"
         }
       }
     }
