@@ -67,5 +67,56 @@
         }
       }
     }
+  },
+  "config_subentries": {
+    "managed_device": {
+      "entry_type": "Managed device",
+      "initiate_flow": {
+        "user": "Add managed device",
+        "reconfigure": "Edit managed device"
+      },
+      "step": {
+        "managed_device": {
+          "title": "Managed device dry-run",
+          "description": "Casa ES uses these values only to simulate load admission. Version 0.4 does not send any command to the configured device.",
+          "data": {
+            "name": "Device name",
+            "entity_id": "Entity to manage",
+            "power_sensor": "Real power sensor (W, optional)",
+            "nominal_power_w": "Expected nominal power (W)",
+            "priority": "Priority",
+            "phase": "Electrical phase",
+            "expected_runtime_minutes": "Expected cycle duration (minutes)",
+            "min_battery_soc": "Minimum battery SOC to allow this load (%)",
+            "allow_grid": "Allow grid energy for this device",
+            "enabled": "Enable device in Casa ES management"
+          }
+        }
+      },
+      "error": {
+        "device_name_required": "Enter a name for the device.",
+        "device_already_configured": "This entity is already configured as a managed device.",
+        "expected_power_sensor": "The power sensor must use W, kW or MW."
+      }
+    }
+  },
+  "selector": {
+    "managed_priority": {
+      "options": {
+        "very_high": "Very high",
+        "high": "High",
+        "normal": "Normal",
+        "low": "Low",
+        "very_low": "Very low"
+      }
+    },
+    "managed_phase": {
+      "options": {
+        "l1": "L1",
+        "l2": "L2",
+        "l3": "L3",
+        "three_phase": "Three-phase"
+      }
+    }
   }
 }

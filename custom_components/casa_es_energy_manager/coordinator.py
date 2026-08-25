@@ -19,8 +19,16 @@ from homeassistant.util import dt as dt_util
 
 from .calculations import calculate_metrics
 from .const import (
+    CONF_BATTERY_CAPACITY_KWH,
+    CONF_BATTERY_CHARGE_EFFICIENCY_PCT,
     CONF_BATTERY_POWER_SENSOR,
     CONF_BATTERY_SOC_SENSOR,
+    CONF_BATTERY_TARGET_HOUR,
+    CONF_BATTERY_TARGET_SOC,
+    CONF_DEVICE_ENTITY,
+    CONF_DEVICE_NAME,
+    CONF_DEVICE_POWER_SENSOR,
+    CONF_EXPECTED_BASE_LOAD_W,
     CONF_EXTRA_CONTEXT_SENSORS,
     CONF_GRID_POWER_LIMIT,
     CONF_GRID_POWER_SENSOR,
@@ -42,14 +50,22 @@ from .const import (
     CURTAILMENT_GRID_IMPORT_MAX_W,
     CURTAILMENT_POTENTIAL_GAP_W,
     CURTAILMENT_SOC_THRESHOLD,
+    DEFAULT_BATTERY_CAPACITY_KWH,
+    DEFAULT_BATTERY_CHARGE_EFFICIENCY_PCT,
+    DEFAULT_BATTERY_TARGET_HOUR,
+    DEFAULT_BATTERY_TARGET_SOC,
+    DEFAULT_EXPECTED_BASE_LOAD_W,
     DEFAULT_GRID_POWER_LIMIT,
     DEFAULT_INVERTER_POWER_LIMIT,
     DEFAULT_PHASE_POWER_LIMIT,
     DEFAULT_SAFETY_MARGIN,
     DOMAIN,
+    SUBENTRY_TYPE_MANAGED_DEVICE,
     UPDATE_INTERVAL_SECONDS,
 )
+from .device_dry_run import evaluate_managed_devices
 from .forecast_units import normalize_forecast_measure
+from .planner_policy import build_planner_policy
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -194,6 +210,46 @@ class CasaESEnergyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             for timestamp, power_w in ordered[:FORECAST_CURVE_MAX_POINTS]
         ]
 
+    def _target_time(self) -> Any:
+        """Return the configured next battery target time in local HA time."""
+        now = dt_util.now()
+        target_hour = int(
+            self._config(CONF_BATTERY_TARGET_HOUR, DEFAULT_BATTERY_TARGET_HOUR)
+        )
+        target = now.replace(hour=target_hour, minute=0, second=0, microsecond=0)
+        if target <= now:
+            target += timedelta(days=1)
+        return now, target
+
+    def _managed_device_snapshots(self) -> list[dict[str, Any]]:
+        """Read repeatable managed-device subentries without controlling them."""
+        devices: list[dict[str, Any]] = []
+        for subentry in self.entry.subentries.values():
+            if subentry.subentry_type != SUBENTRY_TYPE_MANAGED_DEVICE:
+                continue
+            config = dict(subentry.data)
+            entity_id = str(config.get(CONF_DEVICE_ENTITY, ""))
+            state = self.hass.states.get(entity_id) if entity_id else None
+            power_sensor = config.get(CONF_DEVICE_POWER_SENSOR)
+            current_power = self._numeric_state(
+                str(power_sensor) if power_sensor else None, power=True
+            )
+            devices.append(
+                {
+                    **config,
+                    "subentry_id": subentry.subentry_id,
+                    "name": config.get(CONF_DEVICE_NAME) or subentry.title,
+                    "entity_id": entity_id,
+                    "state": state.state if state is not None else None,
+                    "available": bool(
+                        state is not None
+                        and state.state not in (STATE_UNKNOWN, STATE_UNAVAILABLE)
+                    ),
+                    "current_power_w": current_power,
+                }
+            )
+        return devices
+
     def update_ai_data(self, values: dict[str, Any]) -> None:
         """Store advisory AI data without affecting deterministic metrics."""
         self.ai_data.update(values)
@@ -311,5 +367,59 @@ class CasaESEnergyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 curtailment_grid_import_max_w=CURTAILMENT_GRID_IMPORT_MAX_W,
             )
         )
+
+        now, target = self._target_time()
+        policy = build_planner_policy(
+            data,
+            now=now,
+            target=target,
+            battery_capacity_kwh=float(
+                self._config(CONF_BATTERY_CAPACITY_KWH, DEFAULT_BATTERY_CAPACITY_KWH)
+            ),
+            battery_target_soc=float(
+                self._config(CONF_BATTERY_TARGET_SOC, DEFAULT_BATTERY_TARGET_SOC)
+            ),
+            expected_base_load_w=float(
+                self._config(CONF_EXPECTED_BASE_LOAD_W, DEFAULT_EXPECTED_BASE_LOAD_W)
+            ),
+            battery_charge_efficiency_pct=float(
+                self._config(
+                    CONF_BATTERY_CHARGE_EFFICIENCY_PCT,
+                    DEFAULT_BATTERY_CHARGE_EFFICIENCY_PCT,
+                )
+            ),
+        )
+        devices = self._managed_device_snapshots()
+        dry_run = evaluate_managed_devices(devices, data=data, policy=policy)
+
+        # AI fields are advisory. Deterministic values below are always refreshed
+        # after them so a 30-minute AI snapshot cannot overwrite 5-second policy.
         data.update(self.ai_data)
+        data["planner_policy"] = policy
+        data["managed_device_configs"] = devices
+        data.update(dry_run)
+        data.update(
+            {
+                "battery_energy_needed_kwh": policy["battery_energy_needed_kwh"],
+                "battery_input_energy_needed_kwh": policy[
+                    "battery_input_energy_needed_kwh"
+                ],
+                "base_load_energy_to_target_kwh": policy[
+                    "base_load_energy_to_target_kwh"
+                ],
+                "forecast_energy_to_target_kwh": policy[
+                    "forecast_energy_to_target_kwh"
+                ],
+                "forecast_margin_before_base_load_kwh": policy[
+                    "forecast_margin_before_base_load_kwh"
+                ],
+                "forecast_margin_after_base_load_kwh": policy[
+                    "forecast_margin_after_base_load_kwh"
+                ],
+                "flexible_energy_budget_kwh": policy["flexible_energy_budget_kwh"],
+                "planner_target_reachability": policy["target_reachability"],
+                "planner_grid_pressure": policy["grid_pressure"],
+                "planner_solar_state": policy["solar_state"],
+            }
+        )
         return data
