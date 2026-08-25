@@ -97,6 +97,23 @@ SENSORS = (
         state_class=SensorStateClass.MEASUREMENT,
     ),
     CasaESSensorDescription(key="status", name="Stato gestore energia"),
+    CasaESSensorDescription(key="ai_status", name="Stato planner AI"),
+    CasaESSensorDescription(key="ai_strategy", name="Strategia AI"),
+    CasaESSensorDescription(key="ai_reason", name="Motivazione AI"),
+    CasaESSensorDescription(key="ai_last_update", name="Ultimo aggiornamento AI"),
+    CasaESSensorDescription(
+        key="ai_battery_reserve_w",
+        name="Riserva batteria consigliata AI",
+        unit=UnitOfPower.WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+    CasaESSensorDescription(
+        key="ai_confidence",
+        name="Confidenza AI",
+        unit=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
 )
 
 

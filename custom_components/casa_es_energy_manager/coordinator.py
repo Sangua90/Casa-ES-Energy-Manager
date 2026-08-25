@@ -47,6 +47,13 @@ class CasaESEnergyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             update_interval=timedelta(seconds=UPDATE_INTERVAL_SECONDS),
         )
         self.entry = entry
+        self.ai_planner: Any = None
+        self.ai_data: dict[str, Any] = {
+            "ai_status": "disabled",
+            "ai_strategy": None,
+            "ai_reason": None,
+            "ai_last_update": None,
+        }
 
     def _config(self, key: str, default: Any = None) -> Any:
         if key in self.entry.options:
@@ -75,6 +82,14 @@ class CasaESEnergyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         elif unit == "MW":
             value *= 1_000_000.0
         return value
+
+    def update_ai_data(self, values: dict[str, Any]) -> None:
+        """Store advisory AI data without affecting deterministic metrics."""
+        self.ai_data.update(values)
+        if self.data:
+            updated = dict(self.data)
+            updated.update(self.ai_data)
+            self.async_set_updated_data(updated)
 
     async def _async_update_data(self) -> dict[str, Any]:
         pv = self._numeric_state(self._config(CONF_PV_POWER_SENSOR), power=True)
@@ -131,4 +146,5 @@ class CasaESEnergyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 ),
             )
         )
+        data.update(self.ai_data)
         return data
