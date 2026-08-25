@@ -19,36 +19,19 @@ from .const import (
     SUBENTRY_TYPE_MANAGED_DEVICE,
     VERSION,
 )
-from .coordinator import CasaESEnergyCoordinator
+from .coordinator_v1 import CasaESEnergyCoordinator
 
-DISPLAY_TO_MODE = {
-    "AUTO": DEVICE_MODE_AUTO,
-    "OVERRIDE": DEVICE_MODE_OVERRIDE,
-    "OFF": DEVICE_MODE_OFF,
-}
-MODE_TO_DISPLAY = {value: key for key, value in DISPLAY_TO_MODE.items()}
+DISPLAY_TO_MODE = {"AUTO": DEVICE_MODE_AUTO, "OVERRIDE": DEVICE_MODE_OVERRIDE, "OFF": DEVICE_MODE_OFF}
 
 
-async def async_setup_entry(
-    hass: HomeAssistant,
-    entry: ConfigEntry,
-    async_add_entities: AddEntitiesCallback,
-) -> None:
-    """Create one runtime mode selector for each managed device."""
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
     coordinator: CasaESEnergyCoordinator = hass.data[DOMAIN][entry.entry_id]
     entities: list[CasaESManagedDeviceModeSelect] = []
     for subentry in entry.subentries.values():
         if subentry.subentry_type != SUBENTRY_TYPE_MANAGED_DEVICE:
             continue
         name = str(subentry.data.get(CONF_DEVICE_NAME) or subentry.title)
-        entities.append(
-            CasaESManagedDeviceModeSelect(
-                coordinator=coordinator,
-                entry=entry,
-                subentry_id=subentry.subentry_id,
-                device_name=name,
-            )
-        )
+        entities.append(CasaESManagedDeviceModeSelect(coordinator=coordinator, entry=entry, subentry_id=subentry.subentry_id, device_name=name))
     async_add_entities(entities)
 
 
@@ -59,17 +42,9 @@ class CasaESManagedDeviceModeSelect(RestoreEntity, SelectEntity):
     _attr_icon = "mdi:toggle-switch"
     _attr_options = ["AUTO", "OVERRIDE", "OFF"]
 
-    def __init__(
-        self,
-        *,
-        coordinator: CasaESEnergyCoordinator,
-        entry: ConfigEntry,
-        subentry_id: str,
-        device_name: str,
-    ) -> None:
+    def __init__(self, *, coordinator: CasaESEnergyCoordinator, entry: ConfigEntry, subentry_id: str, device_name: str) -> None:
         self.coordinator = coordinator
         self.subentry_id = subentry_id
-        self.device_name = device_name
         self._attr_unique_id = f"{entry.entry_id}_{subentry_id}_management_mode"
         self._attr_name = f"Modalità gestione {device_name}"
         self._attr_current_option = "AUTO"
@@ -82,18 +57,14 @@ class CasaESManagedDeviceModeSelect(RestoreEntity, SelectEntity):
         )
 
     async def async_added_to_hass(self) -> None:
-        """Restore the last manual mode after a restart."""
         await super().async_added_to_hass()
         restored = await self.async_get_last_state()
         option = restored.state if restored and restored.state in self.options else "AUTO"
         self._attr_current_option = option
-        self.coordinator.set_device_mode(
-            self.subentry_id, DISPLAY_TO_MODE.get(option, DEVICE_MODE_AUTO)
-        )
+        self.coordinator.set_device_mode(self.subentry_id, DISPLAY_TO_MODE.get(option, DEVICE_MODE_AUTO))
         await self.coordinator.async_request_refresh()
 
     async def async_select_option(self, option: str) -> None:
-        """Change only this managed device's runtime mode."""
         if option not in self.options:
             raise ValueError(f"Unsupported Casa ES device mode: {option}")
         self._attr_current_option = option
