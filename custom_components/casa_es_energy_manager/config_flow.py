@@ -56,7 +56,7 @@ from .const import (
     NAME,
 )
 from .forecast_units import ENERGY_UNITS, POWER_UNITS, WINDOW_FORECAST_UNITS
-from .managed_device_flow import ManagedDeviceSubentrySupport
+from .subentry_support import CasaESSubentrySupport
 
 OPTIONAL_ENTITY_KEYS = (
     CONF_PHASE_L1_POWER_SENSOR,
@@ -182,7 +182,7 @@ def _core_sensor_fields(current: dict[str, Any]) -> dict[Any, Any]:
 
 
 class CasaESEnergyManagerConfigFlow(
-    ManagedDeviceSubentrySupport, config_entries.ConfigFlow, domain=DOMAIN
+    CasaESSubentrySupport, config_entries.ConfigFlow, domain=DOMAIN
 ):
     VERSION = 1
 
