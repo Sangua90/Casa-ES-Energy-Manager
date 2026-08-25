@@ -15,12 +15,14 @@ PLATFORMS: list[Platform] = [
     Platform.SENSOR,
     Platform.BINARY_SENSOR,
     Platform.BUTTON,
+    Platform.SELECT,
 ]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Casa ES Energy Manager from a config entry."""
     coordinator = CasaESEnergyCoordinator(hass, entry)
+    await coordinator.async_initialize()
     await coordinator.async_config_entry_first_refresh()
 
     planner = CasaESAIPlanner(hass, entry, coordinator)
@@ -29,10 +31,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
-    # CasaESEnergyManagerOptionsFlow inherits from OptionsFlowWithReload,
-    # therefore Home Assistant already reloads this config entry after options
-    # are saved. Do not register a second update listener here: concurrent
-    # reloads can race when the AI planner, timer and button platform are set up.
     if planner.enabled:
         entry.async_on_unload(
             async_track_time_interval(hass, planner.async_refresh, planner.interval)
@@ -43,7 +41,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload a config entry."""
+    """Unload a config entry safely."""
+    coordinator = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+    if coordinator is not None:
+        await coordinator.async_prepare_unload()
     unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unloaded:
         hass.data[DOMAIN].pop(entry.entry_id, None)
