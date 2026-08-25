@@ -9,14 +9,14 @@ from __future__ import annotations
 
 from typing import Any
 
-PRIORITY_RANK = {
-    "very_high": 0,
-    "high": 1,
-    "normal": 2,
-    "low": 3,
-    "very_low": 4,
+LEGACY_PRIORITY_MAP = {
+    "very_high": 1,
+    "high": 3,
+    "normal": 5,
+    "low": 7,
+    "very_low": 10,
 }
-
+DEFAULT_NUMERIC_PRIORITY = 5
 OFF_STATES = {"off", "unavailable", "unknown", "none", ""}
 RUNNING_POWER_THRESHOLD_W = 20.0
 
@@ -26,6 +26,17 @@ def _number(value: Any, default: float = 0.0) -> float:
         return float(value)
     except (TypeError, ValueError):
         return default
+
+
+def _priority_number(value: Any) -> int:
+    """Return priority 1..10, accepting legacy text values from v0.4.0."""
+    if isinstance(value, str) and value in LEGACY_PRIORITY_MAP:
+        return LEGACY_PRIORITY_MAP[value]
+    try:
+        priority = int(round(float(value)))
+    except (TypeError, ValueError):
+        priority = DEFAULT_NUMERIC_PRIORITY
+    return max(1, min(10, priority))
 
 
 def _is_running(state: Any, current_power_w: Any = None) -> bool:
@@ -58,6 +69,7 @@ def evaluate_managed_devices(
 ) -> dict[str, Any]:
     """Allocate current power and future energy to configured loads in priority order.
 
+    Priority is numeric: 1 is the highest priority and 10 the lowest.
     The future energy budget only says whether a load can fit before the battery
     target. A load is considered admissible *now* only when sufficient current
     PV opportunity exists, unless that device explicitly allows grid energy.
@@ -99,7 +111,7 @@ def evaluate_managed_devices(
                 "nominal_power_w": nominal,
                 "expected_runtime_minutes": runtime_minutes,
                 "expected_energy_kwh": round(expected_energy, 3),
-                "priority": str(device.get("priority") or "normal"),
+                "priority": _priority_number(device.get("priority")),
                 "phase": str(device.get("phase") or "unknown"),
                 "allow_grid": bool(device.get("allow_grid", False)),
                 "enabled": bool(device.get("enabled", True)),
@@ -119,7 +131,7 @@ def evaluate_managed_devices(
     candidates = sorted(
         normalized,
         key=lambda item: (
-            PRIORITY_RANK.get(item["priority"], PRIORITY_RANK["normal"]),
+            item["priority"],
             str(item.get("name") or item.get("entity_id") or ""),
         ),
     )
