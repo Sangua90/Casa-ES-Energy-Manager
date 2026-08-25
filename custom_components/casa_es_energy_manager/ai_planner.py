@@ -148,8 +148,10 @@ class CasaESAIPlanner:
             "phase_l3_headroom_w": data.get("phase_l3_headroom_w"),
             "manager_status": data.get("status"),
             "forecast_remaining_today_kwh": data.get("forecast_remaining_kwh"),
-            "forecast_current_hour_kwh": data.get("forecast_current_hour_kwh"),
-            "forecast_next_hour_kwh": data.get("forecast_next_hour_kwh"),
+            "forecast_current_hour_power_w": data.get("forecast_current_hour_power_w"),
+            "forecast_current_hour_energy_kwh": data.get("forecast_current_hour_kwh"),
+            "forecast_next_hour_power_w": data.get("forecast_next_hour_power_w"),
+            "forecast_next_hour_energy_kwh": data.get("forecast_next_hour_kwh"),
             "forecast_today_kwh": data.get("forecast_today_kwh"),
             "forecast_tomorrow_kwh": data.get("forecast_tomorrow_kwh"),
             "forecast_power_curve": data.get("forecast_curve") or [],
@@ -172,6 +174,9 @@ class CasaESAIPlanner:
             "o quasi piena, un valore FV misurato basso NON significa automaticamente poco sole. "
             "Usa pv_potential_power_w, forecast e meteo per valutare l'opportunità energetica, "
             "ma considera sempre il forecast come stima e non come misura certa. "
+            "I campi forecast_*_power_w sono POTENZA prevista in watt; i campi "
+            "forecast_*_energy_kwh sono ENERGIA prevista in kWh. Non trattarli come equivalenti "
+            "e non convertire automaticamente watt in kWh senza una durata o una curva temporale. "
             "Se pv_curtailment_likely=true, cerca di privilegiare l'uso locale dell'energia "
             "potenzialmente persa, senza violare alcun limite elettrico. "
             "Se manca un dato essenziale, usa strategy=insufficient_data. "
