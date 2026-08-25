@@ -4,7 +4,7 @@
     "step": {
       "user": {
         "title": "Associazione sensori energia",
-        "description": "La versione 0.1 è solo monitoraggio. Seleziona i sensori usati per calcolare i margini di rete e delle fasi.",
+        "description": "Seleziona i sensori usati per monitorare FV, batteria, rete e margini delle tre fasi.",
         "data": {
           "pv_power_sensor": "Sensore potenza fotovoltaico",
           "load_power_sensor": "Sensore potenza carichi casa",
@@ -24,13 +24,19 @@
   "options": {
     "step": {
       "init": {
-        "title": "Limiti di protezione",
-        "description": "Nella versione 0.1 questi valori vengono solo monitorati: l'integrazione non comanda ancora alcun carico.",
+        "title": "Protezione e planner AI",
+        "description": "Il planner AI è solo consultivo: non può comandare carichi o inverter. Se abilitato, interroga l'entità AI Task scelta alla cadenza configurata.",
         "data": {
           "inverter_power_limit": "Limite totale inverter (W)",
           "phase_power_limit": "Limite operativo per fase (W)",
           "grid_power_limit": "Limite operativo rete (W)",
-          "safety_margin": "Margine di sicurezza sottratto ai limiti (W)"
+          "safety_margin": "Margine di sicurezza sottratto ai limiti (W)",
+          "ai_enabled": "Abilita planner AI consultivo",
+          "ai_interval_minutes": "Intervallo planner AI (minuti)",
+          "battery_capacity_kwh": "Capacità batteria (kWh)",
+          "battery_target_soc": "SOC batteria obiettivo (%)",
+          "battery_target_hour": "Ora obiettivo batteria (0-23)",
+          "ai_task_entity": "Entità AI Task da usare (Gemini)"
         }
       }
     }
