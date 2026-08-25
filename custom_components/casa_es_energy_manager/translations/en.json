@@ -28,12 +28,13 @@
       "ai_task_not_found": "The selected AI Task entity is not available in Home Assistant.",
       "ai_task_unavailable": "The AI Task service is unavailable. Configure a compatible AI provider first, for example Google Gemini.",
       "expected_power_sensor": "This field requires a power sensor using W, kW or MW.",
-      "expected_energy_sensor": "This field requires an energy sensor using Wh, kWh or MWh. Do not use a power sensor in W."
+      "expected_energy_sensor": "This field requires an energy sensor using Wh, kWh or MWh.",
+      "expected_forecast_sensor": "This field accepts either a power forecast (W/kW/MW) or an energy forecast (Wh/kWh/MWh)."
     },
     "step": {
       "init": {
         "title": "Sensors, protection and AI planner",
-        "description": "You can also correct the main electrical sensors here. Measured PV must be the real inverter production; potential PV is the estimate of what the array could produce without zero-export curtailment. Energy fields require Wh/kWh/MWh.",
+        "description": "You can also correct the main electrical sensors here. Measured PV is real inverter production; potential PV is the estimate without zero-export curtailment. Current-hour and next-hour forecast fields accept either W or kWh and Casa ES keeps power and energy separate automatically.",
         "data": {
           "pv_power_sensor": "Measured PV power from inverter (W)",
           "load_power_sensor": "House/load power (W)",
@@ -48,11 +49,11 @@
           "grid_power_limit": "Grid working limit (W)",
           "safety_margin": "Safety margin subtracted from limits (W)",
           "pv_potential_power_sensor": "Potential/forecast PV now (W) - not measured PV",
-          "pv_forecast_remaining_today_sensor": "Remaining PV energy forecast today (kWh)",
-          "pv_forecast_current_hour_sensor": "PV energy forecast for current hour (kWh) - not power W",
-          "pv_forecast_next_hour_sensor": "PV energy forecast for next hour (kWh)",
-          "pv_forecast_today_sensor": "Total PV energy forecast today (kWh)",
-          "pv_forecast_tomorrow_sensor": "PV energy forecast tomorrow (kWh)",
+          "pv_forecast_remaining_today_sensor": "Remaining PV energy forecast today (Wh/kWh/MWh)",
+          "pv_forecast_current_hour_sensor": "Current-hour PV forecast (W or Wh/kWh)",
+          "pv_forecast_next_hour_sensor": "Next-hour PV forecast (W or Wh/kWh)",
+          "pv_forecast_today_sensor": "Total PV energy forecast today (Wh/kWh/MWh)",
+          "pv_forecast_tomorrow_sensor": "PV energy forecast tomorrow (Wh/kWh/MWh)",
           "weather_entity": "Weather entity for hourly forecast (optional)",
           "extra_context_sensors": "Additional AI context sensors (weather, irradiance, temperature, wind, etc.)",
           "ai_enabled": "Enable advisory AI planner",
