@@ -34,7 +34,7 @@
     "step": {
       "init": {
         "title": "Sensori, protezione e planner AI",
-        "description": "Puoi correggere qui anche i sensori elettrici principali. Il FV misurato è la produzione reale dell'inverter; il FV potenziale è la stima senza limitazione zero-export. Ora corrente e prossima ora accettano sia W sia kWh e Casa ES mantiene automaticamente separate potenza ed energia.",
+        "description": "Il planner calcola il bilancio FV fino al target includendo consumo base casa ed efficienza di carica batteria. I valori proposti sono modificabili.",
         "data": {
           "pv_power_sensor": "FV misurato reale dall'inverter (W)",
           "load_power_sensor": "Potenza carichi casa (W)",
@@ -61,6 +61,8 @@
           "battery_capacity_kwh": "Capacità batteria (kWh)",
           "battery_target_soc": "SOC batteria obiettivo (%)",
           "battery_target_hour": "Ora obiettivo batteria (0-23)",
+          "expected_base_load_w": "Consumo base medio previsto casa (W)",
+          "battery_charge_efficiency_pct": "Efficienza stimata carica batteria (%)",
           "ai_task_entity": "Entità AI Task da usare (Gemini)"
         }
       }

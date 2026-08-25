@@ -2,7 +2,7 @@
 
 DOMAIN = "casa_es_energy_manager"
 NAME = "Casa ES Energy Manager"
-VERSION = "0.3.1"
+VERSION = "0.3.2"
 
 # Core electrical sensors.
 CONF_PV_POWER_SENSOR = "pv_power_sensor"
@@ -37,6 +37,8 @@ CONF_AI_INTERVAL_MINUTES = "ai_interval_minutes"
 CONF_BATTERY_CAPACITY_KWH = "battery_capacity_kwh"
 CONF_BATTERY_TARGET_SOC = "battery_target_soc"
 CONF_BATTERY_TARGET_HOUR = "battery_target_hour"
+CONF_EXPECTED_BASE_LOAD_W = "expected_base_load_w"
+CONF_BATTERY_CHARGE_EFFICIENCY_PCT = "battery_charge_efficiency_pct"
 
 DEFAULT_INVERTER_POWER_LIMIT = 10_000.0
 DEFAULT_PHASE_POWER_LIMIT = 3_000.0
@@ -48,6 +50,8 @@ DEFAULT_AI_INTERVAL_MINUTES = 30
 DEFAULT_BATTERY_CAPACITY_KWH = 14.3
 DEFAULT_BATTERY_TARGET_SOC = 100.0
 DEFAULT_BATTERY_TARGET_HOUR = 17
+DEFAULT_EXPECTED_BASE_LOAD_W = 500.0
+DEFAULT_BATTERY_CHARGE_EFFICIENCY_PCT = 95.0
 
 # Read-only heuristic used only to flag a likely zero-export curtailment condition.
 CURTAILMENT_SOC_THRESHOLD = 98.0

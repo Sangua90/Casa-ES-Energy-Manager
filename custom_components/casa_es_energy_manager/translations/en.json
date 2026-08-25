@@ -34,7 +34,7 @@
     "step": {
       "init": {
         "title": "Sensors, protection and AI planner",
-        "description": "You can also correct the main electrical sensors here. Measured PV is real inverter production; potential PV is the estimate without zero-export curtailment. Current-hour and next-hour forecast fields accept either W or kWh and Casa ES keeps power and energy separate automatically.",
+        "description": "The planner calculates PV energy balance to the battery target including expected base-house consumption and battery charging efficiency. Defaults are editable.",
         "data": {
           "pv_power_sensor": "Measured PV power from inverter (W)",
           "load_power_sensor": "House/load power (W)",
@@ -61,6 +61,8 @@
           "battery_capacity_kwh": "Battery capacity (kWh)",
           "battery_target_soc": "Battery target SOC (%)",
           "battery_target_hour": "Battery target hour (0-23)",
+          "expected_base_load_w": "Expected average house base load (W)",
+          "battery_charge_efficiency_pct": "Estimated battery charging efficiency (%)",
           "ai_task_entity": "AI Task entity to use (Gemini)"
         }
       }
