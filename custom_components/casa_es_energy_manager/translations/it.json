@@ -67,5 +67,56 @@
         }
       }
     }
+  },
+  "config_subentries": {
+    "managed_device": {
+      "entry_type": "Dispositivo gestito",
+      "initiate_flow": {
+        "user": "Aggiungi dispositivo gestito",
+        "reconfigure": "Modifica dispositivo gestito"
+      },
+      "step": {
+        "managed_device": {
+          "title": "Dispositivo gestito in dry-run",
+          "description": "Casa ES userà questi dati solo per simulare l'ammissione del carico. In v0.4 non verrà eseguito alcun comando sul dispositivo.",
+          "data": {
+            "name": "Nome dispositivo",
+            "entity_id": "Entità da gestire",
+            "power_sensor": "Sensore potenza reale (W, opzionale)",
+            "nominal_power_w": "Potenza nominale prevista (W)",
+            "priority": "Priorità",
+            "phase": "Fase elettrica",
+            "expected_runtime_minutes": "Durata prevista di un ciclo (minuti)",
+            "min_battery_soc": "SOC batteria minimo per consentire il carico (%)",
+            "allow_grid": "Consenti uso della rete per questo dispositivo",
+            "enabled": "Abilita dispositivo nella gestione Casa ES"
+          }
+        }
+      },
+      "error": {
+        "device_name_required": "Inserisci un nome per il dispositivo.",
+        "device_already_configured": "Questa entità è già presente tra i dispositivi gestiti.",
+        "expected_power_sensor": "Il sensore potenza deve usare W, kW o MW."
+      }
+    }
+  },
+  "selector": {
+    "managed_priority": {
+      "options": {
+        "very_high": "Molto alta",
+        "high": "Alta",
+        "normal": "Normale",
+        "low": "Bassa",
+        "very_low": "Molto bassa"
+      }
+    },
+    "managed_phase": {
+      "options": {
+        "l1": "L1",
+        "l2": "L2",
+        "l3": "L3",
+        "three_phase": "Trifase"
+      }
+    }
   }
 }
