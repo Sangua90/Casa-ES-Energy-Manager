@@ -1,0 +1,171 @@
+{
+  "title": "Casa ES Energy Manager",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Associazione sensori energia",
+        "description": "Seleziona i sensori elettrici principali. Il modello FV potenziale e i sensori meteo si configurano successivamente nelle opzioni.",
+        "data": {
+          "pv_power_sensor": "FV misurato reale dall'inverter (W)",
+          "load_power_sensor": "Potenza carichi casa (W)",
+          "grid_power_sensor": "Potenza rete (W, positivo = prelievo)",
+          "battery_soc_sensor": "Stato di carica batteria (%)",
+          "battery_power_sensor": "Potenza batteria (W, positivo = carica)",
+          "phase_l1_power_sensor": "Potenza fase L1 (W, opzionale)",
+          "phase_l2_power_sensor": "Potenza fase L2 (W, opzionale)",
+          "phase_l3_power_sensor": "Potenza fase L3 (W, opzionale)"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "Casa ES Energy Manager è già configurato."
+    }
+  },
+  "options": {
+    "error": {
+      "ai_task_required": "Per abilitare il planner AI devi selezionare un'entità AI Task.",
+      "invalid_ai_task": "L'entità selezionata non è un'entità AI Task valida.",
+      "ai_task_not_found": "L'entità AI Task selezionata non è disponibile in Home Assistant.",
+      "ai_task_unavailable": "Il servizio AI Task non è disponibile. Configura prima un provider AI compatibile, ad esempio Google Gemini.",
+      "expected_power_sensor": "Questo campo richiede un sensore di potenza con unità W, kW o MW.",
+      "expected_energy_sensor": "Questo campo richiede un sensore di energia con unità Wh, kWh o MWh.",
+      "expected_forecast_sensor": "Questo campo accetta una previsione di potenza (W/kW/MW) oppure energia (Wh/kWh/MWh)."
+    },
+    "step": {
+      "init": {
+        "title": "Sensori, protezione e planner AI",
+        "description": "Il planner calcola il bilancio FV fino al target includendo consumo base casa ed efficienza di carica batteria. I valori proposti sono modificabili.",
+        "data": {
+          "pv_power_sensor": "FV misurato reale dall'inverter (W)",
+          "load_power_sensor": "Potenza carichi casa (W)",
+          "grid_power_sensor": "Potenza rete (W, positivo = prelievo)",
+          "battery_soc_sensor": "Stato di carica batteria (%)",
+          "battery_power_sensor": "Potenza batteria (W, positivo = carica)",
+          "phase_l1_power_sensor": "Potenza fase L1 (W, opzionale)",
+          "phase_l2_power_sensor": "Potenza fase L2 (W, opzionale)",
+          "phase_l3_power_sensor": "Potenza fase L3 (W, opzionale)",
+          "inverter_power_limit": "Limite totale inverter (W)",
+          "phase_power_limit": "Limite operativo per fase (W)",
+          "grid_power_limit": "Limite operativo rete (W)",
+          "safety_margin": "Margine di sicurezza sottratto ai limiti (W)",
+          "pv_potential_power_sensor": "FV potenziale/forecast adesso (W) - non FV misurato",
+          "pv_forecast_remaining_today_sensor": "Energia FV residua prevista oggi (Wh/kWh/MWh)",
+          "pv_forecast_current_hour_sensor": "Forecast FV ora corrente (W oppure Wh/kWh)",
+          "pv_forecast_next_hour_sensor": "Forecast FV prossima ora (W oppure Wh/kWh)",
+          "pv_forecast_today_sensor": "Energia FV prevista totale oggi (Wh/kWh/MWh)",
+          "pv_forecast_tomorrow_sensor": "Energia FV prevista domani (Wh/kWh/MWh)",
+          "weather_entity": "Entità meteo per previsione oraria (opzionale)",
+          "extra_context_sensors": "Sensori contesto aggiuntivi per AI (meteo, irraggiamento, temperatura, vento, ecc.)",
+          "ai_enabled": "Abilita planner AI consultivo",
+          "ai_interval_minutes": "Intervallo planner AI (minuti)",
+          "battery_capacity_kwh": "Capacità batteria (kWh)",
+          "battery_target_soc": "SOC batteria obiettivo (%)",
+          "battery_target_hour": "Ora obiettivo batteria (0-23)",
+          "expected_base_load_w": "Consumo base medio previsto casa (W)",
+          "battery_charge_efficiency_pct": "Efficienza stimata carica batteria (%)",
+          "ai_task_entity": "Entità AI Task da usare (Gemini)"
+        }
+      }
+    }
+  },
+  "config_subentries": {
+    "managed_device": {
+      "entry_type": "Dispositivo gestito",
+      "initiate_flow": {
+        "user": "Aggiungi dispositivo gestito",
+        "reconfigure": "Modifica dispositivo gestito"
+      },
+      "step": {
+        "managed_device": {
+          "title": "Configurazione dispositivo gestito",
+          "description": "Configura il carico e i suoi vincoli. Casa ES usa questi dati nel dry-run e li conserva già per le future funzioni di controllo reale. Priorità: 1 = massima, 10 = minima.",
+          "data": {
+            "name": "Nome del dispositivo",
+            "entity_id": "Entità Home Assistant da gestire",
+            "power_sensor": "Sensore della potenza reale del dispositivo (opzionale)",
+            "nominal_power_w": "Potenza nominale da considerare (W)",
+            "priority": "Priorità numerica (1 = massima, 10 = minima)",
+            "phase": "Fase elettrica del dispositivo",
+            "expected_runtime_minutes": "Durata prevista di un ciclo o utilizzo (minuti)",
+            "min_battery_soc": "SOC batteria minimo per permettere il dispositivo (%)",
+            "allow_grid": "Consenti integrazione dalla rete elettrica",
+            "max_grid_power_w": "Massimo prelievo rete consentito per questo dispositivo (W, 0 = nessun limite specifico)",
+            "min_daily_runtime_minutes": "Tempo minimo di funzionamento giornaliero (minuti)",
+            "max_daily_runtime_minutes": "Tempo massimo di funzionamento giornaliero (minuti)",
+            "max_daily_activations": "Numero massimo di accensioni giornaliere (0 = illimitato)",
+            "schedule_deadline": "Ora entro cui completare il tempo minimo (opzionale)",
+            "start_after": "Non avviare prima delle (opzionale)",
+            "end_before": "Non lasciare attivo oltre le (opzionale)",
+            "requires_entity": "Richiede che un altro dispositivo sia attivo (opzionale)",
+            "switch_interval_seconds": "Intervallo minimo tra cambi di stato (secondi)",
+            "averaging_window_seconds": "Finestra media potenza del dispositivo (secondi, 0 = predefinita)",
+            "on_only": "Solo accensione: non spegnere automaticamente dopo l'avvio",
+            "protect_preemption": "Proteggi da spegnimento per dare spazio ad altri carichi",
+            "big_consumer": "Tratta come grande consumatore",
+            "battery_discharge_override_w": "Limite scarica batteria mentre è attivo (W, 0 = nessun limite specifico)",
+            "dynamic_current": "Abilita controllo dinamico della corrente (EV / wallbox)",
+            "current_entity": "Entità che imposta la corrente in ampere (opzionale)",
+            "min_current_a": "Corrente minima (A)",
+            "max_current_a": "Corrente massima (A)",
+            "ev_soc_sensor": "Sensore SOC del veicolo elettrico (opzionale)",
+            "ev_connected_sensor": "Sensore veicolo collegato (opzionale)",
+            "ev_target_soc": "SOC obiettivo del veicolo elettrico (%)",
+            "enabled": "Abilita questo dispositivo nella gestione Casa ES"
+          },
+          "data_description": {
+            "name": "Scrivi un nome facile da riconoscere, per esempio Boiler, Deumidificatore, Clima salotto o Lavastoviglie.",
+            "entity_id": "Seleziona l'entità che in futuro Casa ES dovrà comandare, ad esempio switch.boiler, climate.salone o water_heater.ariston_boiler. In dry-run viene solo letta e simulata.",
+            "power_sensor": "Opzionale ma consigliato. Se hai un sensore che misura solo il consumo di questo apparecchio in W, kW o MW, selezionalo qui. Serve a capire se il dispositivo sta consumando davvero.",
+            "nominal_power_w": "Inserisci l'assorbimento elettrico tipico quando il dispositivo è attivo. Casa ES usa questo valore per verificare FV, inverter, fase e budget energetico.",
+            "priority": "Numero da 1 a 10. Il numero più basso viene valutato prima quando l'energia o la potenza non bastano per tutti i carichi.",
+            "phase": "Seleziona la fase fisica su cui è collegato il carico: L1, L2 o L3. Scegli Trifase solo se il dispositivo è realmente alimentato sulle tre fasi.",
+            "expected_runtime_minutes": "Stima la durata tipica di un singolo ciclo. Serve per prenotare dal budget energetico i kWh necessari a completarlo.",
+            "min_battery_soc": "Sotto questa percentuale Casa ES non considera il dispositivo avviabile. È una protezione specifica del singolo carico.",
+            "allow_grid": "Se disattivato, un nuovo avvio richiede sufficiente FV. Se attivato, Casa ES può integrare dalla rete rispettando il limite qui sotto e tutti i limiti elettrici generali.",
+            "max_grid_power_w": "Limite di potenza che questo carico può richiedere dalla rete quando l'integrazione rete è consentita. Con 0 non si applica un limite specifico oltre a quello generale di Casa ES.",
+            "min_daily_runtime_minutes": "Tempo minimo che il dispositivo dovrebbe totalizzare nella giornata. Viene già salvato; sarà un vincolo forte del planner/scheduler quando attiveremo il controllo reale.",
+            "max_daily_runtime_minutes": "Tempo massimo totale ammesso nella giornata. Deve essere maggiore o uguale al minimo giornaliero.",
+            "max_daily_activations": "Quante volte al massimo può essere avviato in un giorno. Usa 0 per nessun limite. Utile per compressori e dispositivi che non devono ripartire spesso.",
+            "schedule_deadline": "Ora entro cui il tempo minimo giornaliero dovrebbe essere completato, per esempio 17:00. Utile per carichi che devono terminare entro una certa ora.",
+            "start_after": "Ora più precoce in cui il dispositivo può partire. Lascia vuoto se non vuoi un limite.",
+            "end_before": "Ora oltre la quale il dispositivo non deve essere avviato o mantenuto attivo. Può essere combinata con l'ora di inizio anche attraversando la mezzanotte.",
+            "requires_entity": "Se impostato, questo carico può partire solo quando l'entità scelta è attiva. Serve per creare dipendenze tra dispositivi.",
+            "switch_interval_seconds": "Tempo minimo da rispettare tra due cambi di stato. Aumentalo per climatizzatori, pompe di calore e compressori per evitare accensioni e spegnimenti troppo frequenti.",
+            "averaging_window_seconds": "Finestra temporale usata in futuro per mediare la potenza disponibile e ridurre reazioni a picchi brevi. 0 significa usare il valore predefinito del gestore.",
+            "on_only": "Pensato per lavatrice, lavastoviglie e cicli che non devono essere interrotti: una volta avviati da Casa ES non verranno spenti automaticamente per mancanza di surplus.",
+            "protect_preemption": "Quando sarà attivo il controllo reale, impedisce di spegnere questo carico solo per far partire un dispositivo con priorità più alta.",
+            "big_consumer": "Contrassegna carichi importanti come pompa di calore o asciugatrice. Verrà usato per applicare regole più conservative sulla batteria mentre sono attivi.",
+            "battery_discharge_override_w": "Massima potenza di scarica batteria desiderata mentre questo grande consumatore è in funzione. 0 significa nessun limite specifico del dispositivo.",
+            "dynamic_current": "Per wallbox o altri carichi con corrente regolabile. Casa ES potrà modulare gli ampere invece di usare solo ON/OFF.",
+            "current_entity": "Se il controllo dinamico è attivo, seleziona l'entità number.* che imposta la corrente di carica in ampere.",
+            "min_current_a": "Corrente minima accettata dal dispositivo, ad esempio 6 A per molte wallbox.",
+            "max_current_a": "Corrente massima che Casa ES potrà richiedere al dispositivo.",
+            "ev_soc_sensor": "Sensore percentuale della batteria dell'auto. Lascia vuoto se il dispositivo non è un veicolo elettrico.",
+            "ev_connected_sensor": "Binary sensor che indica se il veicolo è collegato alla wallbox. Lascia vuoto se non disponibile.",
+            "ev_target_soc": "SOC dell'auto oltre il quale Casa ES non dovrà più richiedere ricarica quando la gestione EV sarà attiva.",
+            "enabled": "Se disattivato, il dispositivo resta configurato ma viene escluso dalle decisioni di Casa ES senza doverlo cancellare."
+          }
+        }
+      },
+      "error": {
+        "device_name_required": "Inserisci un nome per il dispositivo.",
+        "device_already_configured": "Questa entità è già presente tra i dispositivi gestiti.",
+        "expected_power_sensor": "Il sensore di potenza deve usare W, kW o MW.",
+        "dependency_self": "Un dispositivo non può dipendere da se stesso.",
+        "invalid_runtime_range": "Il tempo massimo giornaliero deve essere maggiore o uguale al tempo minimo.",
+        "invalid_current_range": "La corrente massima deve essere maggiore o uguale alla corrente minima.",
+        "current_entity_required": "Per il controllo dinamico devi selezionare l'entità che imposta la corrente."
+      }
+    }
+  },
+  "selector": {
+    "managed_phase": {
+      "options": {
+        "l1": "L1",
+        "l2": "L2",
+        "l3": "L3",
+        "three_phase": "Trifase"
+      }
+    }
+  }
+}
