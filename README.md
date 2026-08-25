@@ -30,6 +30,26 @@ It creates calculated entities for:
 
 All power inputs may be in `W`, `kW` or `MW`; values are normalized to watts.
 
+## Diagnostics
+
+From v0.1.1, Home Assistant can export a compact diagnostics file for the integration.
+The file contains only the information useful for Casa ES Energy Manager testing:
+
+- configured source sensor entity IDs
+- current source sensor states and units
+- PV, load, grid, battery SOC and battery power
+- L1/L2/L3 power values
+- configured inverter, grid and phase limits
+- safety margin
+- all values calculated by the coordinator
+- coordinator health and sign conventions
+
+To download it:
+
+`Settings -> Devices & services -> Casa ES Energy Manager -> Download diagnostics`
+
+The diagnostics file is intended to be attached to the development chat when a calculation or sensor mapping needs to be checked. It does not include Home Assistant credentials, tokens or passwords.
+
 ## Why a separate domain?
 
 The integration domain is `casa_es_energy_manager`, so this project can be installed alongside the original PV Excess Control integration during development and testing.

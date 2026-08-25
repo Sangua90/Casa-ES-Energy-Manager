@@ -2,7 +2,7 @@
 
 DOMAIN = "casa_es_energy_manager"
 NAME = "Casa ES Energy Manager"
-VERSION = "0.1.0"
+VERSION = "0.1.1"
 
 CONF_PV_POWER_SENSOR = "pv_power_sensor"
 CONF_LOAD_POWER_SENSOR = "load_power_sensor"
