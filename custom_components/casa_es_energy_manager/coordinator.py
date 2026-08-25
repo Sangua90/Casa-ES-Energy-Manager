@@ -53,6 +53,8 @@ from .forecast_units import normalize_forecast_measure
 
 _LOGGER = logging.getLogger(__name__)
 
+FORECAST_CURVE_MAX_POINTS = 192
+
 
 class CasaESEnergyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Read Home Assistant energy sensors and calculate Casa ES metrics."""
@@ -114,11 +116,7 @@ class CasaESEnergyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def _forecast_measure(
         self, entity_id: str | None
     ) -> tuple[float | None, float | None]:
-        """Read an hourly forecast as either power W or energy kWh.
-
-        Power and energy are intentionally kept distinct. A value in watts is
-        never silently converted into kWh.
-        """
+        """Read an hourly forecast as either power W or energy kWh."""
         if not entity_id:
             return None, None
         state = self.hass.states.get(entity_id)
@@ -141,12 +139,7 @@ class CasaESEnergyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         }
 
     def _forecast_curve(self, entity_id: str | None) -> list[dict[str, Any]]:
-        """Read a provider's optional ``watts`` forecast curve attribute.
-
-        Some solar forecast integrations expose a timestamp->watts dictionary on
-        their daily energy sensor. We consume it opportunistically without making
-        the integration depend on one specific forecast provider.
-        """
+        """Read a provider's optional ``watts`` timestamp-to-power curve."""
         if not entity_id:
             return []
         state = self.hass.states.get(entity_id)
@@ -174,7 +167,31 @@ class CasaESEnergyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         points.sort(key=lambda item: item[0])
         return [
             {"time": timestamp.isoformat(), "power_w": round(power_w, 1)}
-            for timestamp, power_w in points[:24]
+            for timestamp, power_w in points[:FORECAST_CURVE_MAX_POINTS]
+        ]
+
+    @staticmethod
+    def _merge_forecast_curves(*curves: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Merge provider curves across days, deduplicating timestamps."""
+        merged: dict[str, float] = {}
+        for curve in curves:
+            for point in curve:
+                if not isinstance(point, dict):
+                    continue
+                raw_time = point.get("time")
+                raw_power = point.get("power_w")
+                if raw_time is None or raw_power is None:
+                    continue
+                try:
+                    power_w = max(float(raw_power), 0.0)
+                except (TypeError, ValueError):
+                    continue
+                merged[str(raw_time)] = power_w
+
+        ordered = sorted(merged.items(), key=lambda item: item[0])
+        return [
+            {"time": timestamp, "power_w": round(power_w, 1)}
+            for timestamp, power_w in ordered[:FORECAST_CURVE_MAX_POINTS]
         ]
 
     def update_ai_data(self, values: dict[str, Any]) -> None:
@@ -225,7 +242,15 @@ class CasaESEnergyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         forecast_tomorrow = self._numeric_state(
             self._config(CONF_PV_FORECAST_TOMORROW_SENSOR), energy=True
         )
-        forecast_curve = self._forecast_curve(self._config(CONF_PV_FORECAST_TODAY_SENSOR))
+        forecast_curve_today = self._forecast_curve(
+            self._config(CONF_PV_FORECAST_TODAY_SENSOR)
+        )
+        forecast_curve_tomorrow = self._forecast_curve(
+            self._config(CONF_PV_FORECAST_TOMORROW_SENSOR)
+        )
+        forecast_curve = self._merge_forecast_curves(
+            forecast_curve_today, forecast_curve_tomorrow
+        )
 
         extra_context_ids = self._config(CONF_EXTRA_CONTEXT_SENSORS, []) or []
         extra_context = [self._entity_snapshot(entity_id) for entity_id in extra_context_ids]
@@ -251,6 +276,8 @@ class CasaESEnergyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "forecast_next_hour_kwh": forecast_next_energy,
             "forecast_today_kwh": forecast_today,
             "forecast_tomorrow_kwh": forecast_tomorrow,
+            "forecast_curve_today": forecast_curve_today,
+            "forecast_curve_tomorrow": forecast_curve_tomorrow,
             "forecast_curve": forecast_curve,
             "weather_entity": weather_entity,
             "weather_current": weather_current,
