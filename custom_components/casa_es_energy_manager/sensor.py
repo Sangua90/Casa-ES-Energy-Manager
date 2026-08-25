@@ -7,7 +7,7 @@ from typing import Any
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import PERCENTAGE, UnitOfPower
+from homeassistant.const import PERCENTAGE, UnitOfEnergy, UnitOfPower
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -26,76 +26,41 @@ class CasaESSensorDescription:
     state_class: SensorStateClass | None = None
 
 
+_POWER = {
+    "unit": UnitOfPower.WATT,
+    "device_class": SensorDeviceClass.POWER,
+    "state_class": SensorStateClass.MEASUREMENT,
+}
+_ENERGY = {
+    "unit": UnitOfEnergy.KILO_WATT_HOUR,
+    "device_class": SensorDeviceClass.ENERGY,
+    "state_class": SensorStateClass.MEASUREMENT,
+}
+
 SENSORS = (
-    CasaESSensorDescription(
-        key="solar_after_house_w",
-        name="FV dopo i carichi casa",
-        unit=UnitOfPower.WATT,
-        device_class=SensorDeviceClass.POWER,
-        state_class=SensorStateClass.MEASUREMENT,
-    ),
-    CasaESSensorDescription(
-        key="grid_import_w",
-        name="Prelievo rete",
-        unit=UnitOfPower.WATT,
-        device_class=SensorDeviceClass.POWER,
-        state_class=SensorStateClass.MEASUREMENT,
-    ),
-    CasaESSensorDescription(
-        key="grid_headroom_w",
-        name="Margine rete",
-        unit=UnitOfPower.WATT,
-        device_class=SensorDeviceClass.POWER,
-        state_class=SensorStateClass.MEASUREMENT,
-    ),
-    CasaESSensorDescription(
-        key="inverter_headroom_w",
-        name="Margine inverter",
-        unit=UnitOfPower.WATT,
-        device_class=SensorDeviceClass.POWER,
-        state_class=SensorStateClass.MEASUREMENT,
-    ),
-    CasaESSensorDescription(
-        key="battery_charge_w",
-        name="Potenza carica batteria",
-        unit=UnitOfPower.WATT,
-        device_class=SensorDeviceClass.POWER,
-        state_class=SensorStateClass.MEASUREMENT,
-    ),
-    CasaESSensorDescription(
-        key="battery_discharge_w",
-        name="Potenza scarica batteria",
-        unit=UnitOfPower.WATT,
-        device_class=SensorDeviceClass.POWER,
-        state_class=SensorStateClass.MEASUREMENT,
-    ),
+    CasaESSensorDescription(key="solar_after_house_w", name="FV misurato dopo i carichi casa", **_POWER),
+    CasaESSensorDescription(key="pv_potential_w", name="Potenza FV potenziale stimata", **_POWER),
+    CasaESSensorDescription(key="pv_potential_gap_w", name="Potenziale FV non sfruttato stimato", **_POWER),
+    CasaESSensorDescription(key="pv_potential_after_house_w", name="FV potenziale dopo i carichi casa", **_POWER),
+    CasaESSensorDescription(key="forecast_remaining_kwh", name="Previsione FV residua oggi", **_ENERGY),
+    CasaESSensorDescription(key="forecast_current_hour_kwh", name="Previsione FV ora corrente", **_ENERGY),
+    CasaESSensorDescription(key="forecast_next_hour_kwh", name="Previsione FV prossima ora", **_ENERGY),
+    CasaESSensorDescription(key="forecast_today_kwh", name="Previsione FV totale oggi", **_ENERGY),
+    CasaESSensorDescription(key="forecast_tomorrow_kwh", name="Previsione FV domani", **_ENERGY),
+    CasaESSensorDescription(key="grid_import_w", name="Prelievo rete", **_POWER),
+    CasaESSensorDescription(key="grid_headroom_w", name="Margine rete", **_POWER),
+    CasaESSensorDescription(key="inverter_headroom_w", name="Margine inverter", **_POWER),
+    CasaESSensorDescription(key="battery_charge_w", name="Potenza carica batteria", **_POWER),
+    CasaESSensorDescription(key="battery_discharge_w", name="Potenza scarica batteria", **_POWER),
     CasaESSensorDescription(
         key="battery_soc",
         name="SOC batteria",
         unit=PERCENTAGE,
         state_class=SensorStateClass.MEASUREMENT,
     ),
-    CasaESSensorDescription(
-        key="phase_l1_headroom_w",
-        name="Margine fase L1",
-        unit=UnitOfPower.WATT,
-        device_class=SensorDeviceClass.POWER,
-        state_class=SensorStateClass.MEASUREMENT,
-    ),
-    CasaESSensorDescription(
-        key="phase_l2_headroom_w",
-        name="Margine fase L2",
-        unit=UnitOfPower.WATT,
-        device_class=SensorDeviceClass.POWER,
-        state_class=SensorStateClass.MEASUREMENT,
-    ),
-    CasaESSensorDescription(
-        key="phase_l3_headroom_w",
-        name="Margine fase L3",
-        unit=UnitOfPower.WATT,
-        device_class=SensorDeviceClass.POWER,
-        state_class=SensorStateClass.MEASUREMENT,
-    ),
+    CasaESSensorDescription(key="phase_l1_headroom_w", name="Margine fase L1", **_POWER),
+    CasaESSensorDescription(key="phase_l2_headroom_w", name="Margine fase L2", **_POWER),
+    CasaESSensorDescription(key="phase_l3_headroom_w", name="Margine fase L3", **_POWER),
     CasaESSensorDescription(key="status", name="Stato gestore energia"),
     CasaESSensorDescription(key="ai_status", name="Stato planner AI"),
     CasaESSensorDescription(key="ai_strategy", name="Strategia AI"),
@@ -104,9 +69,7 @@ SENSORS = (
     CasaESSensorDescription(
         key="ai_battery_reserve_w",
         name="Riserva batteria consigliata AI",
-        unit=UnitOfPower.WATT,
-        device_class=SensorDeviceClass.POWER,
-        state_class=SensorStateClass.MEASUREMENT,
+        **_POWER,
     ),
     CasaESSensorDescription(
         key="ai_confidence",
