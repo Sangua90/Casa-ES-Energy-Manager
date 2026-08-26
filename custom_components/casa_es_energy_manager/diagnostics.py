@@ -34,7 +34,9 @@ from .const import (
     CONF_GRID_POWER_SENSOR,
     CONF_INVERTER_POWER_LIMIT,
     CONF_LOAD_POWER_SENSOR,
+    CONF_MONITORED_LOAD_EMERGENCY_ENTITY,
     CONF_MONITORED_LOAD_POWER_SENSOR,
+    CONF_MONITORED_LOAD_RESUME_ENTITY,
     CONF_PHASE_L1_POWER_SENSOR,
     CONF_PHASE_L2_POWER_SENSOR,
     CONF_PHASE_L3_POWER_SENSOR,
@@ -115,10 +117,19 @@ def _subentries(hass: HomeAssistant, entry: ConfigEntry, kind: str) -> list[dict
                 hass, str(config.get(CONF_DEVICE_MODE_CLIMATE_ENTITY, "")) or None
             )
         else:
+            emergency_entity = str(
+                config.get(CONF_MONITORED_LOAD_EMERGENCY_ENTITY, "")
+            ) or None
+            resume_entity = str(
+                config.get(CONF_MONITORED_LOAD_RESUME_ENTITY, "")
+            ) or None
             item["power_sensor"] = _entity_snapshot(
                 hass, str(config.get(CONF_MONITORED_LOAD_POWER_SENSOR, "")) or None
             )
-            item["read_only"] = True
+            item["emergency_entity"] = _entity_snapshot(hass, emergency_entity)
+            item["resume_entity"] = _entity_snapshot(hass, resume_entity)
+            item["emergency_control_capable"] = bool(emergency_entity)
+            item["read_only"] = not bool(emergency_entity)
         result.append(item)
     return result
 
@@ -196,6 +207,7 @@ async def async_get_config_entry_diagnostics(
             "last_at": calculated.get("last_real_control_at"),
             "last_error": calculated.get("last_real_control_error"),
             "commands_per_refresh_max": 1,
+            "monitored_emergency": calculated.get("monitored_emergency_control") or {},
         },
         "source_sensors": source_sensors,
         "configured_limits": {

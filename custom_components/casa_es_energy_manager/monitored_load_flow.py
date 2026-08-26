@@ -1,4 +1,4 @@
-"""Config-subentry flow for read-only Casa ES monitored loads."""
+"""Config-subentry flow for Casa ES monitored loads."""
 
 from __future__ import annotations
 
@@ -11,19 +11,46 @@ from homeassistant.const import ATTR_UNIT_OF_MEASUREMENT
 from homeassistant.helpers import selector
 
 from .const import (
+    CONF_MONITORED_LOAD_EMERGENCY_ENTITY,
     CONF_MONITORED_LOAD_ENABLED,
     CONF_MONITORED_LOAD_NAME,
     CONF_MONITORED_LOAD_PHASE,
     CONF_MONITORED_LOAD_POWER_SENSOR,
+    CONF_MONITORED_LOAD_RESUME_ENTITY,
     DEFAULT_MONITORED_LOAD_ENABLED,
     DEVICE_PHASES,
     SUBENTRY_TYPE_MONITORED_LOAD,
 )
 from .forecast_units import POWER_UNITS
 
+CONTROL_DOMAINS = [
+    "switch",
+    "button",
+    "script",
+    "input_boolean",
+    "climate",
+    "fan",
+    "light",
+]
+
 
 def _power_sensor_selector() -> selector.EntitySelector:
     return selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor"))
+
+
+def _control_entity_selector() -> selector.EntitySelector:
+    return selector.EntitySelector(
+        selector.EntitySelectorConfig(domain=CONTROL_DOMAINS)
+    )
+
+
+def _optional_entity(
+    fields: dict[Any, Any], key: str, current: dict[str, Any]
+) -> None:
+    value = current.get(key)
+    fields[vol.Optional(key, default=value) if value else vol.Optional(key)] = (
+        _control_entity_selector()
+    )
 
 
 def _schema(current: dict[str, Any]) -> vol.Schema:
@@ -67,11 +94,24 @@ def _schema(current: dict[str, Any]) -> vol.Schema:
             ),
         )
     ] = selector.BooleanSelector()
+    _optional_entity(fields, CONF_MONITORED_LOAD_EMERGENCY_ENTITY, current)
+    _optional_entity(fields, CONF_MONITORED_LOAD_RESUME_ENTITY, current)
     return vol.Schema(fields)
 
 
+def _clean(values: dict[str, Any]) -> dict[str, Any]:
+    result = dict(values)
+    for key in (
+        CONF_MONITORED_LOAD_EMERGENCY_ENTITY,
+        CONF_MONITORED_LOAD_RESUME_ENTITY,
+    ):
+        if result.get(key) in (None, ""):
+            result.pop(key, None)
+    return result
+
+
 class MonitoredLoadSubentryFlow(ConfigSubentryFlow):
-    """Add or edit one read-only monitored load."""
+    """Add or edit one monitored load with optional emergency control."""
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -98,7 +138,7 @@ class MonitoredLoadSubentryFlow(ConfigSubentryFlow):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            values = dict(user_input)
+            values = _clean(dict(user_input))
             values[CONF_MONITORED_LOAD_NAME] = str(
                 values.get(CONF_MONITORED_LOAD_NAME, "")
             ).strip()
@@ -111,6 +151,14 @@ class MonitoredLoadSubentryFlow(ConfigSubentryFlow):
                 unit = state.attributes.get(ATTR_UNIT_OF_MEASUREMENT)
                 if unit is not None and str(unit) not in POWER_UNITS:
                     errors[CONF_MONITORED_LOAD_POWER_SENSOR] = "expected_power_sensor"
+
+            for key in (
+                CONF_MONITORED_LOAD_EMERGENCY_ENTITY,
+                CONF_MONITORED_LOAD_RESUME_ENTITY,
+            ):
+                entity_id = str(values.get(key) or "")
+                if entity_id and self.hass.states.get(entity_id) is None:
+                    errors[key] = "control_entity_not_found"
 
             current_id = (
                 self._get_reconfigure_subentry().subentry_id if reconfigure else None

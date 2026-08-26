@@ -2,8 +2,8 @@
 
 Custom Home Assistant integration for the Casa ES photovoltaic, battery and three-phase energy system.
 
-> **Version 1.2.0 — guarded autonomous control**  
-> Electrical decisions remain deterministic and local. AI is advisory only. v1.2.0 can physically manage configured appliances, but the master **Controllo automatico reale** switch is intentionally **OFF by default** after installation/update and must be enabled explicitly by the user.
+> **Version 1.4.0 — monitored-load emergency protection**  
+> Electrical decisions remain deterministic and local. AI is advisory only. Managed appliances keep the guarded autonomous control introduced in v1.2, while monitored loads can now optionally expose emergency stop/pause and resume commands used only to protect grid, phase and inverter limits.
 
 ## Guided configuration
 
@@ -63,7 +63,7 @@ If the managed entity itself is `climate.*`, the same entity can be used as mode
 
 If the real command is a `switch.*` — for example a switch controlling several indoor units on one outdoor machine — select one related `climate.*` as **Climate di riferimento per la modalità**. Casa ES continues to control the switch and reads the climate entity only to identify the current mode.
 
-Existing valid v1.1.1 switch profiles are retained as a conservative bridge while the new per-mode buckets collect enough samples.
+Existing valid switch profiles are retained as a conservative bridge while newer per-mode buckets collect enough samples.
 
 ### Automatico / Manuale / Spento
 
@@ -75,18 +75,18 @@ Every managed device exposes its own mode selector:
 
 ## Master real-control switch
 
-v1.2.0 adds **Controllo automatico reale**.
+Casa ES exposes **Controllo automatico reale**.
 
-It defaults to **OFF**. With the master OFF, Casa ES continues calculating decisions and learning but sends no physical appliance commands.
+It defaults to **OFF** after installation/update. With the master OFF, Casa ES continues calculating decisions and learning but sends no physical appliance or monitored-load emergency commands.
 
 When the master is ON:
 
-- only devices in **Automatico** can be controlled normally;
+- only managed devices in **Automatico** can be controlled normally;
 - **Manuale** is never touched;
-- hard measured electrical safety has first priority;
-- minimum ON/OFF constraints are respected for normal energy decisions;
-- a hard grid/phase/inverter protection may stop a flexible load immediately;
-- at most one appliance command is sent per coordinator refresh so measurements can settle before another action.
+- normal energy decisions respect minimum ON/OFF constraints;
+- a measured phase/inverter overload may stop an eligible managed flexible load immediately;
+- a total-grid warning does not bypass a managed device's normal minimum-ON/non-interruptible rules;
+- at most one energy-control command is sent per coordinator refresh so measurements can settle before another action.
 
 Diagnostics include the master state, last real command, entity, reason, timestamp and any service error.
 
@@ -123,11 +123,49 @@ Automatic stops can be requested for conditions such as:
 - definite battery-target shortfall
 - battery-first reserve becoming tight
 
-An `on_only`/non-interruptible cycle resists ordinary energy-based stops, while hard electrical protection remains authoritative.
+An `on_only`/non-interruptible cycle resists ordinary energy-based stops. v1.4 keeps a total-grid emergency inside these normal minimum-ON/non-interruptible rules after monitored emergency loads have been tried. A measured phase/inverter overload remains the immediate electrical-protection case for managed flexible loads.
 
-## Read-only monitored loads
+## Monitored loads with optional emergency protection
 
-Appliances that Casa ES must never control can be added as **Monitored loads** with name, real power sensor, phase and enabled state. They explain parts of measured phase consumption but are never added on top of the real phase totals.
+A **Carico monitorato** always contributes only its measured power and physical phase to phase attribution. It is never started, stopped or paused for PV optimization, battery charging, forecast strategy or AI advice.
+
+A monitored load can remain completely read-only by configuring only:
+
+- name
+- real power sensor
+- physical phase
+- enabled state
+
+v1.4 adds two optional fields inside the same monitored-load category:
+
+- **Comando emergenza \*** — entity used only to shed/pause the load during measured electrical protection;
+- **Comando ripristino \*** — optional entity used to resume/turn the load back on after the electrical situation has remained stable for at least 2 minutes.
+
+Supported command entities are switches, buttons, scripts, input booleans, climates, fans and lights. Stateful entities are turned OFF for emergency and ON for restore. A button is pressed and a script is executed. This makes pause/resume integrations usable without introducing another Casa ES device category.
+
+If **Comando ripristino** is left empty, Casa ES never restarts that appliance automatically. Once the electrical situation is stable it creates a Home Assistant persistent notification telling the user that manual restoration is possible. This is appropriate for appliances such as an oven that can safely be turned off but should not be restarted automatically.
+
+### Electrical emergency order
+
+The v1.4 protection order is intentionally based on the electrical problem rather than a fixed appliance priority.
+
+**Total grid / Enel warning**
+
+1. look only at active monitored loads that have an emergency command;
+2. choose the smallest single load whose measured watts are enough to return below the configured safe grid limit;
+3. if no single load is enough, shed the largest useful monitored load;
+4. send one command and re-measure on the next coordinator refresh before doing anything else;
+5. if the grid warning still remains and no useful monitored load is available, managed loads may then stop using their normal minimum-ON/non-interruptible rules.
+
+**Single-phase or inverter warning**
+
+1. try eligible managed flexible loads first;
+2. for a phase warning, only managed loads on the affected phase (or three-phase loads) are useful;
+3. re-measure after each command;
+4. if managed loads cannot resolve the warning, use emergency-capable monitored loads on the affected phase;
+5. for an inverter-total warning, monitored loads can be selected from any phase if managed loads are insufficient.
+
+This keeps phase/inverter protection focused on the loads that can actually solve the electrical problem and reserves household-appliance shedding for when it is genuinely needed.
 
 ## Solar and battery planning
 
@@ -147,7 +185,7 @@ Casa ES requests the stop script when target SOC is reached, timeout expires, or
 
 ## Advisory AI
 
-Gemini / AI Task remains advisory. AI recommendations cannot override deterministic local guardrails.
+Gemini / AI Task remains advisory. AI recommendations cannot override deterministic local guardrails. Monitored-load emergency shedding is deterministic and does not depend on AI availability or advice.
 
 ## Diagnostics
 
@@ -155,19 +193,20 @@ Download diagnostics from:
 
 `Settings -> Devices & services -> Casa ES Energy Manager -> Download diagnostics`
 
-Useful fields include source sensors, forecast inputs, planner policy, phase headroom/attribution, managed-device configuration, runtime modes, real power, adaptive profiles, dry-run decisions and real-control command history.
+Useful fields include source sensors, forecast inputs, planner policy, phase headroom/attribution, managed-device configuration, monitored emergency capability, currently shed monitored loads, manual restore pending state, adaptive profiles, dry-run decisions and real-control command history.
 
-## Safe update path to v1.2.0
+## Safe update path to v1.4.0
 
 After updating and restarting Home Assistant:
 
-1. leave **Controllo automatico reale** OFF;
-2. reconfigure climate/PDC managed devices and select the appropriate climate mode reference;
-3. verify managed-device settings and modes;
-4. put the devices you want managed in **Automatico**;
-5. enable **Controllo automatico reale** only when ready.
+1. verify **Controllo automatico reale** state before configuring emergency-capable monitored loads;
+2. existing monitored loads remain compatible and read-only until edited;
+3. edit a monitored load and optionally set **Comando emergenza** and **Comando ripristino**;
+4. leave **Comando ripristino** empty for loads that must never restart automatically;
+5. verify each appliance's Home Assistant pause/stop/resume behavior before relying on it for emergency shedding;
+6. check diagnostics after the first real emergency action.
 
-Turning the master OFF immediately prevents new Casa ES appliance commands while monitoring and learning continue.
+Turning the master OFF immediately prevents new Casa ES appliance and monitored-load emergency commands while monitoring and learning continue.
 
 ## Installation / update
 
@@ -175,14 +214,14 @@ Add this repository to HACS as a custom Integration repository, install/update *
 
 `Settings -> Devices & services -> Casa ES Energy Manager`
 
-Existing v1.0/v1.1 configurations remain readable. Obsolete wallbox/EV/dependency keys are ignored and removed when a managed device is reconfigured.
+Existing v1.0/v1.1/v1.2 configurations remain readable. Obsolete wallbox/EV/dependency keys are ignored and removed when a managed device is reconfigured.
 
 ## Safety architecture
 
 Safety priority is always:
 
 1. measured grid / phase / inverter limits
-2. deterministic local protection
+2. deterministic local protection and v1.4 monitored emergency shedding
 3. battery target and user-selected energy preference
 4. managed-device constraints and anti-cycling
 5. forecast optimization

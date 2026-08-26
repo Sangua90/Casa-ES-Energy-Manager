@@ -9,7 +9,7 @@ from homeassistant.helpers.event import async_call_later, async_track_time_inter
 
 from .ai_planner_v1 import CasaESAIPlanner
 from .const import DOMAIN
-from .coordinator_v1 import CasaESEnergyCoordinator
+from .coordinator_v141 import CasaESEnergyCoordinator
 
 PLATFORMS: list[Platform] = [
     Platform.SENSOR,
