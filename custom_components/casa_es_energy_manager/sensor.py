@@ -129,4 +129,4 @@ class CasaESEnergySensor(CoordinatorEntity[CasaESEnergyCoordinator], SensorEntit
         if not self.description.attributes_key:
             return None
         value = self.coordinator.data.get(self.description.attributes_key)
-        return {"dispositivi": value if isinstance(value, list) else []}
+        return {"devices": value if isinstance(value, list) else []}
