@@ -228,8 +228,10 @@ class DeviceDryRunTests(unittest.TestCase):
         result = evaluate_managed_devices(
             [climate], data=self._data(), policy=self._policy()
         )
-        self.assertFalse(result["dry_run_decisions"][0]["running"])
-        self.assertTrue(result["dry_run_decisions"][0]["would_start"])
+        decision = result["dry_run_decisions"][0]
+        self.assertFalse(decision["running"])
+        self.assertFalse(decision["would_start"])
+        self.assertEqual(decision["decision"], "already_enabled_idle")
 
     def test_power_sensor_marks_real_consumption_as_running(self):
         climate = self._device(
