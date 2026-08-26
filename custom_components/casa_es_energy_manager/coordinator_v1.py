@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from datetime import timedelta
 from typing import Any
 
@@ -230,17 +231,29 @@ class CasaESEnergyCoordinator(BaseCoordinator):
                 item["hvac_mode"] = None
                 item["hvac_action"] = None
 
+        # A real meter can only train a device automatically when its watts can
+        # be attributed to that device alone. If two managed loads use the same
+        # power sensor, both remain safely on configured nominal power.
+        power_sensor_counts = Counter(
+            str(item.get("power_sensor") or "")
+            for item in devices
+            if item.get("power_sensor")
+        )
+        for item in devices:
+            power_sensor = str(item.get("power_sensor") or "")
+            item["adaptive_shared_power_sensor"] = bool(
+                power_sensor and power_sensor_counts[power_sensor] > 1
+            )
+
         await self.learner.async_observe(devices)
 
         for item in devices:
-            entity_id = str(item.get("entity_id") or "")
             nominal = float(item.get(CONF_DEVICE_NOMINAL_POWER_W) or 0.0)
             adaptive = bool(
                 item.get(CONF_DEVICE_ADAPTIVE_POWER, DEFAULT_DEVICE_ADAPTIVE_POWER)
             )
             if adaptive and item.get("power_sensor"):
-                mode = self.learner.mode_for(item)
-                profile = self.learner.profile_for(entity_id, mode, nominal)
+                profile = self.learner.admission_profile_for(item, nominal)
                 item["adaptive_profile"] = profile
                 item["admission_power_w"] = profile["estimated_power_w"]
             else:
