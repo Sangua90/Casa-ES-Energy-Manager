@@ -28,7 +28,7 @@ BINARY_SENSORS = (
     CasaESBinaryDescription(key="pv_curtailment_likely", name="Limitazione FV probabile"),
     CasaESBinaryDescription(key="ai_allow_flexible_loads", name="AI consiglia carichi flessibili"),
     CasaESBinaryDescription(key="ai_grid_charge_recommended", name="AI consiglia ricarica rete"),
-    CasaESBinaryDescription(key="ai_guardrail_applied", name="Correzione guardrail AI applicata"),
+    CasaESBinaryDescription(key="ai_guardrail_applied", name="Correzione di sicurezza AI applicata"),
     CasaESBinaryDescription(key="emergency_charge_available", name="Ricarica emergenza configurata"),
     CasaESBinaryDescription(key="emergency_charge_active", name="Ricarica emergenza attiva"),
 )
