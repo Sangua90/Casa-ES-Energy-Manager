@@ -2,7 +2,7 @@
 
 DOMAIN = "casa_es_energy_manager"
 NAME = "Casa ES Energy Manager"
-VERSION = "1.2.0"
+VERSION = "1.4.0"
 
 # Core electrical sensors.
 CONF_PV_POWER_SENSOR = "pv_power_sensor"
@@ -133,12 +133,19 @@ LEGACY_REMOVED_DEVICE_KEYS = (
     CONF_DEVICE_EV_TARGET_SOC,
 )
 
-# Read-only monitored loads: useful for phase attribution, never controlled.
+# Monitored loads always contribute read-only phase attribution. In v1.4 they
+# may optionally expose emergency shed/resume commands. Those commands are used
+# only for measured grid/phase/inverter protection, never for PV/battery
+# optimization or AI advice.
 SUBENTRY_TYPE_MONITORED_LOAD = "monitored_load"
 CONF_MONITORED_LOAD_NAME = "name"
 CONF_MONITORED_LOAD_POWER_SENSOR = "power_sensor"
 CONF_MONITORED_LOAD_PHASE = "phase"
 CONF_MONITORED_LOAD_ENABLED = "enabled"
+CONF_MONITORED_LOAD_EMERGENCY_ENTITY = "emergency_entity"
+CONF_MONITORED_LOAD_RESUME_ENTITY = "resume_entity"
+MONITORED_EMERGENCY_ACTIVE_POWER_THRESHOLD_W = 20.0
+MONITORED_EMERGENCY_RECOVERY_STABLE_SECONDS = 120
 
 # Numeric priority: 1 = highest, 100 = lowest.
 DEVICE_PRIORITY_MIN = 1
