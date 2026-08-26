@@ -95,12 +95,12 @@ class TestUIContract(unittest.TestCase):
 
     def test_real_control_master_and_v14_emergency_controller_exist(self) -> None:
         const_text = (INTEGRATION / "const.py").read_text(encoding="utf-8"); init_text = (INTEGRATION / "__init__.py").read_text(encoding="utf-8"); switch_text = (INTEGRATION / "switch.py").read_text(encoding="utf-8"); coordinator_text = (INTEGRATION / "coordinator_v14.py").read_text(encoding="utf-8")
-        self.assertIn("DEFAULT_AUTOMATIC_REAL_LOAD_CONTROL = False", const_text); self.assertIn("Platform.SWITCH", init_text); self.assertIn("coordinator_v14", init_text); self.assertIn("Controllo automatico reale", switch_text); self.assertIn("_async_apply_real_control", coordinator_text); self.assertIn("monitored_emergency_control", coordinator_text); self.assertIn("grid_total", coordinator_text); self.assertIn("phase_or_inverter", coordinator_text)
+        self.assertIn("DEFAULT_AUTOMATIC_REAL_LOAD_CONTROL = False", const_text); self.assertIn("Platform.SWITCH", init_text); self.assertIn("coordinator_v142", init_text); self.assertIn("Controllo automatico reale", switch_text); self.assertIn("_async_apply_real_control", coordinator_text); self.assertIn("monitored_emergency_control", coordinator_text); self.assertIn("grid_total", coordinator_text); self.assertIn("phase_or_inverter", coordinator_text)
 
     def test_manifest_and_const_versions_match(self) -> None:
         manifest = json.loads((INTEGRATION / "manifest.json").read_text(encoding="utf-8")); const_text = (INTEGRATION / "const.py").read_text(encoding="utf-8")
         match = re.search(r'^VERSION = "([^"]+)"$', const_text, re.MULTILINE)
-        self.assertIsNotNone(match); self.assertEqual(manifest["version"], match.group(1)); self.assertEqual("1.4.1", manifest["version"])
+        self.assertIsNotNone(match); self.assertEqual(manifest["version"], match.group(1)); self.assertEqual("1.4.2", manifest["version"])
 
 
 if __name__ == "__main__":
