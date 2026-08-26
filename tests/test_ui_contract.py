@@ -33,16 +33,9 @@ class TestUIContract(unittest.TestCase):
                 if not fields:
                     continue
                 descriptions = step.get("data_description", {})
-                self.assertEqual(
-                    set(fields),
-                    set(descriptions),
-                    f"Descrizioni incomplete nello step {step_name}",
-                )
+                self.assertEqual(set(fields), set(descriptions), f"Descrizioni incomplete nello step {step_name}")
                 for key, value in descriptions.items():
-                    self.assertTrue(
-                        str(value).strip(),
-                        f"Descrizione vuota per {step_name}.{key}",
-                    )
+                    self.assertTrue(str(value).strip(), f"Descrizione vuota per {step_name}.{key}")
 
     def test_note_bene_explains_asterisk_in_main_pages(self) -> None:
         for group in (self.it["config"]["step"], self.it["options"]["step"]):
@@ -55,36 +48,22 @@ class TestUIContract(unittest.TestCase):
 
     def test_optional_fields_are_visibly_marked(self) -> None:
         config_optional = {
-            "phase_l1_power_sensor",
-            "phase_l2_power_sensor",
-            "phase_l3_power_sensor",
-            "pv_potential_power_sensor",
-            "pv_forecast_remaining_today_sensor",
-            "pv_forecast_current_hour_sensor",
-            "pv_forecast_next_hour_sensor",
-            "pv_forecast_today_sensor",
-            "pv_forecast_tomorrow_sensor",
-            "weather_entity",
-            "emergency_charge_start_script",
-            "emergency_charge_stop_script",
-            "extra_context_sensors",
-            "ai_task_entity",
+            "phase_l1_power_sensor", "phase_l2_power_sensor", "phase_l3_power_sensor",
+            "pv_potential_power_sensor", "pv_forecast_remaining_today_sensor",
+            "pv_forecast_current_hour_sensor", "pv_forecast_next_hour_sensor",
+            "pv_forecast_today_sensor", "pv_forecast_tomorrow_sensor", "weather_entity",
+            "emergency_charge_start_script", "emergency_charge_stop_script",
+            "extra_context_sensors", "ai_task_entity",
         }
         managed_optional = {
-            "power_sensor",
-            "expected_runtime_minutes",
-            "min_on_minutes",
-            "min_off_minutes",
-            "schedule_deadline",
-            "start_after",
-            "end_before",
+            "power_sensor", "expected_runtime_minutes", "min_on_minutes", "min_off_minutes",
+            "schedule_deadline", "start_after", "end_before",
         }
         all_config_labels = {}
         for step in self.it["config"]["step"].values():
             all_config_labels.update(step.get("data", {}))
         for key in config_optional:
             self.assertIn("*", all_config_labels[key], key)
-
         all_managed_labels = {}
         for step in self.it["config_subentries"]["managed_device"]["step"].values():
             all_managed_labels.update(step.get("data", {}))
@@ -111,14 +90,8 @@ class TestUIContract(unittest.TestCase):
         for step in managed_steps.values():
             all_fields.update(step.get("data", {}))
         removed = {
-            "requires_entity",
-            "dynamic_current",
-            "current_entity",
-            "min_current_a",
-            "max_current_a",
-            "ev_soc_sensor",
-            "ev_connected_sensor",
-            "ev_target_soc",
+            "requires_entity", "dynamic_current", "current_entity", "min_current_a",
+            "max_current_a", "ev_soc_sensor", "ev_connected_sensor", "ev_target_soc",
         }
         self.assertTrue(removed.isdisjoint(all_fields))
         self.assertIn("device_type", all_fields)
@@ -133,32 +106,16 @@ class TestUIContract(unittest.TestCase):
         steps = monitored["step"]
         for step_name in ("user", "reconfigure"):
             fields = steps[step_name]["data"]
-            self.assertEqual(
-                {"name", "power_sensor", "phase", "enabled", "emergency_control_enabled"},
-                set(fields),
-            )
+            self.assertEqual({"name", "power_sensor", "phase", "enabled", "emergency_control_enabled"}, set(fields))
             description = steps[step_name]["description"].lower()
             self.assertIn("monitoraggio", description)
             self.assertIn("emergenza", description)
-
-        self.assertTrue(
-            {
-                "emergency_type",
-                "emergency_switch",
-                "emergency_pause_resume",
-                "emergency_stop_only",
-            }
-            <= set(steps)
-        )
+        self.assertTrue({"emergency_type", "emergency_switch", "emergency_pause_resume", "emergency_stop_only"} <= set(steps))
         selector_options = self.it["selector"]["monitored_emergency_mode"]["options"]
-        self.assertEqual(
-            {"switch", "pause_resume", "stop_only"},
-            set(selector_options),
-        )
+        self.assertEqual({"switch", "pause_resume", "stop_only"}, set(selector_options))
         self.assertIn("Switch ON/OFF", selector_options["switch"])
         self.assertIn("Pausa", selector_options["pause_resume"])
         self.assertIn("Solo arresto", selector_options["stop_only"])
-
         source = (INTEGRATION / "monitored_load_flow.py").read_text(encoding="utf-8")
         self.assertIn("CONF_MONITORED_LOAD_EMERGENCY_ENABLED", source)
         self.assertIn("MONITORED_EMERGENCY_MODE_SWITCH", source)
@@ -192,20 +149,23 @@ class TestUIContract(unittest.TestCase):
             self.assertIn("*", managed["data"][key])
             self.assertIn("Facoltativo", managed["data_description"][key])
 
-    def test_real_control_master_and_v143_controller_exist(self) -> None:
+    def test_real_control_master_and_v144_controller_exist(self) -> None:
         const_text = (INTEGRATION / "const.py").read_text(encoding="utf-8")
         init_text = (INTEGRATION / "__init__.py").read_text(encoding="utf-8")
         switch_text = (INTEGRATION / "switch.py").read_text(encoding="utf-8")
         coordinator14 = (INTEGRATION / "coordinator_v14.py").read_text(encoding="utf-8")
         coordinator143 = (INTEGRATION / "coordinator_v143.py").read_text(encoding="utf-8")
+        coordinator144 = (INTEGRATION / "coordinator_v144.py").read_text(encoding="utf-8")
         self.assertIn("DEFAULT_AUTOMATIC_REAL_LOAD_CONTROL = False", const_text)
         self.assertIn("Platform.SWITCH", init_text)
-        self.assertIn("coordinator_v143", init_text)
+        self.assertIn("coordinator_v144", init_text)
         self.assertIn("Controllo automatico reale", switch_text)
         self.assertIn("_async_apply_real_control", coordinator14)
         self.assertIn("monitored_emergency_control", coordinator14)
         self.assertIn("solar_recovery_available", coordinator143)
         self.assertIn('policy["grid_charge_allowed"] = False', coordinator143)
+        self.assertIn("runtime_state_persistent", coordinator144)
+        self.assertIn("daily_minimum_policy", coordinator144)
 
     def test_local_brand_icons_exist_and_are_png(self) -> None:
         for filename in ("icon.png", "icon@2x.png"):
@@ -229,7 +189,7 @@ class TestUIContract(unittest.TestCase):
         match = re.search(r'^VERSION = "([^"]+)"$', const_text, re.MULTILINE)
         self.assertIsNotNone(match)
         self.assertEqual(manifest["version"], match.group(1))
-        self.assertEqual("1.4.3", manifest["version"])
+        self.assertEqual("1.4.4", manifest["version"])
 
 
 if __name__ == "__main__":
