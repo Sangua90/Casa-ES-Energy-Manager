@@ -129,15 +129,17 @@ class SwitchResumeTests(unittest.TestCase):
         self.assertEqual(entity, "")
         self.assertEqual(source, "manual")
 
-    def test_runtime_wires_v143_and_keeps_v142_resume_compatibility(self) -> None:
+    def test_runtime_wires_v144_and_keeps_v142_resume_compatibility(self) -> None:
         init_source = (ROOT / "__init__.py").read_text(encoding="utf-8")
         coordinator142 = (ROOT / "coordinator_v142.py").read_text(encoding="utf-8")
         coordinator143 = (ROOT / "coordinator_v143.py").read_text(encoding="utf-8")
+        coordinator144 = (ROOT / "coordinator_v144.py").read_text(encoding="utf-8")
         ai_source = (ROOT / "ai_planner_v1.py").read_text(encoding="utf-8")
-        self.assertIn("coordinator_v143", init_source)
+        self.assertIn("coordinator_v144", init_source)
         self.assertIn("effective_resume_entity", coordinator142)
         self.assertIn("solar_recovery_available", coordinator143)
         self.assertIn('policy["grid_charge_allowed"] = False', coordinator143)
+        self.assertIn("runtime_state", coordinator144)
         self.assertIn("battery_target_mode", ai_source)
         self.assertIn("battery_target_deadline", ai_source)
 
