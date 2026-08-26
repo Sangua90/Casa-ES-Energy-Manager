@@ -1,0 +1,100 @@
+"""Regression tests for v1.4.4 runtime persistence and PV-first daily minima."""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+import importlib.util
+from pathlib import Path
+import unittest
+
+ROOT = Path(__file__).parents[1]
+COMPONENT = ROOT / "custom_components" / "casa_es_energy_manager"
+
+
+def _load_plain_module(name: str, filename: str):
+    spec = importlib.util.spec_from_file_location(name, COMPONENT / filename)
+    module = importlib.util.module_from_spec(spec)
+    assert spec and spec.loader
+    spec.loader.exec_module(module)
+    return module
+
+
+daily_policy = _load_plain_module("daily_minimum_policy_v144_test", "daily_minimum_policy.py")
+
+
+class DailyMinimumPolicyTests(unittest.TestCase):
+    def test_midnight_does_not_start_five_hour_load_without_solar(self) -> None:
+        now = datetime(2026, 8, 27, 0, 7, tzinfo=timezone.utc)
+        defer, reason, pressure = daily_policy.should_defer_daily_minimum_start(
+            now=now,
+            remaining_minimum_minutes=300,
+            nominal_power_w=30,
+            solar_after_house_w=0,
+            pv_potential_after_house_w=0,
+        )
+        self.assertTrue(defer)
+        self.assertFalse(pressure)
+        self.assertIn("attende FV", reason)
+
+    def test_available_solar_allows_daily_minimum_load(self) -> None:
+        now = datetime(2026, 8, 27, 10, 0, tzinfo=timezone.utc)
+        defer, _, pressure = daily_policy.should_defer_daily_minimum_start(
+            now=now,
+            remaining_minimum_minutes=240,
+            nominal_power_w=30,
+            solar_after_house_w=50,
+            pv_potential_after_house_w=50,
+        )
+        self.assertFalse(defer)
+        self.assertFalse(pressure)
+
+    def test_deadline_pressure_releases_deferment(self) -> None:
+        now = datetime(2026, 8, 27, 19, 0, tzinfo=timezone.utc)
+        defer, _, pressure = daily_policy.should_defer_daily_minimum_start(
+            now=now,
+            remaining_minimum_minutes=300,
+            nominal_power_w=30,
+            solar_after_house_w=0,
+            pv_potential_after_house_w=0,
+        )
+        self.assertFalse(defer)
+        self.assertTrue(pressure)
+
+    def test_custom_end_before_is_daily_deadline(self) -> None:
+        now = datetime(2026, 8, 27, 17, 0, tzinfo=timezone.utc)
+        defer, _, pressure = daily_policy.should_defer_daily_minimum_start(
+            now=now,
+            remaining_minimum_minutes=270,
+            nominal_power_w=30,
+            solar_after_house_w=0,
+            pv_potential_after_house_w=0,
+            end_before="22:00:00",
+        )
+        self.assertFalse(defer)
+        self.assertTrue(pressure)
+
+
+class RuntimePersistenceContractTests(unittest.TestCase):
+    def test_v144_uses_home_assistant_store(self) -> None:
+        source = (COMPONENT / "coordinator_v144.py").read_text(encoding="utf-8")
+        self.assertIn("from homeassistant.helpers.storage import Store", source)
+        self.assertIn("runtime_seconds", source)
+        self.assertIn("runtime_activations", source)
+        self.assertIn("runtime_previous", source)
+        self.assertIn("await self._runtime_store.async_load()", source)
+        self.assertIn("await self._runtime_store.async_save(payload)", source)
+        self.assertIn('stored.get("date") != today.isoformat()', source)
+
+    def test_integration_routes_to_v144_coordinator(self) -> None:
+        source = (COMPONENT / "__init__.py").read_text(encoding="utf-8")
+        self.assertIn("from .coordinator_v144 import CasaESEnergyCoordinator", source)
+
+    def test_version_is_144(self) -> None:
+        manifest = (COMPONENT / "manifest.json").read_text(encoding="utf-8")
+        const = (COMPONENT / "const.py").read_text(encoding="utf-8")
+        self.assertIn('"version": "1.4.4"', manifest)
+        self.assertIn('VERSION = "1.4.4"', const)
+
+
+if __name__ == "__main__":
+    unittest.main()
