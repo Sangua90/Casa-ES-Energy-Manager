@@ -1,234 +1,350 @@
+<p align="center">
+  <img src="custom_components/casa_es_energy_manager/brand/icon.png" width="128" alt="Logo Casa ES Energy Manager">
+</p>
+
 # Casa ES Energy Manager
 
-Custom Home Assistant integration for the Casa ES photovoltaic, battery and three-phase energy system.
+**Casa ES Energy Manager** è un'integrazione personalizzata per Home Assistant dedicata alla gestione intelligente di un impianto fotovoltaico con batteria, inverter e rete trifase.
 
-> **Version 1.4.0 — monitored-load emergency protection**  
-> Electrical decisions remain deterministic and local. AI is advisory only. Managed appliances keep the guarded autonomous control introduced in v1.2, while monitored loads can now optionally expose emergency stop/pause and resume commands used only to protect grid, phase and inverter limits.
+> **Versione 1.4.3 — gestione di emergenza guidata e recupero batteria legato al sole**
+>
+> Le decisioni di sicurezza elettrica e il controllo reale restano deterministici e locali. Il pianificatore AI è soltanto consultivo e non può superare i limiti di rete, inverter, fase, batteria o le regole configurate sui dispositivi.
 
-## Guided configuration
+> **NOTA BENE**  
+> Nell'interfaccia di configurazione l'asterisco `*` indica sempre un campo **facoltativo**. I campi senza asterisco sono **obbligatori**.
 
-Initial setup and later Options are split into readable sections:
+## A cosa serve
 
-1. electrical sensors
-2. electrical limits and protection
-3. solar forecast
-4. battery and energy strategy
-5. advisory AI planner
-6. summary
+Casa ES Energy Manager osserva in tempo reale produzione FV, consumi della casa, rete, batteria e carico delle singole fasi. Usa questi dati per:
 
-Fields marked with `*` are optional. Required sensors are validated for compatible units.
+- massimizzare l'autoconsumo del fotovoltaico;
+- proteggere rete, inverter e singole fasi da sovraccarichi;
+- cercare di raggiungere il SOC batteria desiderato entro l'ora configurata;
+- continuare a recuperare il target dopo l'ora prevista se esiste ancora un'opportunità solare utile;
+- gestire automaticamente carichi flessibili rispettando priorità, SOC, tempi minimi ON/OFF e vincoli giornalieri;
+- apprendere nel tempo il consumo reale dei dispositivi variabili;
+- monitorare elettrodomestici non normalmente gestiti e, opzionalmente, fermarli o metterli in pausa solo durante una vera emergenza elettrica;
+- fornire al pianificatore AI un contesto completo senza permettergli di aggirare le protezioni deterministiche.
 
-## Global energy preference
+## Architettura di sicurezza
 
-Choose one global preference without changing appliance priorities:
+L'ordine di priorità è sempre:
 
-- **Batteria prioritaria**: keeps a larger energy reserve before admitting flexible loads.
-- **Bilanciata**: compromise between battery completion and flexible loads.
-- **Carichi prioritari**: favors immediate use of available PV while preserving hard safety limits.
+1. limiti reali misurati di rete, fase e inverter;
+2. protezione elettrica deterministica;
+3. target batteria e preferenza energetica scelta dall'utente;
+4. vincoli e anti-ciclaggio dei dispositivi gestiti;
+5. previsione fotovoltaica e ottimizzazione energetica;
+6. pianificatore AI consultivo.
 
-Measured grid, phase and inverter limits always override the selected preference.
+Le misure reali di rete, inverter e fasi sono sempre autorevoli. Le stime dei singoli dispositivi servono per attribuire e pianificare, ma non vengono sommate sopra i totali reali misurati.
 
-## Managed devices
+## Installazione e aggiornamento con HACS
 
-Managed devices are configured separately from the initial wizard. Important fields include:
+Aggiungi questo repository a HACS come repository personalizzato di tipo **Integrazione**, installa **Casa ES Energy Manager** e riavvia Home Assistant.
 
-- Home Assistant entity to control
-- optional real power sensor
-- device type: generic or **Climatizzatore / pompa di calore**
-- initial nominal/fallback power estimate
-- adaptive real-power learning
-- numeric priority `1..100` (`1` = highest)
-- physical phase L1/L2/L3/three-phase
-- optional expected cycle/runtime
-- optional minimum ON/OFF times
-- minimum battery SOC
-- grid integration permission and per-device limit
-- daily runtime/activation limits
-- allowed time window
-- on-only/non-interruptible behavior
-- battery-discharge limit while the device is active
+Poi apri:
 
-The configured nominal power is an initial and fallback value. When a dedicated real power sensor is available and adaptive learning is enabled, Casa ES continuously learns the real behavior and uses the learned estimate for admission decisions.
+`Impostazioni → Dispositivi e servizi → Casa ES Energy Manager`
 
-### Climatizzatori / pompe di calore
+Le configurazioni delle versioni precedenti restano leggibili. Quando modifichi un vecchio carico monitorato, la v1.4.3 riconosce anche le configurazioni di emergenza già presenti e le presenta nella nuova procedura guidata.
 
-A managed climate/PDC keeps multiple learned profiles inside the **same device**, for example:
+## Configurazione iniziale
 
-- `cool`
-- `heat`
-- `dry`
-- `fan_only`
+La configurazione principale è divisa in sei sezioni.
 
-If the managed entity itself is `climate.*`, the same entity can be used as mode reference.
+### 1. Sensori elettrici
 
-If the real command is a `switch.*` — for example a switch controlling several indoor units on one outdoor machine — select one related `climate.*` as **Climate di riferimento per la modalità**. Casa ES continues to control the switch and reads the climate entity only to identify the current mode.
+Campi obbligatori:
 
-Existing valid switch profiles are retained as a conservative bridge while newer per-mode buckets collect enough samples.
+- **Potenza FV reale**: produzione realmente erogata dall'inverter;
+- **Potenza totale carichi casa**: consumo totale reale;
+- **Potenza rete**: positivo = prelievo, negativo = immissione;
+- **SOC batteria**: percentuale reale di carica;
+- **Potenza batteria**: positivo = carica, negativo = scarica.
 
-### Automatico / Manuale / Spento
+Campi facoltativi ma fortemente consigliati su un impianto trifase:
 
-Every managed device exposes its own mode selector:
+- **Potenza fase L1 \***;
+- **Potenza fase L2 \***;
+- **Potenza fase L3 \***.
 
-- **Automatico**: Casa ES may start/stop the device when real control is enabled.
-- **Manuale**: Casa ES observes and can continue learning, but never sends commands to that device.
-- **Spento**: the device is excluded from automatic optimization; when real control is enabled, an active entity can be switched off.
+I sensori di fase permettono a Casa ES di capire quale fase è realmente in difficoltà e di intervenire solo sui carichi che possono risolvere quel problema.
 
-## Master real-control switch
+### 2. Limiti e protezioni
 
-Casa ES exposes **Controllo automatico reale**.
+- **Limite totale inverter (W)**: potenza totale massima considerata disponibile dall'inverter;
+- **Limite operativo per singola fase (W)**: soglia massima di ogni fase;
+- **Limite operativo rete (W)**: soglia massima di prelievo totale;
+- **Margine di sicurezza (W)**: margine sottratto ai limiti per non lavorare esattamente sulla soglia.
 
-It defaults to **OFF** after installation/update. With the master OFF, Casa ES continues calculating decisions and learning but sends no physical appliance or monitored-load emergency commands.
+Questi limiti hanno sempre precedenza su previsione, batteria e AI.
 
-When the master is ON:
+### 3. Previsione fotovoltaica
 
-- only managed devices in **Automatico** can be controlled normally;
-- **Manuale** is never touched;
-- normal energy decisions respect minimum ON/OFF constraints;
-- a measured phase/inverter overload may stop an eligible managed flexible load immediately;
-- a total-grid warning does not bypass a managed device's normal minimum-ON/non-interruptible rules;
-- at most one energy-control command is sent per coordinator refresh so measurements can settle before another action.
+Tutti i campi sono facoltativi:
 
-Diagnostics include the master state, last real command, entity, reason, timestamp and any service error.
+- **FV potenziale adesso \***;
+- **Energia FV residua oggi \***;
+- **Previsione ora corrente \***;
+- **Previsione prossima ora \***;
+- **Energia FV prevista oggi \***;
+- **Energia FV prevista domani \***;
+- **Entità meteo \***.
 
-## Shared power meters
+Le previsioni aiutano a decidere quanto essere prudenti, ma non sostituiscono mai le misure elettriche reali.
 
-A shared meter is treated conservatively.
+### 4. Batteria e strategia energetica
 
-- It is not used for adaptive per-device learning because its watts cannot be attributed safely to one child load.
-- Individual ON/OFF state remains authoritative for identifying which child device is active.
-- The same meter is counted only once in phase attribution.
-- If multiple active children behind one shared meter cannot be assigned safely to a single phase, Casa ES leaves that power in the measured phase's `other load` rather than guessing.
+- **Capacità batteria (kWh)**: capacità utile installata;
+- **SOC obiettivo batteria (%)**: percentuale desiderata;
+- **Ora entro cui raggiungere l'obiettivo**: scadenza desiderata della giornata;
+- **Consumo base medio previsto casa (W)**: energia inevitabile da riservare;
+- **Efficienza stimata di carica (%)**;
+- **Preferenza energetica**;
+- parametri della ricarica manuale di emergenza da rete;
+- **Script avvio ricarica da rete \*** e **Script arresto ricarica da rete \***, facoltativi.
 
-Measured L1/L2/L3 totals remain authoritative for safety at all times.
+#### Preferenza energetica
 
-## Adaptive variable-load learning
+- **Batteria prioritaria**: mantiene un margine maggiore prima di ammettere carichi flessibili;
+- **Bilanciata**: compromesso tra completamento batteria e utilizzo dei carichi;
+- **Carichi prioritari**: usa più facilmente il surplus disponibile, senza indebolire le protezioni elettriche.
 
-Adaptive learning is persistent and continuous. `ready` means only that enough active samples exist to use the learned estimate; learning continues during future operation.
+### 5. Pianificatore AI
 
-Standby/off watts do not become active samples. A climate/PDC learns separate mode profiles. Mature estimates are deliberately robust against isolated extreme spikes so a one-off meter anomaly does not permanently inflate admission power.
+- **Abilita pianificatore AI consultivo**;
+- **Intervallo pianificatore AI (min)**;
+- **Sensori aggiuntivi per AI \***;
+- **Entità AI Task / Gemini \***.
 
-If learning is disabled, the meter is shared/unavailable, or a mode profile is not mature enough, Casa ES falls back safely to the configured nominal estimate or a previously mature conservative profile.
+L'AI può proporre una strategia e spiegare il motivo, ma la decisione fisica finale resta deterministica.
 
-## Anti-cycling and automatic stops
+### 6. Riepilogo
 
-Optional minimum ON and minimum OFF values are enforced for normal automatic behavior.
+Salva la configurazione. In seguito puoi aggiungere separatamente **Dispositivi gestiti** e **Carichi monitorati**.
 
-Automatic stops can be requested for conditions such as:
+## Obiettivo batteria giornaliero
 
-- minimum SOC violated
-- configured battery-discharge limit exceeded
-- grid import beyond the device tolerance
-- daily runtime/activation limit reached
-- outside allowed time window
-- definite battery-target shortfall
-- battery-first reserve becoming tight
+L'ora configurata è una **scadenza desiderata**, non il momento in cui Casa ES smette di interessarsi alla batteria.
 
-An `on_only`/non-interruptible cycle resists ordinary energy-based stops. v1.4 keeps a total-grid emergency inside these normal minimum-ON/non-interruptible rules after monitored emergency loads have been tried. A measured phase/inverter overload remains the immediate electrical-protection case for managed flexible loads.
+La v1.4.3 usa questa logica:
 
-## Monitored loads with optional emergency protection
+- prima dell'ora target, pianifica per raggiungere il SOC desiderato entro quella scadenza;
+- se all'ora target il SOC non è stato raggiunto, continua a recuperarlo **solo finché esiste ancora un'opportunità solare utile**;
+- se il target era stato raggiunto e nel pomeriggio la batteria scende, può recuperare nuovamente il SOC quando torna disponibile FV utile;
+- una nuvola temporanea non chiude subito il recupero se FV potenziale o previsione residua indicano altra produzione nella giornata;
+- quando FV reale, FV potenziale e previsione residua indicano che la giornata solare è terminata, Casa ES chiude il recupero del target di oggi;
+- dopo la fine dell'opportunità solare non cerca di mantenere artificialmente il 100% durante la notte e non autorizza una ricarica da rete soltanto per recuperare il target pomeridiano;
+- a mezzanotte inizia il nuovo ciclo giornaliero verso l'ora target del nuovo giorno.
 
-A **Carico monitorato** always contributes only its measured power and physical phase to phase attribution. It is never started, stopped or paused for PV optimization, battery charging, forecast strategy or AI advice.
+La ricarica da rete resta una funzione separata ed esplicita, legata agli script configurati dall'utente.
 
-A monitored load can remain completely read-only by configuring only:
+## Dispositivi gestiti
 
-- name
-- real power sensor
-- physical phase
-- enabled state
+Un **Dispositivo gestito** può essere realmente acceso o spento da Casa ES quando il controllo automatico reale è abilitato.
 
-v1.4 adds two optional fields inside the same monitored-load category:
+Principali impostazioni:
 
-- **Comando emergenza \*** — entity used only to shed/pause the load during measured electrical protection;
-- **Comando ripristino \*** — optional entity used to resume/turn the load back on after the electrical situation has remained stable for at least 2 minutes.
+- nome;
+- entità Home Assistant da comandare;
+- sensore di potenza reale `*`;
+- tipo di dispositivo;
+- potenza nominale iniziale/di riserva;
+- apprendimento automatico della potenza reale;
+- priorità da `1` a `100` (`1` = massima);
+- fase elettrica;
+- SOC batteria minimo;
+- eventuale integrazione dalla rete e relativo limite;
+- durata tipica `*`;
+- tempo minimo acceso `*`;
+- tempo minimo spento `*`;
+- tempi giornalieri e finestre orarie;
+- numero massimo di attivazioni;
+- comportamento non interrompibile;
+- limite di scarica batteria durante il funzionamento.
 
-Supported command entities are switches, buttons, scripts, input booleans, climates, fans and lights. Stateful entities are turned OFF for emergency and ON for restore. A button is pressed and a script is executed. This makes pause/resume integrations usable without introducing another Casa ES device category.
+### Climatizzatori e pompe di calore
 
-If **Comando ripristino** is left empty, Casa ES never restarts that appliance automatically. Once the electrical situation is stable it creates a Home Assistant persistent notification telling the user that manual restoration is possible. This is appropriate for appliances such as an oven that can safely be turned off but should not be restarted automatically.
+Per un dispositivo di tipo climatizzatore/PDC Casa ES mantiene profili di consumo separati per modalità, ad esempio:
 
-### Electrical emergency order
+- raffrescamento (`cool`);
+- riscaldamento (`heat`);
+- deumidificazione (`dry`);
+- sola ventilazione (`fan_only`).
 
-The v1.4 protection order is intentionally based on the electrical problem rather than a fixed appliance priority.
+Se l'entità comandata è già `climate.*`, può essere usata anche come riferimento della modalità.
 
-**Total grid / Enel warning**
+Se invece il comando reale è uno `switch.*`, ad esempio uno switch che comanda un gruppo di climatizzatori, scegli un'entità `climate.*` dello stesso impianto come **Climatizzatore di riferimento per la modalità**. Casa ES continuerà a comandare lo switch e userà il climate soltanto per identificare il profilo energetico corretto.
 
-1. look only at active monitored loads that have an emergency command;
-2. choose the smallest single load whose measured watts are enough to return below the configured safe grid limit;
-3. if no single load is enough, shed the largest useful monitored load;
-4. send one command and re-measure on the next coordinator refresh before doing anything else;
-5. if the grid warning still remains and no useful monitored load is available, managed loads may then stop using their normal minimum-ON/non-interruptible rules.
+## Modalità Automatico, Manuale e Spento
 
-**Single-phase or inverter warning**
+Ogni dispositivo gestito dispone della propria modalità:
 
-1. try eligible managed flexible loads first;
-2. for a phase warning, only managed loads on the affected phase (or three-phase loads) are useful;
-3. re-measure after each command;
-4. if managed loads cannot resolve the warning, use emergency-capable monitored loads on the affected phase;
-5. for an inverter-total warning, monitored loads can be selected from any phase if managed loads are insufficient.
+- **Automatico**: Casa ES può accenderlo e spegnerlo;
+- **Manuale**: Casa ES osserva e può continuare ad apprendere, ma non invia comandi al dispositivo;
+- **Spento**: il dispositivo viene escluso dalla normale ottimizzazione automatica.
 
-This keeps phase/inverter protection focused on the loads that can actually solve the electrical problem and reserves household-appliance shedding for when it is genuinely needed.
+## Controllo automatico reale
 
-## Solar and battery planning
+L'integrazione espone lo switch **Controllo automatico reale**.
 
-Casa ES separates measured PV power, potential/unconstrained PV and future forecast energy. Potential PV and forecast improve planning but never replace measured electrical safety values.
+Con il controllo reale disattivato, Casa ES continua a monitorare, calcolare e apprendere, ma non invia comandi fisici ai dispositivi né ai carichi monitorati in emergenza.
 
-## Emergency battery charge from grid
+Con il controllo reale attivato:
 
-Casa ES exposes start/stop emergency charge buttons, but inverter-specific behavior remains explicit. Configure two Home Assistant `script.*` entities in Options if this feature is used.
+- i dispositivi in Automatico possono essere gestiti;
+- quelli in Manuale non vengono comandati;
+- i normali cambi di stato rispettano i tempi minimi ON/OFF;
+- la protezione di fase/inverter resta prioritaria;
+- un allarme di potenza totale rete segue l'ordine di emergenza descritto sotto;
+- viene inviato al massimo un comando per aggiornamento del coordinatore, così il sistema può misurare nuovamente l'effetto prima di decidere un'altra azione.
 
-The start script receives:
+## Carichi monitorati
 
-- `power_w`
-- `target_soc`
-- `max_minutes`
+Un **Carico monitorato** serve prima di tutto a spiegare il consumo reale di una fase. Non entra nella normale ottimizzazione FV/batteria e non viene comandato dall'AI.
 
-Casa ES requests the stop script when target SOC is reached, timeout expires, or electrical protection requires it. The buttons remain unavailable until both scripts are configured.
+Campi base:
 
-## Advisory AI
+- **Nome del carico**;
+- **Sensore potenza reale**;
+- **Fase elettrica**;
+- **Abilita monitoraggio**;
+- **Gestibile in emergenza**.
 
-Gemini / AI Task remains advisory. AI recommendations cannot override deterministic local guardrails. Monitored-load emergency shedding is deterministic and does not depend on AI availability or advice.
+Se **Gestibile in emergenza** è disattivato, il carico resta completamente in sola lettura.
 
-## Diagnostics
+Se è attivato, compare una procedura guidata con tre modalità.
 
-Download diagnostics from:
+### Switch ON/OFF
 
-`Settings -> Devices & services -> Casa ES Energy Manager -> Download diagnostics`
+Usa un singolo `switch.*`.
 
-Useful fields include source sensors, forecast inputs, planner policy, phase headroom/attribution, managed-device configuration, monitored emergency capability, currently shed monitored loads, manual restore pending state, adaptive profiles, dry-run decisions and real-control command history.
+In emergenza Casa ES porta lo switch su OFF. Dopo almeno 2 minuti di situazione elettrica stabile può riportarlo automaticamente su ON.
 
-## Safe update path to v1.4.0
+Esempio tipico: stufetta o altro carico che può essere interrotto e riavviato senza perdere un ciclo.
 
-After updating and restarting Home Assistant:
+### Pausa + riprendi
 
-1. verify **Controllo automatico reale** state before configuring emergency-capable monitored loads;
-2. existing monitored loads remain compatible and read-only until edited;
-3. edit a monitored load and optionally set **Comando emergenza** and **Comando ripristino**;
-4. leave **Comando ripristino** empty for loads that must never restart automatically;
-5. verify each appliance's Home Assistant pause/stop/resume behavior before relying on it for emergency shedding;
-6. check diagnostics after the first real emergency action.
+Configura due comandi distinti:
 
-Turning the master OFF immediately prevents new Casa ES appliance and monitored-load emergency commands while monitoring and learning continue.
+- **Comando pausa**;
+- **Comando riprendi**.
 
-## Installation / update
+Possono essere entità compatibili come `button.*`, `script.*` o altre entità supportate. Casa ES mette in pausa il ciclo durante l'emergenza e usa il comando di ripresa soltanto dopo almeno 2 minuti di stabilità.
 
-Add this repository to HACS as a custom Integration repository, install/update **Casa ES Energy Manager**, restart Home Assistant, then open:
+Esempio tipico: lavastoviglie, lavatrice o asciugatrice quando l'integrazione espone veri comandi di pausa e ripresa.
 
-`Settings -> Devices & services -> Casa ES Energy Manager`
+### Solo arresto
 
-Existing v1.0/v1.1/v1.2 configurations remain readable. Obsolete wallbox/EV/dependency keys are ignored and removed when a managed device is reconfigured.
+Configura soltanto il comando di arresto.
 
-## Safety architecture
+Casa ES può fermare il carico durante l'emergenza, ma **non lo riavvia automaticamente**. Quando la situazione torna sicura viene richiesto il ripristino manuale.
 
-Safety priority is always:
+Esempio tipico: forno o altro apparecchio che è sicuro spegnere ma che non deve ripartire da solo.
 
-1. measured grid / phase / inverter limits
-2. deterministic local protection and v1.4 monitored emergency shedding
-3. battery target and user-selected energy preference
-4. managed-device constraints and anti-cycling
-5. forecast optimization
-6. advisory AI
+## Ordine degli interventi in emergenza elettrica
 
-Forecast and AI never bypass electrical protection.
+La scelta dipende dal problema elettrico reale, non da una semplice lista di priorità fissa.
 
-## Origin and license
+### Potenza totale rete / Enel
 
-Casa ES Energy Manager is a modified/derived project based on `InventoCasa/PV-Excess-Control` and retains GNU Affero General Public License v3 requirements and notices. See `LICENSE` and `NOTICE.md`.
+1. Casa ES cerca prima carichi monitorati attivi e configurati come gestibili in emergenza;
+2. prova a liberare la potenza necessaria senza spegnere più carichi del necessario;
+3. invia un comando e misura nuovamente la situazione;
+4. se non basta, può passare ad altri carichi utili;
+5. i dispositivi normalmente gestiti continuano a rispettare le regole e i tempi minimi concordati per questo caso.
+
+### Sovraccarico di una fase o dell'inverter
+
+1. Casa ES prova prima i dispositivi gestiti che possono realmente alleggerire la fase interessata o l'inverter;
+2. misura nuovamente dopo il comando;
+3. se non basta, usa i carichi monitorati gestibili in emergenza che possono risolvere quel preciso problema elettrico.
+
+Un carico su una fase diversa non viene scelto per risolvere un sovraccarico di singola fase se non può produrre alcun beneficio reale.
+
+## Contatori di potenza condivisi
+
+Se più dispositivi condividono lo stesso sensore di potenza, Casa ES usa una gestione conservativa:
+
+- non attribuisce automaticamente gli stessi watt a più dispositivi;
+- non usa il contatore condiviso per apprendimento adattivo individuale;
+- conta quel consumo una sola volta nell'attribuzione di fase;
+- se non è possibile stabilire con sicurezza quale dispositivo sia responsabile, lascia il consumo nella voce di carico non attribuito della fase.
+
+## Apprendimento adattivo della potenza
+
+Quando un dispositivo dispone di un sensore dedicato e l'apprendimento è abilitato, Casa ES costruisce nel tempo un profilo reale del consumo.
+
+Lo stato `ready` significa che il profilo contiene abbastanza campioni per essere usato: l'apprendimento **continua comunque** durante gli utilizzi futuri.
+
+I consumi di standby non diventano campioni attivi. Per i climatizzatori i profili vengono mantenuti separati per modalità. Picchi isolati anomali vengono limitati per non gonfiare permanentemente la stima usata nelle decisioni successive.
+
+## Pianificatore AI consultivo
+
+Il pianificatore AI riceve il contesto energetico più recente, compresi:
+
+- produzione e previsione FV;
+- SOC e potenza batteria;
+- margini rete, inverter e fasi;
+- attribuzione dei carichi;
+- profili adattivi;
+- policy deterministica corrente.
+
+L'AI può consigliare una strategia, ma non può autorizzare una condizione che la policy deterministica considera pericolosa o non consentita.
+
+## Ricarica manuale di emergenza da rete
+
+La ricarica batteria da rete resta intenzionalmente esplicita e dipendente dall'inverter.
+
+Per abilitarla configura nelle Opzioni due `script.*`:
+
+- script di avvio;
+- script di arresto.
+
+Lo script di avvio riceve:
+
+- `power_w`;
+- `target_soc`;
+- `max_minutes`.
+
+Casa ES può richiedere lo stop quando viene raggiunto il SOC desiderato, scade il tempo massimo o una protezione elettrica lo richiede.
+
+Se gli script non sono configurati, la funzione resta indisponibile.
+
+## Diagnostica
+
+La diagnostica si scarica da:
+
+`Impostazioni → Dispositivi e servizi → Casa ES Energy Manager → Scarica diagnostica`
+
+Tra i dati utili trovi:
+
+- sensori sorgente e disponibilità;
+- limiti configurati;
+- margini rete/inverter/fasi;
+- previsione e FV potenziale;
+- policy del target batteria;
+- dispositivi gestiti e decisioni correnti;
+- carichi monitorati e relativa modalità di emergenza;
+- eventuali carichi sganciati e ripristini pendenti;
+- profili di apprendimento adattivo;
+- ultimo comando reale e relativo motivo;
+- stato e consiglio del pianificatore AI.
+
+## Aggiornamento alla v1.4.3
+
+Dopo l'aggiornamento e il riavvio di Home Assistant:
+
+1. verifica lo stato dello switch **Controllo automatico reale**;
+2. i carichi monitorati esistenti continuano a funzionare;
+3. aprendo la modifica di un carico monitorato, Casa ES riconosce la vecchia configurazione e propone la nuova gestione guidata;
+4. scegli **Switch ON/OFF**, **Pausa + riprendi** o **Solo arresto** a seconda delle capacità reali dell'elettrodomestico;
+5. verifica sempre manualmente che i pulsanti di pausa, stop e ripresa dell'integrazione dell'elettrodomestico funzionino davvero durante un ciclo prima di considerarli affidabili in emergenza;
+6. controlla una nuova diagnostica dopo le prime prove reali.
+
+## Origine e licenza
+
+Casa ES Energy Manager è un progetto modificato/derivato da `InventoCasa/PV-Excess-Control` e mantiene gli obblighi della licenza **GNU Affero General Public License v3**.
+
+Consulta `LICENSE` e `NOTICE.md` per i dettagli.
