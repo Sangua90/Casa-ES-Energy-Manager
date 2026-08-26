@@ -2,7 +2,7 @@
 
 DOMAIN = "casa_es_energy_manager"
 NAME = "Casa ES Energy Manager"
-VERSION = "1.1.1"
+VERSION = "1.2.0"
 
 # Core electrical sensors.
 CONF_PV_POWER_SENSOR = "pv_power_sensor"
@@ -51,6 +51,12 @@ ENERGY_PREFERENCES = (
     ENERGY_PREFERENCE_LOADS,
 )
 
+# Real appliance control. This is intentionally opt-in and defaults OFF after
+# every installation/update unless the user explicitly enables it.
+CONF_AUTOMATIC_REAL_LOAD_CONTROL = "automatic_real_load_control"
+DEFAULT_AUTOMATIC_REAL_LOAD_CONTROL = False
+REAL_CONTROL_COMMAND_COOLDOWN_SECONDS = 15
+
 # Manual emergency grid-charge hooks. The integration calls user-configured HA
 # scripts so inverter-specific service details remain explicit and safe.
 CONF_EMERGENCY_CHARGE_START_SCRIPT = "emergency_charge_start_script"
@@ -59,8 +65,7 @@ CONF_EMERGENCY_CHARGE_TARGET_SOC = "emergency_charge_target_soc"
 CONF_EMERGENCY_CHARGE_POWER_W = "emergency_charge_power_w"
 CONF_EMERGENCY_CHARGE_MAX_MINUTES = "emergency_charge_max_minutes"
 
-# Managed flexible-load subentries. Automatic real service calls remain disabled;
-# the current release validates behaviour through deterministic dry-run first.
+# Managed flexible-load subentries.
 SUBENTRY_TYPE_MANAGED_DEVICE = "managed_device"
 CONF_DEVICE_NAME = "name"
 CONF_DEVICE_ENTITY = "entity_id"
@@ -75,6 +80,16 @@ CONF_DEVICE_ENABLED = "enabled"
 CONF_DEVICE_ADAPTIVE_POWER = "adaptive_power_profile"
 CONF_DEVICE_MIN_ON_MINUTES = "min_on_minutes"
 CONF_DEVICE_MIN_OFF_MINUTES = "min_off_minutes"
+
+# v1.2 device type and climate/PDC mode profiling. A climate/PDC may still be
+# physically controlled by a switch while a climate entity supplies cool/heat/
+# dry mode information for separate learned profiles.
+CONF_DEVICE_TYPE = "device_type"
+CONF_DEVICE_MODE_CLIMATE_ENTITY = "mode_climate_entity"
+DEVICE_TYPE_GENERIC = "generic"
+DEVICE_TYPE_CLIMATE = "climate"
+DEVICE_TYPES = (DEVICE_TYPE_GENERIC, DEVICE_TYPE_CLIMATE)
+DEFAULT_DEVICE_TYPE = DEVICE_TYPE_GENERIC
 
 # Runtime per-device modes exposed as select entities.
 DEVICE_MODE_AUTO = "auto"
@@ -98,7 +113,7 @@ CONF_DEVICE_SWITCH_INTERVAL_SECONDS = "switch_interval_seconds"  # legacy compat
 CONF_DEVICE_MAX_GRID_POWER_W = "max_grid_power_w"
 
 # Legacy v1.0 keys intentionally kept only so old subentries can be read and
-# cleaned safely when reconfigured. They are no longer exposed or used by v1.1.
+# cleaned safely when reconfigured. They are no longer exposed or used.
 CONF_DEVICE_REQUIRES_ENTITY = "requires_entity"
 CONF_DEVICE_DYNAMIC_CURRENT = "dynamic_current"
 CONF_DEVICE_CURRENT_ENTITY = "current_entity"
@@ -149,14 +164,11 @@ DEFAULT_EMERGENCY_CHARGE_POWER_W = 3000.0
 DEFAULT_EMERGENCY_CHARGE_MAX_MINUTES = 240
 
 DEFAULT_DEVICE_PRIORITY = 50
-# Optional in v1.1: when omitted Casa ES does not invent a cycle duration.
 DEFAULT_DEVICE_EXPECTED_RUNTIME_MINUTES = None
 DEFAULT_DEVICE_MIN_BATTERY_SOC = 40.0
 DEFAULT_DEVICE_ALLOW_GRID = False
 DEFAULT_DEVICE_ENABLED = True
 DEFAULT_DEVICE_ADAPTIVE_POWER = True
-# Optional in v1.1. Users can set anti-cycling where it is useful (for example
-# heat pumps) without forcing it on simple loads.
 DEFAULT_DEVICE_MIN_ON_MINUTES = 0
 DEFAULT_DEVICE_MIN_OFF_MINUTES = 0
 DEFAULT_DEVICE_MIN_DAILY_RUNTIME_MINUTES = 0
@@ -175,6 +187,10 @@ DEFAULT_MONITORED_LOAD_ENABLED = True
 ADAPTIVE_ACTIVE_POWER_THRESHOLD_W = 20.0
 ADAPTIVE_PROFILE_MIN_SAMPLES = 20
 ADAPTIVE_SAVE_EVERY_OBSERVATIONS = 60
+# Once a profile is mature, a single extreme historical spike must not inflate
+# future admission forever. Legitimate variable loads still retain up to 140%
+# of their learned mean, while sustained higher consumption moves the mean up.
+ADAPTIVE_ESTIMATE_MAX_MEAN_FACTOR = 1.40
 
 # Read-only heuristic used only to flag a likely zero-export curtailment condition.
 CURTAILMENT_SOC_THRESHOLD = 98.0

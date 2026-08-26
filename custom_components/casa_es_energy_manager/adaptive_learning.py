@@ -10,22 +10,29 @@ from homeassistant.helpers.storage import Store
 
 from .const import (
     ADAPTIVE_ACTIVE_POWER_THRESHOLD_W,
+    ADAPTIVE_ESTIMATE_MAX_MEAN_FACTOR,
     ADAPTIVE_PROFILE_MIN_SAMPLES,
     ADAPTIVE_SAVE_EVERY_OBSERVATIONS,
+    CONF_DEVICE_MODE_CLIMATE_ENTITY,
+    CONF_DEVICE_TYPE,
+    DEVICE_TYPE_CLIMATE,
 )
 
 STORAGE_VERSION = 1
+# Keep schema v2 so the valid profiles collected by v1.1.1 survive the v1.2
+# update. v1.2 adds mode metadata without changing the stored statistics shape.
 PROFILE_SCHEMA_VERSION = 2
 GENERAL_MODE = "general"
 _INACTIVE_STATES = {"", "off", "idle", "standby", "unknown", "unavailable", "none"}
 
 
 class AdaptivePowerLearner:
-    """Learn per-device power statistics from a real power sensor.
+    """Learn persistent per-device power statistics from a real power sensor.
 
-    Learning is deliberately conservative: active samples are accepted only
-    while the managed entity is really active. A shared meter is never learned
-    automatically because its watts cannot be attributed safely to one load.
+    Active samples are accepted only while the managed entity is really active.
+    Shared meters are never learned automatically because their watts cannot be
+    attributed safely to one load. Climate/PDC devices can use a separate climate
+    entity only as a mode reference while keeping a switch as the real command.
     """
 
     def __init__(self, hass: HomeAssistant, entry_id: str) -> None:
@@ -48,8 +55,6 @@ class AdaptivePowerLearner:
         ):
             self.data = stored
         else:
-            # v1.1.0 could learn standby/off watts as active samples. Do not
-            # carry those potentially unsafe profiles into the fixed model.
             self.data = {
                 "schema_version": PROFILE_SCHEMA_VERSION,
                 "devices": {},
@@ -60,10 +65,23 @@ class AdaptivePowerLearner:
         self._observations_since_save = 0
 
     @staticmethod
-    def mode_for(device: dict[str, Any]) -> str:
+    def _is_climate_profiled(device: dict[str, Any]) -> bool:
+        entity_id = str(device.get("entity_id") or "")
+        return bool(
+            str(device.get(CONF_DEVICE_TYPE) or "") == DEVICE_TYPE_CLIMATE
+            or entity_id.startswith("climate.")
+            or device.get(CONF_DEVICE_MODE_CLIMATE_ENTITY)
+        )
+
+    @classmethod
+    def mode_for(cls, device: dict[str, Any]) -> str:
+        """Return the learning bucket for this device right now."""
+        profile_mode = str(device.get("profile_mode") or "").strip().lower()
+        if profile_mode:
+            return profile_mode
         entity_id = str(device.get("entity_id") or "")
         if entity_id.startswith("climate."):
-            return str(device.get("hvac_mode") or device.get("state") or "unknown")
+            return str(device.get("hvac_mode") or device.get("state") or "unknown").lower()
         return GENERAL_MODE
 
     @staticmethod
@@ -73,8 +91,8 @@ class AdaptivePowerLearner:
         state = str(device.get("state") or "").strip().lower()
         if entity_id.startswith("climate."):
             action = str(device.get("hvac_action") or "").strip().lower()
-            if action and action not in _INACTIVE_STATES:
-                return True
+            if action:
+                return action not in _INACTIVE_STATES
             return state not in _INACTIVE_STATES
         return state == "on"
 
@@ -86,6 +104,12 @@ class AdaptivePowerLearner:
             if not device.get("power_sensor"):
                 continue
             if device.get("adaptive_shared_power_sensor"):
+                continue
+            # A switch configured as Climate/PDC must not put unknown-mode watts
+            # into a generic bucket when its selected climate reference is down.
+            if device.get("mode_reference_required") and not device.get(
+                "mode_reference_available"
+            ):
                 continue
 
             entity_id = str(device.get("entity_id") or "")
@@ -99,7 +123,8 @@ class AdaptivePowerLearner:
 
             mode = self.mode_for(device)
             action = str(
-                device.get("hvac_action")
+                device.get("profile_hvac_action")
+                or device.get("hvac_action")
                 or device.get("state")
                 or "unknown"
             )
@@ -169,15 +194,22 @@ class AdaptivePowerLearner:
         m2 = float(stats.get("m2", 0.0))
         maximum = float(stats.get("max_w", 0.0))
         std = math.sqrt(m2 / (active - 1)) if active > 1 else 0.0
+        outlier_limited = False
 
         if active < ADAPTIVE_PROFILE_MIN_SAMPLES:
             estimate = max(fallback_w, maximum)
             status = "learning"
         else:
-            high = mean + 2.0 * std
-            estimate = max(mean * 1.15, high)
+            raw_high = max(mean * 1.15, mean + 2.0 * std)
+            estimate = raw_high
             if maximum > 0:
-                estimate = min(max(estimate, mean), maximum)
+                estimate = min(estimate, maximum)
+            if mean > 0:
+                robust_cap = mean * ADAPTIVE_ESTIMATE_MAX_MEAN_FACTOR
+                if estimate > robust_cap:
+                    estimate = robust_cap
+                    outlier_limited = True
+            estimate = max(estimate, mean)
             status = "ready"
 
         return {
@@ -191,6 +223,7 @@ class AdaptivePowerLearner:
             "last_power_w": round(float(stats.get("last_power_w", 0.0)), 1),
             "last_action": stats.get("last_action"),
             "estimated_power_w": round(max(estimate, 0.0), 1),
+            "outlier_limited": outlier_limited,
         }
 
     def admission_profile_for(
@@ -206,16 +239,39 @@ class AdaptivePowerLearner:
             }
 
         entity_id = str(device.get("entity_id") or "")
-        if not entity_id.startswith("climate."):
+        if not self._is_climate_profiled(device):
             return self.profile_for(entity_id, GENERAL_MODE, fallback_w)
+
+        if device.get("mode_reference_required") and not device.get(
+            "mode_reference_available"
+        ):
+            general = self.profile_for(entity_id, GENERAL_MODE, fallback_w)
+            general["status"] = "mode_reference_unavailable"
+            general["source_mode"] = GENERAL_MODE
+            return general
 
         current_mode = self.mode_for(device).strip().lower()
         if current_mode not in _INACTIVE_STATES:
-            return self.profile_for(entity_id, current_mode, fallback_w)
+            profile = self.profile_for(entity_id, current_mode, fallback_w)
+            # Existing switch-based v1.1 profiles lived in `general`. Keep that
+            # mature estimate as a safe bridge while a new cool/heat bucket is
+            # collecting its first samples.
+            if current_mode != GENERAL_MODE and profile.get("status") == "learning":
+                general = self.profile_for(entity_id, GENERAL_MODE, fallback_w)
+                if general.get("status") == "ready":
+                    profile["estimated_power_w"] = round(
+                        max(
+                            float(profile.get("estimated_power_w") or 0.0),
+                            float(general.get("estimated_power_w") or 0.0),
+                        ),
+                        1,
+                    )
+                    profile["fallback_mode"] = GENERAL_MODE
+            return profile
 
-        # A climate that is currently off must never size its next start from
-        # the learned off/standby profile. Prefer the best learned active HVAC
-        # mode; while it is still learning, profile_for keeps the nominal value.
+        # A climate/PDC currently off must never size its next start from an
+        # off/standby profile. Prefer the best learned active mode. If only the
+        # old general profile exists, it is a valid conservative bridge.
         modes = (
             self.data.get("devices", {})
             .get(entity_id, {})
