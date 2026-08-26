@@ -108,12 +108,11 @@ def evaluate_managed_devices(
     result = _base_evaluate(prepared, data=data, policy=adjusted_policy, now=now)
     by_id = {str(item.get("subentry_id")): item for item in devices}
 
-    hard_safety = bool(
-        policy.get("protect_grid_required")
-        or data.get("grid_warning")
-        or data.get("phase_warning")
-        or data.get("inverter_warning")
-    )
+    # v1.4: only a measured phase/inverter overload bypasses the normal minimum
+    # ON/non-interruptible rules for managed flexible loads. A total-grid warning
+    # first sheds emergency-capable monitored appliances and otherwise lets
+    # managed loads follow their normal anti-cycling rules.
+    hard_safety = bool(data.get("phase_warning") or data.get("inverter_warning"))
     battery_soc = _number(data.get("battery_soc"))
     battery_discharge_w = max(_number(data.get("battery_discharge_w")), 0.0)
     grid_import_w = max(_number(data.get("grid_import_w")), 0.0)
