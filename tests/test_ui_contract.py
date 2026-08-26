@@ -156,7 +156,7 @@ class TestUIContract(unittest.TestCase):
         match = re.search(r'^VERSION = "([^"]+)"$', const_text, re.MULTILINE)
         self.assertIsNotNone(match)
         self.assertEqual(manifest["version"], match.group(1))
-        self.assertEqual("1.1.0", manifest["version"])
+        self.assertEqual("1.1.1", manifest["version"])
 
 
 if __name__ == "__main__":
