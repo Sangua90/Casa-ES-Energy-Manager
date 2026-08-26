@@ -1,4 +1,4 @@
-"""Deterministic dry-run admission for managed Casa ES loads.
+"""Deterministic admission for managed Casa ES loads.
 
 This module never calls Home Assistant services. It only evaluates whether a
 configured flexible load could be admitted now, while respecting instantaneous
@@ -49,16 +49,28 @@ def _priority_number(value: Any) -> int:
     return max(1, min(100, priority))
 
 
-def _is_running(state: Any, current_power_w: Any = None) -> bool:
-    """Return whether a managed load is currently active.
+def _state_active(state: Any) -> bool:
+    """Return whether the managed entity is logically enabled/on."""
+    return str(state or "").strip().lower() not in OFF_STATES
 
-    A configured real-power sensor wins over generic entity state. This avoids
-    treating a climate/water-heater mode as active consumption when the compressor
-    or heater is actually idle.
+
+def _is_running(
+    state: Any,
+    current_power_w: Any = None,
+    *,
+    shared_power_sensor: bool = False,
+) -> bool:
+    """Return whether a managed load is currently consuming/active.
+
+    For a dedicated power sensor, real watts are the best indication of active
+    consumption. For a shared meter, watts cannot identify which child load is
+    responsible, so the individual entity state becomes authoritative.
     """
+    if shared_power_sensor:
+        return _state_active(state)
     if current_power_w is not None:
         return _number(current_power_w) >= RUNNING_POWER_THRESHOLD_W
-    return str(state or "").strip().lower() not in OFF_STATES
+    return _state_active(state)
 
 
 def _phase_requirements(phase: str, nominal_power_w: float) -> dict[str, float]:
@@ -110,13 +122,7 @@ def evaluate_managed_devices(
     policy: dict[str, Any],
     now: datetime | None = None,
 ) -> dict[str, Any]:
-    """Allocate current power and future energy to configured loads in priority order.
-
-    Priority is numeric: 1 is the highest priority and 100 the lowest.
-    A cycle duration is optional. When it is omitted Casa ES never invents a
-    one-hour cycle: instantaneous admission still works, while no synthetic cycle
-    energy is reserved from the future budget.
-    """
+    """Allocate current power and future energy to configured loads in priority order."""
     flexible_budget = policy.get("flexible_energy_budget_kwh")
     energy_budget_known = flexible_budget is not None
     remaining_energy_kwh = max(_number(flexible_budget), 0.0)
@@ -143,15 +149,14 @@ def evaluate_managed_devices(
     normalized: list[dict[str, Any]] = []
     for device in devices:
         nominal = max(_number(device.get("nominal_power_w")), 0.0)
-        runtime_minutes = _optional_positive_number(
-            device.get("expected_runtime_minutes")
-        )
+        runtime_minutes = _optional_positive_number(device.get("expected_runtime_minutes"))
         expected_energy = (
             nominal * runtime_minutes / 60_000.0
             if runtime_minutes is not None
             else None
         )
         current_power = device.get("current_power_w")
+        shared = bool(device.get("adaptive_shared_power_sensor"))
         normalized.append(
             {
                 **device,
@@ -169,7 +174,12 @@ def evaluate_managed_devices(
                 "switch_interval_seconds": max(
                     _number(device.get("switch_interval_seconds"), 0.0), 0.0
                 ),
-                "running": _is_running(device.get("state"), current_power),
+                "entity_active": _state_active(device.get("state")),
+                "running": _is_running(
+                    device.get("state"),
+                    current_power,
+                    shared_power_sensor=shared,
+                ),
             }
         )
 
@@ -226,7 +236,10 @@ def evaluate_managed_devices(
             reason = "Entità dispositivo non disponibile."
         elif item["running"]:
             decision = "already_running"
-            reason = "Dispositivo già attivo; nessun nuovo avvio simulato."
+            reason = "Dispositivo già attivo; nessun nuovo avvio necessario."
+        elif item["entity_active"]:
+            decision = "already_enabled_idle"
+            reason = "Entità già accesa ma senza assorbimento attivo; nessun nuovo comando di avvio."
         elif item["nominal_power_w"] <= 0:
             decision = "blocked"
             reason = "Potenza nominale non valida."
@@ -320,6 +333,7 @@ def evaluate_managed_devices(
                 "name": item.get("name"),
                 "entity_id": item.get("entity_id"),
                 "state": item.get("state"),
+                "entity_active": item["entity_active"],
                 "running": item["running"],
                 "priority": item["priority"],
                 "phase": item["phase"],
