@@ -83,6 +83,7 @@ class TestUIContract(unittest.TestCase):
             "start_after",
             "end_before",
         }
+        monitored_optional = {"emergency_entity", "resume_entity"}
 
         all_config_labels: dict[str, str] = {}
         for step in self.it["config"]["step"].values():
@@ -96,6 +97,12 @@ class TestUIContract(unittest.TestCase):
         for key in managed_optional:
             self.assertIn("*", all_managed_labels[key], key)
 
+        all_monitored_labels: dict[str, str] = {}
+        for step in self.it["config_subentries"]["monitored_load"]["step"].values():
+            all_monitored_labels.update(step.get("data", {}))
+        for key in monitored_optional:
+            self.assertIn("*", all_monitored_labels[key], key)
+
     def test_add_actions_are_unambiguous(self) -> None:
         subentries = self.it["config_subentries"]
         managed = subentries["managed_device"]["initiate_flow"]["user"].lower()
@@ -104,7 +111,7 @@ class TestUIContract(unittest.TestCase):
         self.assertIn("gestito", managed)
         self.assertIn("controllabile", managed)
         self.assertIn("monitorato", monitored)
-        self.assertIn("solo lettura", monitored)
+        self.assertIn("protezione", subentries["monitored_load"]["entry_type"].lower())
 
     def test_managed_flow_has_conditional_climate_step_without_ev_or_dependency(self) -> None:
         managed_steps = self.it["config_subentries"]["managed_device"]["step"]
@@ -139,6 +146,25 @@ class TestUIContract(unittest.TestCase):
         self.assertIn("async_step_climate", managed_source)
         self.assertNotIn("async_step_advanced", managed_source)
 
+    def test_monitored_load_keeps_one_category_with_optional_emergency_control(self) -> None:
+        monitored = self.it["config_subentries"]["monitored_load"]
+        for step_name in ("user", "reconfigure"):
+            fields = monitored["step"][step_name]["data"]
+            self.assertIn("name", fields)
+            self.assertIn("power_sensor", fields)
+            self.assertIn("phase", fields)
+            self.assertIn("enabled", fields)
+            self.assertIn("emergency_entity", fields)
+            self.assertIn("resume_entity", fields)
+        description = monitored["step"]["user"]["description"].lower()
+        self.assertIn("emergenza", description)
+        self.assertIn("mai", description)
+        self.assertIn("batteria", description)
+
+        source = (INTEGRATION / "monitored_load_flow.py").read_text(encoding="utf-8")
+        self.assertIn("CONF_MONITORED_LOAD_EMERGENCY_ENTITY", source)
+        self.assertIn("CONF_MONITORED_LOAD_RESUME_ENTITY", source)
+
     def test_climate_device_type_is_clear_and_mode_reference_is_required(self) -> None:
         managed = self.it["config_subentries"]["managed_device"]["step"]
         self.assertIn("Tipo di dispositivo", managed["user"]["data"]["device_type"])
@@ -168,19 +194,21 @@ class TestUIContract(unittest.TestCase):
             self.assertIn("*", managed["data"][key])
             self.assertIn("Facoltativo", managed["data_description"][key])
 
-    def test_real_control_master_exists_and_defaults_off(self) -> None:
+    def test_real_control_master_and_v14_emergency_controller_exist(self) -> None:
         const_text = (INTEGRATION / "const.py").read_text(encoding="utf-8")
         init_text = (INTEGRATION / "__init__.py").read_text(encoding="utf-8")
         switch_text = (INTEGRATION / "switch.py").read_text(encoding="utf-8")
-        coordinator_text = (INTEGRATION / "coordinator_v1.py").read_text(
+        coordinator_text = (INTEGRATION / "coordinator_v14.py").read_text(
             encoding="utf-8"
         )
         self.assertIn("DEFAULT_AUTOMATIC_REAL_LOAD_CONTROL = False", const_text)
         self.assertIn("Platform.SWITCH", init_text)
+        self.assertIn("coordinator_v14", init_text)
         self.assertIn("Controllo automatico reale", switch_text)
         self.assertIn("_async_apply_real_control", coordinator_text)
-        self.assertIn("automatic_real_load_control", coordinator_text)
-        self.assertIn("command_sent", coordinator_text)
+        self.assertIn("monitored_emergency_control", coordinator_text)
+        self.assertIn("grid_total", coordinator_text)
+        self.assertIn("phase_or_inverter", coordinator_text)
 
     def test_manifest_and_const_versions_match(self) -> None:
         manifest = json.loads(
@@ -190,7 +218,7 @@ class TestUIContract(unittest.TestCase):
         match = re.search(r'^VERSION = "([^"]+)"$', const_text, re.MULTILINE)
         self.assertIsNotNone(match)
         self.assertEqual(manifest["version"], match.group(1))
-        self.assertEqual("1.2.0", manifest["version"])
+        self.assertEqual("1.4.0", manifest["version"])
 
 
 if __name__ == "__main__":
