@@ -38,9 +38,9 @@ class CasaESEnergyCoordinator(V14Coordinator):
     async def _async_apply_real_control(self, data: dict[str, Any], now: Any) -> None:
         """Defer commands until the v1.4.1 PV estimate has been applied.
 
-        v1.2 normally evaluates and executes load control inside its update.  The
+        v1.2 normally evaluates and executes load control inside its update. The
         v1.4.1 layer must first replace the single-source PV potential with the
-        fused estimate and rebuild the deterministic decisions.  During the base
+        fused estimate and rebuild the deterministic decisions. During the base
         pass we therefore collect data only; one real-control pass is executed at
         the end with the corrected solar opportunity.
         """
@@ -53,6 +53,12 @@ class CasaESEnergyCoordinator(V14Coordinator):
     def _apply_pv_estimate(self, data: dict[str, Any]) -> None:
         custom = data.get("pv_potential_input_w")
         provider = data.get("forecast_current_hour_power_w")
+        if provider is None and data.get("forecast_current_hour_kwh") is not None:
+            # The configured current-hour forecast may be an energy window rather
+            # than an instantaneous power entity. Because the window is exactly
+            # one hour, kWh x 1000 is its average power in watts and is still a
+            # useful independent secondary reference for the adaptive estimator.
+            provider = float(data["forecast_current_hour_kwh"]) * 1000.0
 
         estimate = self.pv_estimator.update(
             measured_pv_w=float(data.get("pv_power_w") or 0.0),
@@ -76,7 +82,7 @@ class CasaESEnergyCoordinator(V14Coordinator):
             and float(data.get("pv_potential_gap_w") or 0.0) >= CURTAILMENT_POTENTIAL_GAP_W
         )
 
-        # Preserve hard electrical warnings.  Only the informational monitoring
+        # Preserve hard electrical warnings. Only the informational monitoring
         # status may be replaced by the newly detected curtailment state.
         if not (
             data.get("grid_warning")
