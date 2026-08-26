@@ -390,49 +390,58 @@
       }
     },
     "monitored_load": {
-      "entry_type": "Carico monitorato — solo lettura",
+      "entry_type": "Carico monitorato — protezione opzionale",
       "initiate_flow": {
-        "user": "Aggiungi carico monitorato (solo lettura)",
+        "user": "Aggiungi carico monitorato",
         "reconfigure": "Modifica carico monitorato"
       },
       "step": {
         "user": {
-          "title": "Carico monitorato — solo lettura",
-          "description": "Casa ES osserva questo carico ma non lo comanda.",
+          "title": "Carico monitorato",
+          "description": "Casa ES usa sempre il sensore per capire il carico della fase. I comandi con * sono facoltativi e vengono usati soltanto in emergenza elettrica, mai per ottimizzare FV o batteria.",
           "data": {
             "name": "Nome del carico",
             "power_sensor": "Sensore potenza reale",
             "phase": "Fase elettrica",
-            "enabled": "Abilita monitoraggio"
+            "enabled": "Abilita monitoraggio",
+            "emergency_entity": "Comando emergenza *",
+            "resume_entity": "Comando ripristino *"
           },
           "data_description": {
             "name": "Nome leggibile del carico.",
             "power_sensor": "Sensore in W/kW della potenza reale.",
-            "phase": "Fase fisica del carico.",
-            "enabled": "Include o esclude il carico dalla sola attribuzione diagnostica."
+            "phase": "Fase fisica del carico, usata anche per scegliere se lo sgancio può risolvere un sovraccarico di fase.",
+            "enabled": "Include o esclude il carico dal monitoraggio e dalla protezione opzionale.",
+            "emergency_entity": "* Facoltativo. Solo in protezione rete/fase/inverter: switch/climate/fan/light vengono spenti; button o script vengono eseguiti come pausa/stop.",
+            "resume_entity": "* Facoltativo. Se configurato, viene eseguito dopo almeno 2 minuti senza allarmi elettrici. Lascia vuoto per un carico che deve essere riattivato manualmente."
           }
         },
         "reconfigure": {
           "title": "Modifica carico monitorato",
-          "description": "Resta sempre in sola lettura.",
+          "description": "Il carico resta monitorato normalmente; gli eventuali comandi sono riservati esclusivamente alla protezione elettrica.",
           "data": {
             "name": "Nome del carico",
             "power_sensor": "Sensore potenza reale",
             "phase": "Fase elettrica",
-            "enabled": "Abilita monitoraggio"
+            "enabled": "Abilita monitoraggio",
+            "emergency_entity": "Comando emergenza *",
+            "resume_entity": "Comando ripristino *"
           },
           "data_description": {
             "name": "Nome leggibile del carico.",
             "power_sensor": "Sensore in W/kW della potenza reale.",
             "phase": "Fase fisica reale del carico.",
-            "enabled": "Include o esclude il carico dal monitoraggio."
+            "enabled": "Include o esclude il carico dal monitoraggio e dalla protezione opzionale.",
+            "emergency_entity": "* Facoltativo. Casa ES lo usa soltanto per ridurre un rischio misurato di rete, fase o inverter.",
+            "resume_entity": "* Facoltativo. Ripristino automatico dopo 2 minuti stabili; se vuoto Casa ES lascia il carico spento/pausato e segnala il ripristino manuale."
           }
         }
       },
       "error": {
         "monitored_name_required": "Inserisci un nome per il carico monitorato.",
         "expected_power_sensor": "Serve un sensore di potenza con unità W, kW o MW.",
-        "monitored_sensor_already_configured": "Questo sensore di potenza è già configurato come carico monitorato."
+        "monitored_sensor_already_configured": "Questo sensore di potenza è già configurato come carico monitorato.",
+        "control_entity_not_found": "L'entità di comando selezionata non è disponibile in Home Assistant."
       }
     }
   },
