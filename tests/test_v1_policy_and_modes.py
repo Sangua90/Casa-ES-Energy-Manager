@@ -1,4 +1,4 @@
-"""Pure unit tests for Casa ES v1 preference and runtime-mode logic."""
+"""Pure unit tests for Casa ES preference, runtime modes and stop logic."""
 
 from datetime import datetime, timedelta, timezone
 import importlib.util
@@ -32,9 +32,14 @@ v1_policy = _load("planner_policy_v1", "planner_policy_v1.py")
 
 
 class V1DeviceModeTests(unittest.TestCase):
-    def data(self):
-        return {
+    def data(self, **changes):
+        value = {
             "battery_soc": 80,
+            "grid_import_w": 0,
+            "battery_discharge_w": 0,
+            "grid_warning": False,
+            "phase_warning": False,
+            "inverter_warning": False,
             "grid_headroom_w": 5000,
             "inverter_headroom_w": 7000,
             "phase_l1_headroom_w": 2500,
@@ -43,14 +48,18 @@ class V1DeviceModeTests(unittest.TestCase):
             "solar_after_house_w": 2000,
             "pv_potential_after_house_w": 2000,
         }
+        value.update(changes)
+        return value
 
-    def policy(self):
-        return {
+    def policy(self, **changes):
+        value = {
             "flexible_energy_budget_kwh": 8.0,
             "protect_grid_required": False,
             "target_reachability": "comfortable",
             "battery_first_preferred": False,
         }
+        value.update(changes)
+        return value
 
     def device(self, **changes):
         value = {
@@ -66,12 +75,16 @@ class V1DeviceModeTests(unittest.TestCase):
             "priority": 30,
             "phase": "l1",
             "allow_grid": False,
+            "max_grid_power_w": 100,
             "enabled": True,
             "min_battery_soc": 40,
             "seconds_since_change": 3600,
             "min_on_minutes": 20,
             "min_off_minutes": 20,
             "management_mode": "auto",
+            "battery_discharge_override_w": 0,
+            "on_only": False,
+            "adaptive_shared_power_sensor": False,
         }
         value.update(changes)
         return value
@@ -86,7 +99,23 @@ class V1DeviceModeTests(unittest.TestCase):
         self.assertEqual(decision["decision"], "manual_override")
         self.assertFalse(decision["would_start"])
 
-    def test_off_mode_marks_running_load_for_future_stop(self):
+    def test_override_is_never_auto_stopped_even_during_hard_safety(self):
+        result = v1_dry.evaluate_managed_devices(
+            [
+                self.device(
+                    management_mode="override",
+                    state="cool",
+                    current_power_w=900,
+                )
+            ],
+            data=self.data(phase_warning=True),
+            policy=self.policy(protect_grid_required=True),
+        )
+        decision = result["dry_run_decisions"][0]
+        self.assertEqual(decision["decision"], "manual_override")
+        self.assertFalse(decision["would_stop"])
+
+    def test_off_mode_marks_logically_active_load_for_future_stop(self):
         result = v1_dry.evaluate_managed_devices(
             [self.device(management_mode="off", state="cool", current_power_w=700)],
             data=self.data(),
@@ -94,6 +123,17 @@ class V1DeviceModeTests(unittest.TestCase):
         )
         decision = result["dry_run_decisions"][0]
         self.assertEqual(decision["decision"], "forced_off")
+        self.assertTrue(decision["would_stop"])
+
+    def test_off_mode_stops_even_if_enabled_entity_is_currently_idle(self):
+        result = v1_dry.evaluate_managed_devices(
+            [self.device(management_mode="off", state="cool", current_power_w=6)],
+            data=self.data(),
+            policy=self.policy(),
+        )
+        decision = result["dry_run_decisions"][0]
+        self.assertFalse(decision["running"])
+        self.assertTrue(decision["entity_active"])
         self.assertTrue(decision["would_stop"])
 
     def test_off_mode_does_not_reserve_future_energy(self):
@@ -133,6 +173,57 @@ class V1DeviceModeTests(unittest.TestCase):
         )
         self.assertLess(result["dry_run_remaining_flexible_budget_kwh"], 8.0)
 
+    def test_shared_meter_off_child_is_not_running_from_sibling_watts(self):
+        """Regression for Riscaldamento SPA OFF while filter owns shared watts."""
+        result = v1_dry.evaluate_managed_devices(
+            [
+                self.device(
+                    entity_id="switch.spa_heat",
+                    state="off",
+                    current_power_w=30.3,
+                    adaptive_shared_power_sensor=True,
+                    nominal_power_w=2500,
+                    admission_power_w=2500,
+                )
+            ],
+            data=self.data(),
+            policy=self.policy(),
+        )
+        decision = result["dry_run_decisions"][0]
+        self.assertFalse(decision["running"])
+        self.assertFalse(decision["entity_active"])
+
+    def test_shared_meter_on_child_is_running_by_own_state(self):
+        result = v1_dry.evaluate_managed_devices(
+            [
+                self.device(
+                    entity_id="switch.spa_filter",
+                    state="on",
+                    current_power_w=30.3,
+                    adaptive_shared_power_sensor=True,
+                    nominal_power_w=30,
+                    admission_power_w=30,
+                )
+            ],
+            data=self.data(),
+            policy=self.policy(),
+        )
+        decision = result["dry_run_decisions"][0]
+        self.assertTrue(decision["running"])
+        self.assertTrue(decision["entity_active"])
+
+    def test_enabled_idle_climate_is_not_repeatedly_started(self):
+        result = v1_dry.evaluate_managed_devices(
+            [self.device(state="cool", current_power_w=6)],
+            data=self.data(),
+            policy=self.policy(),
+        )
+        decision = result["dry_run_decisions"][0]
+        self.assertEqual(decision["decision"], "already_enabled_idle")
+        self.assertFalse(decision["would_start"])
+        self.assertTrue(decision["entity_active"])
+        self.assertFalse(decision["running"])
+
     def test_minimum_off_time_blocks_auto_restart(self):
         result = v1_dry.evaluate_managed_devices(
             [self.device(seconds_since_change=60, min_off_minutes=20)],
@@ -170,6 +261,78 @@ class V1DeviceModeTests(unittest.TestCase):
         self.assertIsNone(decision["expected_runtime_minutes"])
         self.assertIsNone(decision["expected_energy_kwh"])
         self.assertEqual(result["dry_run_running_energy_commitment_kwh"], 0)
+
+    def test_battery_discharge_limit_requests_auto_stop_after_min_on(self):
+        result = v1_dry.evaluate_managed_devices(
+            [
+                self.device(
+                    state="cool",
+                    current_power_w=900,
+                    battery_discharge_override_w=100,
+                    seconds_since_change=3600,
+                )
+            ],
+            data=self.data(battery_discharge_w=500),
+            policy=self.policy(),
+        )
+        decision = result["dry_run_decisions"][0]
+        self.assertEqual(decision["decision"], "auto_stop")
+        self.assertTrue(decision["would_stop"])
+        self.assertFalse(decision["stop_is_hard_safety"])
+
+    def test_minimum_on_delays_normal_energy_stop(self):
+        result = v1_dry.evaluate_managed_devices(
+            [
+                self.device(
+                    state="cool",
+                    current_power_w=900,
+                    battery_discharge_override_w=100,
+                    seconds_since_change=60,
+                    min_on_minutes=20,
+                )
+            ],
+            data=self.data(battery_discharge_w=500),
+            policy=self.policy(),
+        )
+        decision = result["dry_run_decisions"][0]
+        self.assertEqual(decision["decision"], "minimum_on_protected")
+        self.assertFalse(decision["would_stop"])
+
+    def test_hard_electrical_safety_can_stop_before_minimum_on(self):
+        result = v1_dry.evaluate_managed_devices(
+            [
+                self.device(
+                    state="cool",
+                    current_power_w=900,
+                    seconds_since_change=60,
+                    min_on_minutes=20,
+                )
+            ],
+            data=self.data(phase_warning=True),
+            policy=self.policy(protect_grid_required=True),
+        )
+        decision = result["dry_run_decisions"][0]
+        self.assertEqual(decision["decision"], "safety_stop")
+        self.assertTrue(decision["would_stop"])
+        self.assertTrue(decision["stop_is_hard_safety"])
+
+    def test_on_only_cycle_resists_normal_energy_stop(self):
+        result = v1_dry.evaluate_managed_devices(
+            [
+                self.device(
+                    state="cool",
+                    current_power_w=900,
+                    battery_discharge_override_w=100,
+                    seconds_since_change=3600,
+                    on_only=True,
+                )
+            ],
+            data=self.data(battery_discharge_w=500),
+            policy=self.policy(),
+        )
+        decision = result["dry_run_decisions"][0]
+        self.assertEqual(decision["decision"], "protected_cycle")
+        self.assertFalse(decision["would_stop"])
 
     def test_priority_supports_full_one_to_one_hundred_range(self):
         devices = [
