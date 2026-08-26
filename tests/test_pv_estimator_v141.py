@@ -1,10 +1,13 @@
 import importlib.util
 from pathlib import Path
+import sys
 
 MODULE_PATH = Path(__file__).parents[1] / "custom_components" / "casa_es_energy_manager" / "pv_estimator_v141.py"
-SPEC = importlib.util.spec_from_file_location("casa_es_pv_estimator_v141", MODULE_PATH)
-MODULE = importlib.util.module_from_spec(SPEC)
+MODULE_NAME = "casa_es_pv_estimator_v141"
+SPEC = importlib.util.spec_from_file_location(MODULE_NAME, MODULE_PATH)
 assert SPEC and SPEC.loader
+MODULE = importlib.util.module_from_spec(SPEC)
+sys.modules[MODULE_NAME] = MODULE
 SPEC.loader.exec_module(MODULE)
 AdaptivePVPotentialEstimator = MODULE.AdaptivePVPotentialEstimator
 
