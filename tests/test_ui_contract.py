@@ -178,8 +178,9 @@ class TestUIContract(unittest.TestCase):
         self.assertIn("DEFAULT_AUTOMATIC_REAL_LOAD_CONTROL = False", const_text)
         self.assertIn("Platform.SWITCH", init_text)
         self.assertIn("Controllo automatico reale", switch_text)
-        self.assertIn("commands", coordinator_text.lower())
         self.assertIn("_async_apply_real_control", coordinator_text)
+        self.assertIn("automatic_real_load_control", coordinator_text)
+        self.assertIn("command_sent", coordinator_text)
 
     def test_manifest_and_const_versions_match(self) -> None:
         manifest = json.loads(
