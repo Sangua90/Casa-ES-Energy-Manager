@@ -26,19 +26,19 @@
           "phase_l3_power_sensor": "Potenza fase L3 *"
         },
         "data_description": {
-          "pv_power_sensor": "Obbligatorio. Sensore in W/kW della potenza FV realmente erogata dall'inverter.",
-          "load_power_sensor": "Obbligatorio. Sensore in W/kW del consumo totale della casa alimentato dall'inverter.",
-          "grid_power_sensor": "Obbligatorio. Sensore in W/kW della rete. Casa ES assume valore positivo = prelievo e negativo = immissione.",
-          "battery_soc_sensor": "Obbligatorio. Sensore percentuale dello stato di carica reale della batteria.",
-          "battery_power_sensor": "Obbligatorio. Sensore in W/kW della batteria. Casa ES assume positivo = carica e negativo = scarica.",
-          "phase_l1_power_sensor": "* Facoltativo, fortemente consigliato. Potenza totale reale assorbita dalla fase L1.",
-          "phase_l2_power_sensor": "* Facoltativo, fortemente consigliato. Potenza totale reale assorbita dalla fase L2.",
-          "phase_l3_power_sensor": "* Facoltativo, fortemente consigliato. Potenza totale reale assorbita dalla fase L3."
+          "pv_power_sensor": "Sensore in W/kW della potenza FV realmente erogata.",
+          "load_power_sensor": "Sensore in W/kW del consumo totale della casa.",
+          "grid_power_sensor": "Valore positivo = prelievo, negativo = immissione.",
+          "battery_soc_sensor": "Sensore percentuale dello stato di carica reale.",
+          "battery_power_sensor": "Valore positivo = carica, negativo = scarica.",
+          "phase_l1_power_sensor": "* Facoltativo, consigliato. Potenza totale reale L1.",
+          "phase_l2_power_sensor": "* Facoltativo, consigliato. Potenza totale reale L2.",
+          "phase_l3_power_sensor": "* Facoltativo, consigliato. Potenza totale reale L3."
         }
       },
       "limits": {
         "title": "2 di 6 - Limiti e protezioni",
-        "description": "Questi limiti sono vincolanti e hanno sempre precedenza su forecast, preferenze energetiche e AI.",
+        "description": "Questi limiti hanno sempre precedenza su forecast, preferenze energetiche e AI.",
         "data": {
           "inverter_power_limit": "Limite totale inverter (W)",
           "phase_power_limit": "Limite operativo per singola fase (W)",
@@ -46,15 +46,15 @@
           "safety_margin": "Margine di sicurezza (W)"
         },
         "data_description": {
-          "inverter_power_limit": "Potenza totale massima che Casa ES considera disponibile dall'inverter.",
-          "phase_power_limit": "Potenza massima consentita su ciascuna fase prima del margine di sicurezza.",
-          "grid_power_limit": "Potenza massima di prelievo dalla rete che Casa ES deve rispettare.",
-          "safety_margin": "Riserva sottratta ai limiti elettrici per evitare di lavorare esattamente al massimo."
+          "inverter_power_limit": "Potenza totale massima considerata disponibile dall'inverter.",
+          "phase_power_limit": "Potenza massima consentita su ciascuna fase.",
+          "grid_power_limit": "Potenza massima di prelievo rete ammessa.",
+          "safety_margin": "Riserva sottratta ai limiti elettrici."
         }
       },
       "forecast": {
         "title": "3 di 6 - Previsione fotovoltaica",
-        "description": "Tutti i campi di questa pagina sono facoltativi (*). Le misure elettriche reali restano sempre prioritarie.",
+        "description": "Tutti i campi sono facoltativi (*). Le misure elettriche reali restano prioritarie.",
         "data": {
           "pv_potential_power_sensor": "FV potenziale adesso *",
           "pv_forecast_remaining_today_sensor": "Energia FV residua oggi *",
@@ -65,18 +65,18 @@
           "weather_entity": "Entità meteo *"
         },
         "data_description": {
-          "pv_potential_power_sensor": "* Facoltativo. Potenza FV teoricamente disponibile adesso, utile quando lo zero-export limita la produzione misurata.",
-          "pv_forecast_remaining_today_sensor": "* Facoltativo. Energia che il provider prevede ancora di produrre da questo momento a fine giornata.",
-          "pv_forecast_current_hour_sensor": "* Facoltativo. Previsione della finestra oraria corrente; può essere espressa in potenza o energia compatibile.",
-          "pv_forecast_next_hour_sensor": "* Facoltativo. Previsione della prossima ora; può essere espressa in potenza o energia compatibile.",
-          "pv_forecast_today_sensor": "* Facoltativo. Energia FV prevista complessiva oggi. Se espone l'attributo watts, Casa ES usa anche la curva temporale.",
-          "pv_forecast_tomorrow_sensor": "* Facoltativo. Energia FV prevista domani, utile quando il target batteria cade nel giorno successivo.",
-          "weather_entity": "* Facoltativo. Entità weather usata come contesto di previsione; non sostituisce mai i sensori elettrici."
+          "pv_potential_power_sensor": "* Potenza FV teoricamente disponibile adesso.",
+          "pv_forecast_remaining_today_sensor": "* Energia prevista ancora producibile oggi.",
+          "pv_forecast_current_hour_sensor": "* Previsione della finestra oraria corrente.",
+          "pv_forecast_next_hour_sensor": "* Previsione della prossima ora.",
+          "pv_forecast_today_sensor": "* Energia FV prevista complessiva oggi.",
+          "pv_forecast_tomorrow_sensor": "* Energia FV prevista domani.",
+          "weather_entity": "* Meteo usato come contesto del planner."
         }
       },
       "battery": {
         "title": "4 di 6 - Batteria e strategia energetica",
-        "description": "Configura il target batteria e la preferenza generale. La stessa preferenza sarà poi modificabile rapidamente dalla vista Casa ES Manager.",
+        "description": "Configura target batteria, consumi base e preferenza generale.",
         "data": {
           "battery_capacity_kwh": "Capacità batteria (kWh)",
           "battery_target_soc": "SOC obiettivo batteria (%)",
@@ -91,17 +91,17 @@
           "emergency_charge_stop_script": "Script arresto ricarica da rete *"
         },
         "data_description": {
-          "battery_capacity_kwh": "Capacità energetica utile della batteria installata, espressa in kWh.",
+          "battery_capacity_kwh": "Capacità energetica utile installata.",
           "battery_target_soc": "Percentuale che Casa ES cerca di raggiungere entro l'ora obiettivo.",
-          "battery_target_hour": "Ora del giorno entro cui il planner deve cercare di raggiungere il SOC obiettivo.",
-          "expected_base_load_w": "Stima del consumo medio inevitabile della casa da riservare prima di concedere energia ai carichi flessibili.",
-          "battery_charge_efficiency_pct": "Rendimento stimato della ricarica; serve a trasformare il deficit della batteria nell'energia realmente necessaria.",
-          "energy_preference": "Batteria prioritaria protegge maggiormente la carica; Bilanciata condivide il margine; Carichi prioritari favorisce l'uso immediato del surplus. Le protezioni restano sempre vincolanti.",
-          "emergency_charge_target_soc": "SOC fino al quale la ricarica manuale di emergenza deve proseguire.",
-          "emergency_charge_power_w": "Potenza massima richiesta alla rete per la ricarica manuale. Casa ES la ammette solo se compatibile con i margini elettrici.",
-          "emergency_charge_max_minutes": "Durata massima della ricarica manuale prima dell'arresto automatico.",
-          "emergency_charge_start_script": "* Facoltativo. Script Home Assistant che abilita realmente la carica dell'inverter da Enel. Riceve power_w, target_soc e max_minutes.",
-          "emergency_charge_stop_script": "* Facoltativo. Script Home Assistant che interrompe la carica da rete. I pulsanti restano indisponibili finché non sono configurati entrambi gli script."
+          "battery_target_hour": "Ora del giorno del target batteria.",
+          "expected_base_load_w": "Consumo medio inevitabile da riservare prima dei carichi flessibili.",
+          "battery_charge_efficiency_pct": "Rendimento stimato di carica.",
+          "energy_preference": "Bilancia protezione batteria e uso immediato del surplus.",
+          "emergency_charge_target_soc": "SOC fino al quale proseguire la ricarica manuale da rete.",
+          "emergency_charge_power_w": "Potenza massima richiesta alla rete per la ricarica manuale.",
+          "emergency_charge_max_minutes": "Durata massima prima dell'arresto automatico.",
+          "emergency_charge_start_script": "* Script che abilita realmente la carica inverter da rete.",
+          "emergency_charge_stop_script": "* Script che interrompe la carica da rete."
         }
       },
       "ai": {
@@ -114,15 +114,15 @@
           "ai_task_entity": "Entità AI Task / Gemini *"
         },
         "data_description": {
-          "ai_enabled": "Attiva o disattiva i suggerimenti del planner AI. Le decisioni di sicurezza restano locali e deterministiche.",
-          "ai_interval_minutes": "Ogni quanti minuti richiedere un nuovo consiglio all'AI.",
-          "extra_context_sensors": "* Facoltativo. Sensori aggiuntivi come irraggiamento, temperatura, vento o altri dati utili al contesto.",
-          "ai_task_entity": "* Facoltativo se l'AI è disattivata; diventa obbligatorio quando abiliti il planner AI."
+          "ai_enabled": "Attiva o disattiva i suggerimenti del planner AI.",
+          "ai_interval_minutes": "Ogni quanti minuti richiedere un nuovo consiglio.",
+          "extra_context_sensors": "* Sensori aggiuntivi utili al contesto.",
+          "ai_task_entity": "* Obbligatoria soltanto se il planner AI è abilitato."
         }
       },
       "summary": {
         "title": "6 di 6 - Riepilogo",
-        "description": "Configurazione pronta. Obbligatori: {required}. Facoltativi: {optional}. Dopo il salvataggio potrai aggiungere separatamente i Dispositivi gestiti e i Carichi monitorati."
+        "description": "Configurazione pronta. Dopo il salvataggio potrai aggiungere Dispositivi gestiti e Carichi monitorati."
       }
     },
     "abort": {
@@ -143,7 +143,7 @@
     "step": {
       "sensors": {
         "title": "Sensori elettrici",
-        "description": "I campi senza asterisco sono obbligatori. I campi con * sono facoltativi.",
+        "description": "Campi con * facoltativi.",
         "data": {
           "pv_power_sensor": "Potenza FV reale",
           "load_power_sensor": "Potenza totale carichi casa",
@@ -155,19 +155,19 @@
           "phase_l3_power_sensor": "Potenza fase L3 *"
         },
         "data_description": {
-          "pv_power_sensor": "Obbligatorio. Sensore in W/kW della potenza FV realmente erogata dall'inverter.",
-          "load_power_sensor": "Obbligatorio. Sensore in W/kW del consumo totale della casa alimentato dall'inverter.",
-          "grid_power_sensor": "Obbligatorio. Sensore in W/kW della rete. Casa ES assume valore positivo = prelievo e negativo = immissione.",
-          "battery_soc_sensor": "Obbligatorio. Sensore percentuale dello stato di carica reale della batteria.",
-          "battery_power_sensor": "Obbligatorio. Sensore in W/kW della batteria. Casa ES assume positivo = carica e negativo = scarica.",
-          "phase_l1_power_sensor": "* Facoltativo, fortemente consigliato. Potenza totale reale assorbita dalla fase L1.",
-          "phase_l2_power_sensor": "* Facoltativo, fortemente consigliato. Potenza totale reale assorbita dalla fase L2.",
-          "phase_l3_power_sensor": "* Facoltativo, fortemente consigliato. Potenza totale reale assorbita dalla fase L3."
+          "pv_power_sensor": "Sensore della potenza FV reale.",
+          "load_power_sensor": "Sensore del carico totale casa.",
+          "grid_power_sensor": "Sensore della potenza rete.",
+          "battery_soc_sensor": "Sensore SOC batteria.",
+          "battery_power_sensor": "Sensore potenza batteria.",
+          "phase_l1_power_sensor": "* Potenza totale L1.",
+          "phase_l2_power_sensor": "* Potenza totale L2.",
+          "phase_l3_power_sensor": "* Potenza totale L3."
         }
       },
       "limits": {
         "title": "Limiti e protezioni",
-        "description": "Questi limiti sono vincolanti e hanno sempre precedenza su forecast, preferenze energetiche e AI.",
+        "description": "I limiti elettrici restano sempre vincolanti.",
         "data": {
           "inverter_power_limit": "Limite totale inverter (W)",
           "phase_power_limit": "Limite operativo per singola fase (W)",
@@ -175,15 +175,15 @@
           "safety_margin": "Margine di sicurezza (W)"
         },
         "data_description": {
-          "inverter_power_limit": "Potenza totale massima che Casa ES considera disponibile dall'inverter.",
-          "phase_power_limit": "Potenza massima consentita su ciascuna fase prima del margine di sicurezza.",
-          "grid_power_limit": "Potenza massima di prelievo dalla rete che Casa ES deve rispettare.",
-          "safety_margin": "Riserva sottratta ai limiti elettrici per evitare di lavorare esattamente al massimo."
+          "inverter_power_limit": "Limite inverter.",
+          "phase_power_limit": "Limite per fase.",
+          "grid_power_limit": "Limite rete.",
+          "safety_margin": "Margine sottratto ai limiti."
         }
       },
       "forecast": {
         "title": "Previsione fotovoltaica",
-        "description": "Tutti i campi sono facoltativi (*). Le misure elettriche reali restano sempre prioritarie.",
+        "description": "Tutti i campi sono facoltativi (*).",
         "data": {
           "pv_potential_power_sensor": "FV potenziale adesso *",
           "pv_forecast_remaining_today_sensor": "Energia FV residua oggi *",
@@ -194,18 +194,18 @@
           "weather_entity": "Entità meteo *"
         },
         "data_description": {
-          "pv_potential_power_sensor": "* Facoltativo. Potenza FV teoricamente disponibile adesso.",
-          "pv_forecast_remaining_today_sensor": "* Facoltativo. Energia prevista ancora producibile oggi.",
-          "pv_forecast_current_hour_sensor": "* Facoltativo. Forecast della finestra oraria corrente.",
-          "pv_forecast_next_hour_sensor": "* Facoltativo. Forecast della prossima ora.",
-          "pv_forecast_today_sensor": "* Facoltativo. Energia FV prevista oggi.",
-          "pv_forecast_tomorrow_sensor": "* Facoltativo. Energia FV prevista domani.",
-          "weather_entity": "* Facoltativo. Entità meteo usata come contesto."
+          "pv_potential_power_sensor": "* FV potenziale adesso.",
+          "pv_forecast_remaining_today_sensor": "* Energia residua oggi.",
+          "pv_forecast_current_hour_sensor": "* Forecast ora corrente.",
+          "pv_forecast_next_hour_sensor": "* Forecast prossima ora.",
+          "pv_forecast_today_sensor": "* Totale oggi.",
+          "pv_forecast_tomorrow_sensor": "* Totale domani.",
+          "weather_entity": "* Entità meteo."
         }
       },
       "battery": {
         "title": "Batteria e strategia energetica",
-        "description": "Configura il target batteria e la preferenza generale. La preferenza è modificabile anche dalla vista Casa ES Manager.",
+        "description": "Configura target batteria e preferenza energetica.",
         "data": {
           "battery_capacity_kwh": "Capacità batteria (kWh)",
           "battery_target_soc": "SOC obiettivo batteria (%)",
@@ -220,22 +220,22 @@
           "emergency_charge_stop_script": "Script arresto ricarica da rete *"
         },
         "data_description": {
-          "battery_capacity_kwh": "Capacità energetica utile della batteria installata.",
-          "battery_target_soc": "Percentuale che Casa ES cerca di raggiungere entro l'ora obiettivo.",
-          "battery_target_hour": "Ora entro cui il planner deve cercare di raggiungere il SOC obiettivo.",
-          "expected_base_load_w": "Consumo medio inevitabile da riservare prima dei carichi flessibili.",
-          "battery_charge_efficiency_pct": "Rendimento stimato della ricarica della batteria.",
-          "energy_preference": "Batteria prioritaria protegge la carica; Bilanciata è il compromesso; Carichi prioritari favorisce l'uso del surplus senza scavalcare la sicurezza.",
-          "emergency_charge_target_soc": "SOC fino al quale proseguire la ricarica manuale da rete.",
-          "emergency_charge_power_w": "Potenza massima richiesta alla rete per la ricarica manuale, sempre subordinata ai margini elettrici.",
-          "emergency_charge_max_minutes": "Durata massima prima dell'arresto automatico.",
-          "emergency_charge_start_script": "* Facoltativo. Script che abilita realmente la carica inverter da Enel.",
-          "emergency_charge_stop_script": "* Facoltativo. Script che interrompe la carica da rete; entrambi gli script sono necessari per abilitare i pulsanti."
+          "battery_capacity_kwh": "Capacità utile batteria.",
+          "battery_target_soc": "SOC target.",
+          "battery_target_hour": "Ora target.",
+          "expected_base_load_w": "Consumo base medio da riservare.",
+          "battery_charge_efficiency_pct": "Rendimento stimato di carica.",
+          "energy_preference": "Preferenza globale tra batteria e carichi.",
+          "emergency_charge_target_soc": "SOC target della carica manuale da rete.",
+          "emergency_charge_power_w": "Potenza massima richiesta.",
+          "emergency_charge_max_minutes": "Durata massima.",
+          "emergency_charge_start_script": "* Script di avvio ricarica rete.",
+          "emergency_charge_stop_script": "* Script di arresto ricarica rete."
         }
       },
       "ai": {
         "title": "Planner AI",
-        "description": "L'AI è consultiva e non può superare le regole deterministiche di sicurezza.",
+        "description": "L'AI resta consultiva.",
         "data": {
           "ai_enabled": "Abilita planner AI consultivo",
           "ai_interval_minutes": "Intervallo planner AI (min)",
@@ -243,15 +243,15 @@
           "ai_task_entity": "Entità AI Task / Gemini *"
         },
         "data_description": {
-          "ai_enabled": "Attiva o disattiva i suggerimenti del planner AI.",
-          "ai_interval_minutes": "Ogni quanti minuti richiedere un nuovo consiglio all'AI.",
-          "extra_context_sensors": "* Facoltativo. Sensori aggiuntivi utili al contesto.",
-          "ai_task_entity": "* Facoltativo se l'AI è disattivata; diventa obbligatorio quando abiliti il planner AI."
+          "ai_enabled": "Abilita il planner AI.",
+          "ai_interval_minutes": "Intervallo tra le richieste.",
+          "extra_context_sensors": "* Sensori aggiuntivi.",
+          "ai_task_entity": "* Entità AI Task."
         }
       },
       "summary": {
         "title": "Salva modifiche",
-        "description": "Controlla le sezioni precedenti e premi Invia per salvare e ricaricare Casa ES Energy Manager."
+        "description": "Premi Invia per salvare e ricaricare Casa ES Energy Manager."
       }
     }
   },
@@ -264,14 +264,15 @@
       },
       "step": {
         "user": {
-          "title": "Dispositivo gestito — 1 di 2: base",
-          "description": "Imposta solo ciò che serve al carico. * = facoltativo. Priorità: 1 = massima, 100 = minima.",
+          "title": "Dispositivo gestito — base",
+          "description": "Imposta il carico. Priorità: 1 = massima, 100 = minima. * = facoltativo.",
           "data": {
             "name": "Nome del dispositivo",
             "entity_id": "Entità Home Assistant da gestire",
             "power_sensor": "Sensore potenza reale *",
-            "nominal_power_w": "Potenza prudenziale iniziale (W)",
-            "adaptive_power_profile": "Impara automaticamente la potenza variabile",
+            "device_type": "Tipo di dispositivo",
+            "nominal_power_w": "Potenza nominale stimata / fallback (W)",
+            "adaptive_power_profile": "Impara automaticamente la potenza reale",
             "priority": "Priorità numerica (1-100)",
             "phase": "Fase elettrica",
             "min_battery_soc": "SOC batteria minimo (%)",
@@ -284,30 +285,32 @@
           },
           "data_description": {
             "name": "Nome leggibile del carico.",
-            "entity_id": "Entità che Casa ES osserva e, quando il controllo reale sarà abilitato, potrà gestire.",
-            "power_sensor": "* Facoltativo ma consigliato. Se presente, Casa ES usa i watt reali per capire se il carico sta consumando e per impararne l'andamento.",
-            "nominal_power_w": "Stima prudenziale usata per valutare un nuovo avvio finché il profilo adattivo non dispone di dati sufficienti.",
-            "adaptive_power_profile": "Se attivo e hai indicato il sensore di potenza, Casa ES impara automaticamente minimo, massimo e andamento del carico. Un'entità climate non è obbligatoria.",
+            "entity_id": "Entità che Casa ES potrà comandare quando il controllo reale è abilitato.",
+            "power_sensor": "* Sensore della potenza reale. Con un meter condiviso Casa ES evita apprendimento e doppio conteggio.",
+            "device_type": "Scegli Climatizzatore / pompa di calore per mantenere profili separati cool, heat, dry e altre modalità.",
+            "nominal_power_w": "Valore iniziale e di sicurezza. Quando l'apprendimento è affidabile Casa ES usa il consumo reale appreso.",
+            "adaptive_power_profile": "Continua ad apprendere nel tempo dal sensore reale; non si ferma quando il profilo diventa pronto.",
             "priority": "Numero da 1 a 100: 1 è la priorità più alta e 100 la più bassa.",
-            "phase": "Fase fisica a cui è collegato il dispositivo. Non va indovinata.",
-            "min_battery_soc": "Sotto questa percentuale il dispositivo non viene ammesso automaticamente.",
-            "allow_grid": "Se disattivato un nuovo avvio richiede sufficiente FV. Se attivato può integrare dalla rete rispettando tutti i limiti.",
-            "max_grid_power_w": "Massimo contributo specifico dalla rete per questo dispositivo. 0 = nessun limite specifico oltre a quello globale.",
-            "enabled": "Disabilita qui il dispositivo se non vuoi che faccia parte della gestione Casa ES.",
-            "expected_runtime_minutes": "* Facoltativo. Se lo indichi Casa ES può stimare l'energia del ciclo; se lo lasci vuoto non viene inventata una durata.",
-            "min_on_minutes": "* Facoltativo. Tempo minimo da rispettare dopo un'accensione automatica; utile per pompe di calore. Vuoto = nessun vincolo.",
-            "min_off_minutes": "* Facoltativo. Tempo minimo da rispettare dopo uno spegnimento automatico; utile per pompe di calore. Vuoto = nessun vincolo."
+            "phase": "Fase fisica reale del dispositivo.",
+            "min_battery_soc": "Sotto questa percentuale il dispositivo non viene gestito automaticamente.",
+            "allow_grid": "Permette una piccola integrazione rete entro il limite specificato.",
+            "max_grid_power_w": "Massimo contributo rete ammesso per questo dispositivo.",
+            "enabled": "Include o esclude il dispositivo dalla gestione.",
+            "expected_runtime_minutes": "* Facoltativo. Serve per stimare l'energia del ciclo.",
+            "min_on_minutes": "* Facoltativo. Protegge da spegnimenti troppo ravvicinati.",
+            "min_off_minutes": "* Facoltativo. Protegge da riavvii troppo ravvicinati."
           }
         },
         "reconfigure": {
           "title": "Modifica dispositivo gestito — base",
-          "description": "Modifica i dati principali. * = facoltativo. Priorità: 1 = massima, 100 = minima.",
+          "description": "Modifica i dati principali. Priorità: 1 = massima, 100 = minima. * = facoltativo.",
           "data": {
             "name": "Nome del dispositivo",
             "entity_id": "Entità Home Assistant da gestire",
             "power_sensor": "Sensore potenza reale *",
-            "nominal_power_w": "Potenza prudenziale iniziale (W)",
-            "adaptive_power_profile": "Impara automaticamente la potenza variabile",
+            "device_type": "Tipo di dispositivo",
+            "nominal_power_w": "Potenza nominale stimata / fallback (W)",
+            "adaptive_power_profile": "Impara automaticamente la potenza reale",
             "priority": "Priorità numerica (1-100)",
             "phase": "Fase elettrica",
             "min_battery_soc": "SOC batteria minimo (%)",
@@ -320,24 +323,35 @@
           },
           "data_description": {
             "name": "Nome leggibile del carico.",
-            "entity_id": "Entità Home Assistant associata al carico.",
-            "power_sensor": "* Facoltativo ma consigliato. Sensore della potenza reale del solo dispositivo.",
-            "nominal_power_w": "Stima prudenziale usata per l'ammissione iniziale.",
-            "adaptive_power_profile": "Fa apprendere automaticamente a Casa ES il comportamento del carico dal sensore di potenza reale.",
+            "entity_id": "Entità realmente comandata da Casa ES.",
+            "power_sensor": "* Sensore della potenza reale del dispositivo o gruppo.",
+            "device_type": "Climatizzatore / PDC abilita profili separati per modalità.",
+            "nominal_power_w": "Stima iniziale/fallback, non un consumo fisso definitivo.",
+            "adaptive_power_profile": "Aggiorna continuamente il profilo usando il consumo reale.",
             "priority": "1 = massima priorità, 100 = minima.",
             "phase": "Fase fisica reale del dispositivo.",
-            "min_battery_soc": "SOC minimo per consentire la gestione automatica.",
-            "allow_grid": "Permette un'integrazione dalla rete nel rispetto dei limiti.",
-            "max_grid_power_w": "Limite specifico di integrazione rete del dispositivo; 0 = nessun limite specifico.",
-            "enabled": "Include o esclude il dispositivo dalla gestione Casa ES.",
-            "expected_runtime_minutes": "* Facoltativo. Durata tipica del ciclo; vuoto = nessuna durata stimata.",
-            "min_on_minutes": "* Facoltativo. Tempo minimo acceso; vuoto = nessun vincolo.",
-            "min_off_minutes": "* Facoltativo. Tempo minimo spento; vuoto = nessun vincolo."
+            "min_battery_soc": "SOC minimo per la gestione automatica.",
+            "allow_grid": "Permette integrazione dalla rete entro i limiti.",
+            "max_grid_power_w": "Limite specifico di integrazione rete.",
+            "enabled": "Include o esclude il dispositivo dalla gestione.",
+            "expected_runtime_minutes": "* Facoltativo. Durata tipica del ciclo.",
+            "min_on_minutes": "* Facoltativo. Tempo minimo acceso.",
+            "min_off_minutes": "* Facoltativo. Tempo minimo spento."
+          }
+        },
+        "climate": {
+          "title": "Climatizzatore / pompa di calore — profili",
+          "description": "Se il comando è uno switch, scegli un climate dello stesso impianto come riferimento della modalità. Casa ES continuerà a comandare lo switch e userà il climate solo per distinguere cool, heat, dry, fan_only e altre modalità.",
+          "data": {
+            "mode_climate_entity": "Climate di riferimento per la modalità"
+          },
+          "data_description": {
+            "mode_climate_entity": "Per un'entità climate diretta puoi selezionare la stessa entità. Per un gruppo comandato da switch, scegli uno dei climate collegati allo stesso impianto."
           }
         },
         "constraints": {
-          "title": "Dispositivo gestito — 2 di 2: vincoli e tempi",
-          "description": "Imposta solo gli eventuali vincoli giornalieri del carico. * = facoltativo.",
+          "title": "Dispositivo gestito — vincoli e tempi",
+          "description": "Imposta gli eventuali vincoli giornalieri del carico. * = facoltativo.",
           "data": {
             "min_daily_runtime_minutes": "Tempo minimo giornaliero (min)",
             "max_daily_runtime_minutes": "Tempo massimo giornaliero (min)",
@@ -352,17 +366,17 @@
             "battery_discharge_override_w": "Limite scarica batteria durante il carico (W)"
           },
           "data_description": {
-            "min_daily_runtime_minutes": "Tempo minimo giornaliero configurato per carichi che devono totalizzare un certo minutaggio, per esempio il filtro piscina.",
-            "max_daily_runtime_minutes": "Tempo massimo totale consentito nella giornata; deve essere almeno pari al minimo.",
-            "max_daily_activations": "Numero massimo di avvii in un giorno. 0 = nessun limite specifico.",
-            "schedule_deadline": "* Facoltativo. Ora entro cui il tempo minimo giornaliero dovrebbe essere completato.",
-            "start_after": "* Facoltativo. Impedisce l'avvio automatico prima dell'ora indicata.",
-            "end_before": "* Facoltativo. Impedisce nuovi avvii o il mantenimento automatico oltre l'ora indicata.",
-            "averaging_window_seconds": "Finestra temporale prevista per filtrare picchi brevi. 0 usa il comportamento predefinito.",
-            "on_only": "Per cicli non interrompibili: una volta avviati automaticamente non vengono spenti solo per recuperare surplus.",
-            "protect_preemption": "Evita di spegnere questo carico soltanto per fare spazio a un dispositivo con priorità più alta.",
-            "big_consumer": "Contrassegna un carico importante per regole più conservative.",
-            "battery_discharge_override_w": "Limite specifico di scarica batteria desiderato mentre il carico è attivo. 0 = nessun limite specifico."
+            "min_daily_runtime_minutes": "Tempo minimo giornaliero desiderato.",
+            "max_daily_runtime_minutes": "Tempo massimo totale consentito nella giornata.",
+            "max_daily_activations": "Numero massimo di avvii automatici. 0 = illimitato.",
+            "schedule_deadline": "* Ora entro cui il tempo minimo dovrebbe essere completato.",
+            "start_after": "* Impedisce l'avvio automatico prima dell'ora indicata.",
+            "end_before": "* Impedisce avvii o mantenimento automatico oltre l'ora indicata.",
+            "averaging_window_seconds": "Finestra prevista per filtrare variazioni brevi; 0 usa il comportamento diretto.",
+            "on_only": "Se attivo, Casa ES non interrompe il ciclo per normali motivi energetici; la sicurezza elettrica resta prioritaria.",
+            "protect_preemption": "Protegge dallo spegnimento solo per fare spazio a priorità superiori.",
+            "big_consumer": "Contrassegna un carico importante.",
+            "battery_discharge_override_w": "Se la scarica batteria supera questo valore, Casa ES può arrestare il carico automatico. 0 = nessun limite specifico."
           }
         }
       },
@@ -370,7 +384,9 @@
         "device_name_required": "Inserisci un nome per il dispositivo.",
         "expected_power_sensor": "Serve un sensore di potenza con unità W, kW o MW.",
         "device_already_configured": "Questa entità è già configurata come dispositivo gestito.",
-        "invalid_runtime_range": "Il tempo massimo giornaliero deve essere maggiore o uguale al minimo."
+        "invalid_runtime_range": "Il tempo massimo giornaliero deve essere 0 (illimitato) oppure maggiore o uguale al minimo.",
+        "climate_reference_required": "Seleziona un'entità climate valida.",
+        "climate_reference_not_found": "L'entità climate selezionata non è disponibile."
       }
     },
     "monitored_load": {
@@ -382,7 +398,7 @@
       "step": {
         "user": {
           "title": "Carico monitorato — solo lettura",
-          "description": "Questo apparecchio viene soltanto osservato: Casa ES non lo accenderà né lo spegnerà. Serve a spiegare il consumo reale di L1/L2/L3 senza doppio conteggio.",
+          "description": "Casa ES osserva questo carico ma non lo comanda.",
           "data": {
             "name": "Nome del carico",
             "power_sensor": "Sensore potenza reale",
@@ -390,15 +406,15 @@
             "enabled": "Abilita monitoraggio"
           },
           "data_description": {
-            "name": "Nome leggibile dell'elettrodomestico.",
-            "power_sensor": "Sensore in W/kW della potenza reale del carico.",
-            "phase": "Fase fisica a cui è collegato il carico.",
-            "enabled": "Se disattivato il carico non viene usato per l'attribuzione del consumo."
+            "name": "Nome leggibile del carico.",
+            "power_sensor": "Sensore in W/kW della potenza reale.",
+            "phase": "Fase fisica del carico.",
+            "enabled": "Include o esclude il carico dalla sola attribuzione diagnostica."
           }
         },
         "reconfigure": {
           "title": "Modifica carico monitorato",
-          "description": "Modifica i dati del carico osservato. Casa ES continuerà a considerarlo esclusivamente in sola lettura.",
+          "description": "Resta sempre in sola lettura.",
           "data": {
             "name": "Nome del carico",
             "power_sensor": "Sensore potenza reale",
@@ -406,10 +422,10 @@
             "enabled": "Abilita monitoraggio"
           },
           "data_description": {
-            "name": "Nome leggibile dell'elettrodomestico.",
-            "power_sensor": "Sensore in W/kW della potenza reale del carico.",
+            "name": "Nome leggibile del carico.",
+            "power_sensor": "Sensore in W/kW della potenza reale.",
             "phase": "Fase fisica reale del carico.",
-            "enabled": "Include o esclude il carico dalla sola attribuzione diagnostica."
+            "enabled": "Include o esclude il carico dal monitoraggio."
           }
         }
       },
@@ -427,6 +443,12 @@
         "l2": "L2",
         "l3": "L3",
         "three_phase": "Trifase"
+      }
+    },
+    "managed_device_type": {
+      "options": {
+        "generic": "Generico",
+        "climate": "Climatizzatore / pompa di calore"
       }
     },
     "energy_preference": {
