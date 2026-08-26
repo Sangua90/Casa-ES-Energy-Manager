@@ -15,16 +15,17 @@ from .const import (
 )
 
 STORAGE_VERSION = 1
+PROFILE_SCHEMA_VERSION = 2
 GENERAL_MODE = "general"
+_INACTIVE_STATES = {"", "off", "idle", "standby", "unknown", "unavailable", "none"}
 
 
 class AdaptivePowerLearner:
     """Learn per-device power statistics from a real power sensor.
 
-    A climate entity is useful when the controlled entity itself is a climate,
-    because Casa ES can then keep separate profiles for HVAC modes. It is not a
-    requirement: every managed device with a real power sensor can learn a
-    general variable-power profile from the observed watts alone.
+    Learning is deliberately conservative: active samples are accepted only
+    while the managed entity is really active. A shared meter is never learned
+    automatically because its watts cannot be attributed safely to one load.
     """
 
     def __init__(self, hass: HomeAssistant, entry_id: str) -> None:
@@ -32,13 +33,27 @@ class AdaptivePowerLearner:
         self.store: Store[dict[str, Any]] = Store(
             hass, STORAGE_VERSION, f"casa_es_energy_manager.{entry_id}.adaptive_profiles"
         )
-        self.data: dict[str, Any] = {"devices": {}}
+        self.data: dict[str, Any] = {
+            "schema_version": PROFILE_SCHEMA_VERSION,
+            "devices": {},
+        }
         self._observations_since_save = 0
 
     async def async_load(self) -> None:
         stored = await self.store.async_load()
-        if isinstance(stored, dict) and isinstance(stored.get("devices"), dict):
+        if (
+            isinstance(stored, dict)
+            and stored.get("schema_version") == PROFILE_SCHEMA_VERSION
+            and isinstance(stored.get("devices"), dict)
+        ):
             self.data = stored
+        else:
+            # v1.1.0 could learn standby/off watts as active samples. Do not
+            # carry those potentially unsafe profiles into the fixed model.
+            self.data = {
+                "schema_version": PROFILE_SCHEMA_VERSION,
+                "devices": {},
+            }
 
     async def async_save(self) -> None:
         await self.store.async_save(self.data)
@@ -51,12 +66,26 @@ class AdaptivePowerLearner:
             return str(device.get("hvac_mode") or device.get("state") or "unknown")
         return GENERAL_MODE
 
+    @staticmethod
+    def is_actively_running(device: dict[str, Any]) -> bool:
+        """Return whether the managed entity itself is actively operating."""
+        entity_id = str(device.get("entity_id") or "")
+        state = str(device.get("state") or "").strip().lower()
+        if entity_id.startswith("climate."):
+            action = str(device.get("hvac_action") or "").strip().lower()
+            if action and action not in _INACTIVE_STATES:
+                return True
+            return state not in _INACTIVE_STATES
+        return state == "on"
+
     async def async_observe(self, devices: list[dict[str, Any]]) -> None:
         changed = False
         for device in devices:
             if not device.get("adaptive_power_profile"):
                 continue
             if not device.get("power_sensor"):
+                continue
+            if device.get("adaptive_shared_power_sensor"):
                 continue
 
             entity_id = str(device.get("entity_id") or "")
@@ -92,7 +121,10 @@ class AdaptivePowerLearner:
             stats["last_power_w"] = round(power_w, 1)
             stats["last_action"] = action
 
-            if power_w >= ADAPTIVE_ACTIVE_POWER_THRESHOLD_W:
+            if (
+                self.is_actively_running(device)
+                and power_w >= ADAPTIVE_ACTIVE_POWER_THRESHOLD_W
+            ):
                 n = int(stats.get("active_samples", 0)) + 1
                 old_mean = float(stats.get("mean_w", 0.0))
                 delta = power_w - old_mean
@@ -160,6 +192,51 @@ class AdaptivePowerLearner:
             "last_action": stats.get("last_action"),
             "estimated_power_w": round(max(estimate, 0.0), 1),
         }
+
+    def admission_profile_for(
+        self, device: dict[str, Any], fallback_w: float
+    ) -> dict[str, Any]:
+        """Return the profile safe to use for a future admission decision."""
+        if device.get("adaptive_shared_power_sensor"):
+            return {
+                "status": "shared_power_sensor",
+                "samples": 0,
+                "active_samples": 0,
+                "estimated_power_w": round(max(fallback_w, 0.0), 1),
+            }
+
+        entity_id = str(device.get("entity_id") or "")
+        if not entity_id.startswith("climate."):
+            return self.profile_for(entity_id, GENERAL_MODE, fallback_w)
+
+        current_mode = self.mode_for(device).strip().lower()
+        if current_mode not in _INACTIVE_STATES:
+            return self.profile_for(entity_id, current_mode, fallback_w)
+
+        # A climate that is currently off must never size its next start from
+        # the learned off/standby profile. Prefer the best learned active HVAC
+        # mode; while it is still learning, profile_for keeps the nominal value.
+        modes = (
+            self.data.get("devices", {})
+            .get(entity_id, {})
+            .get("modes", {})
+        )
+        active_modes = [
+            (mode, stats)
+            for mode, stats in modes.items()
+            if str(mode).strip().lower() not in _INACTIVE_STATES
+            and isinstance(stats, dict)
+        ]
+        if not active_modes:
+            return self.profile_for(entity_id, "__active__", fallback_w)
+
+        best_mode, _ = max(
+            active_modes,
+            key=lambda pair: int(pair[1].get("active_samples", 0)),
+        )
+        profile = self.profile_for(entity_id, str(best_mode), fallback_w)
+        profile["source_mode"] = str(best_mode)
+        return profile
 
     def export(self) -> dict[str, Any]:
         """Return diagnostics-friendly learned profiles."""
