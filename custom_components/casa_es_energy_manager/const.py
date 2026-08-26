@@ -2,7 +2,7 @@
 
 DOMAIN = "casa_es_energy_manager"
 NAME = "Casa ES Energy Manager"
-VERSION = "1.4.2"
+VERSION = "1.4.3"
 
 # Core electrical sensors.
 CONF_PV_POWER_SENSOR = "pv_power_sensor"
@@ -133,19 +133,36 @@ LEGACY_REMOVED_DEVICE_KEYS = (
     CONF_DEVICE_EV_TARGET_SOC,
 )
 
-# Monitored loads always contribute read-only phase attribution. In v1.4 they
-# may optionally expose emergency shed/resume commands. Those commands are used
-# only for measured grid/phase/inverter protection, never for PV/battery
-# optimization or AI advice.
+# Monitored loads always contribute read-only phase attribution. They may expose
+# optional emergency control, but that path is used only for measured
+# grid/phase/inverter protection and never for PV/battery optimization or AI.
 SUBENTRY_TYPE_MONITORED_LOAD = "monitored_load"
 CONF_MONITORED_LOAD_NAME = "name"
 CONF_MONITORED_LOAD_POWER_SENSOR = "power_sensor"
 CONF_MONITORED_LOAD_PHASE = "phase"
 CONF_MONITORED_LOAD_ENABLED = "enabled"
+CONF_MONITORED_LOAD_EMERGENCY_ENABLED = "emergency_control_enabled"
+CONF_MONITORED_LOAD_EMERGENCY_MODE = "emergency_control_mode"
 CONF_MONITORED_LOAD_EMERGENCY_ENTITY = "emergency_entity"
 CONF_MONITORED_LOAD_RESUME_ENTITY = "resume_entity"
+MONITORED_EMERGENCY_MODE_SWITCH = "switch"
+MONITORED_EMERGENCY_MODE_PAUSE_RESUME = "pause_resume"
+MONITORED_EMERGENCY_MODE_STOP_ONLY = "stop_only"
+MONITORED_EMERGENCY_MODES = (
+    MONITORED_EMERGENCY_MODE_SWITCH,
+    MONITORED_EMERGENCY_MODE_PAUSE_RESUME,
+    MONITORED_EMERGENCY_MODE_STOP_ONLY,
+)
 MONITORED_EMERGENCY_ACTIVE_POWER_THRESHOLD_W = 20.0
 MONITORED_EMERGENCY_RECOVERY_STABLE_SECONDS = 120
+DEFAULT_MONITORED_LOAD_ENABLED = True
+DEFAULT_MONITORED_LOAD_EMERGENCY_ENABLED = False
+
+# v1.4.3 same-day target recovery: after the configured target hour Casa ES
+# keeps trying only while there is still a meaningful solar opportunity.
+BATTERY_RECOVERY_MEASURED_PV_MIN_W = 100.0
+BATTERY_RECOVERY_POTENTIAL_PV_MIN_W = 200.0
+BATTERY_RECOVERY_FORECAST_REMAINING_MIN_KWH = 0.05
 
 # Numeric priority: 1 = highest, 100 = lowest.
 DEVICE_PRIORITY_MIN = 1
@@ -188,7 +205,6 @@ DEFAULT_DEVICE_ON_ONLY = False
 DEFAULT_DEVICE_PROTECT_PREEMPTION = False
 DEFAULT_DEVICE_SWITCH_INTERVAL_SECONDS = 0
 DEFAULT_DEVICE_MAX_GRID_POWER_W = 0.0
-DEFAULT_MONITORED_LOAD_ENABLED = True
 
 # Adaptive variable-load learning.
 ADAPTIVE_ACTIVE_POWER_THRESHOLD_W = 20.0
