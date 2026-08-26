@@ -17,7 +17,15 @@ class CasaESAIPlanner(BasePlanner):
         if isinstance(fresh_policy, dict):
             context["policy"] = fresh_policy
             context["energy_preference"] = fresh_policy.get("energy_preference")
-            context["hours_to_target"] = fresh_policy.get("hours_to_target")
+            for context_key, policy_key in (
+                ("hours_to_target", "hours_to_target"),
+                ("battery_energy_needed_kwh", "battery_energy_needed_kwh"),
+                ("battery_input_energy_needed_kwh", "battery_input_energy_needed_kwh"),
+                ("expected_base_load_w", "expected_base_load_w"),
+                ("base_load_energy_to_target_kwh", "base_load_energy_to_target_kwh"),
+                ("battery_charge_efficiency_pct", "battery_charge_efficiency_pct"),
+            ):
+                context[context_key] = fresh_policy.get(policy_key)
 
         # The base planner historically jumped to tomorrow as soon as the target
         # hour passed. From v1.4.2 the coordinator owns the daily target window:
