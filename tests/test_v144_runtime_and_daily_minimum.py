@@ -1,4 +1,4 @@
-"""Regression tests for v1.4.4 runtime persistence and PV-first daily minima."""
+"""Regression tests for v1.4.4 guarantees retained by later releases."""
 
 from __future__ import annotations
 
@@ -75,7 +75,7 @@ class DailyMinimumPolicyTests(unittest.TestCase):
 
 
 class RuntimePersistenceContractTests(unittest.TestCase):
-    def test_v144_uses_home_assistant_store(self) -> None:
+    def test_v144_storage_layer_is_still_present(self) -> None:
         source = (COMPONENT / "coordinator_v144.py").read_text(encoding="utf-8")
         self.assertIn("from homeassistant.helpers.storage import Store", source)
         self.assertIn("runtime_seconds", source)
@@ -85,15 +85,18 @@ class RuntimePersistenceContractTests(unittest.TestCase):
         self.assertIn("await self._runtime_store.async_save(payload)", source)
         self.assertIn('stored.get("date") != today.isoformat()', source)
 
-    def test_integration_routes_to_v144_coordinator(self) -> None:
-        source = (COMPONENT / "__init__.py").read_text(encoding="utf-8")
-        self.assertIn("from .coordinator_v144 import CasaESEnergyCoordinator", source)
+    def test_v15_inherits_v144_coordinator(self) -> None:
+        source = (COMPONENT / "coordinator_v15.py").read_text(encoding="utf-8")
+        init_source = (COMPONENT / "__init__.py").read_text(encoding="utf-8")
+        self.assertIn("from .coordinator_v144 import CasaESEnergyCoordinator as V144Coordinator", source)
+        self.assertIn("class CasaESEnergyCoordinator(V144Coordinator)", source)
+        self.assertIn("from .coordinator_v15 import CasaESEnergyCoordinator", init_source)
 
-    def test_version_is_144(self) -> None:
+    def test_version_is_150(self) -> None:
         manifest = (COMPONENT / "manifest.json").read_text(encoding="utf-8")
         const = (COMPONENT / "const.py").read_text(encoding="utf-8")
-        self.assertIn('"version": "1.4.4"', manifest)
-        self.assertIn('VERSION = "1.4.4"', const)
+        self.assertIn('"version": "1.5.0"', manifest)
+        self.assertIn('VERSION = "1.5.0"', const)
 
 
 if __name__ == "__main__":
