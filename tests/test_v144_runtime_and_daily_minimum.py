@@ -26,11 +26,8 @@ class DailyMinimumPolicyTests(unittest.TestCase):
     def test_midnight_does_not_start_five_hour_load_without_solar(self) -> None:
         now = datetime(2026, 8, 27, 0, 7, tzinfo=timezone.utc)
         defer, reason, pressure = daily_policy.should_defer_daily_minimum_start(
-            now=now,
-            remaining_minimum_minutes=300,
-            nominal_power_w=30,
-            solar_after_house_w=0,
-            pv_potential_after_house_w=0,
+            now=now, remaining_minimum_minutes=300, nominal_power_w=30,
+            solar_after_house_w=0, pv_potential_after_house_w=0,
         )
         self.assertTrue(defer)
         self.assertFalse(pressure)
@@ -39,11 +36,8 @@ class DailyMinimumPolicyTests(unittest.TestCase):
     def test_available_solar_allows_daily_minimum_load(self) -> None:
         now = datetime(2026, 8, 27, 10, 0, tzinfo=timezone.utc)
         defer, _, pressure = daily_policy.should_defer_daily_minimum_start(
-            now=now,
-            remaining_minimum_minutes=240,
-            nominal_power_w=30,
-            solar_after_house_w=50,
-            pv_potential_after_house_w=50,
+            now=now, remaining_minimum_minutes=240, nominal_power_w=30,
+            solar_after_house_w=50, pv_potential_after_house_w=50,
         )
         self.assertFalse(defer)
         self.assertFalse(pressure)
@@ -51,11 +45,8 @@ class DailyMinimumPolicyTests(unittest.TestCase):
     def test_deadline_pressure_releases_deferment(self) -> None:
         now = datetime(2026, 8, 27, 19, 0, tzinfo=timezone.utc)
         defer, _, pressure = daily_policy.should_defer_daily_minimum_start(
-            now=now,
-            remaining_minimum_minutes=300,
-            nominal_power_w=30,
-            solar_after_house_w=0,
-            pv_potential_after_house_w=0,
+            now=now, remaining_minimum_minutes=300, nominal_power_w=30,
+            solar_after_house_w=0, pv_potential_after_house_w=0,
         )
         self.assertFalse(defer)
         self.assertTrue(pressure)
@@ -63,12 +54,8 @@ class DailyMinimumPolicyTests(unittest.TestCase):
     def test_custom_end_before_is_daily_deadline(self) -> None:
         now = datetime(2026, 8, 27, 17, 0, tzinfo=timezone.utc)
         defer, _, pressure = daily_policy.should_defer_daily_minimum_start(
-            now=now,
-            remaining_minimum_minutes=270,
-            nominal_power_w=30,
-            solar_after_house_w=0,
-            pv_potential_after_house_w=0,
-            end_before="22:00:00",
+            now=now, remaining_minimum_minutes=270, nominal_power_w=30,
+            solar_after_house_w=0, pv_potential_after_house_w=0, end_before="22:00:00",
         )
         self.assertFalse(defer)
         self.assertTrue(pressure)
@@ -85,18 +72,21 @@ class RuntimePersistenceContractTests(unittest.TestCase):
         self.assertIn("await self._runtime_store.async_save(payload)", source)
         self.assertIn('stored.get("date") != today.isoformat()', source)
 
-    def test_v15_inherits_v144_coordinator(self) -> None:
-        source = (COMPONENT / "coordinator_v15.py").read_text(encoding="utf-8")
+    def test_v151_retains_v15_and_v144_chain(self) -> None:
+        source15 = (COMPONENT / "coordinator_v15.py").read_text(encoding="utf-8")
+        source151 = (COMPONENT / "coordinator_v151.py").read_text(encoding="utf-8")
         init_source = (COMPONENT / "__init__.py").read_text(encoding="utf-8")
-        self.assertIn("from .coordinator_v144 import CasaESEnergyCoordinator as V144Coordinator", source)
-        self.assertIn("class CasaESEnergyCoordinator(V144Coordinator)", source)
-        self.assertIn("from .coordinator_v15 import CasaESEnergyCoordinator", init_source)
+        self.assertIn("from .coordinator_v144 import CasaESEnergyCoordinator as V144Coordinator", source15)
+        self.assertIn("class CasaESEnergyCoordinator(V144Coordinator)", source15)
+        self.assertIn("from .coordinator_v15 import CasaESEnergyCoordinator as V15Coordinator", source151)
+        self.assertIn("class CasaESEnergyCoordinator(V15Coordinator)", source151)
+        self.assertIn("from .coordinator_v151 import CasaESEnergyCoordinator", init_source)
 
-    def test_version_is_150(self) -> None:
+    def test_version_is_151(self) -> None:
         manifest = (COMPONENT / "manifest.json").read_text(encoding="utf-8")
         const = (COMPONENT / "const.py").read_text(encoding="utf-8")
-        self.assertIn('"version": "1.5.0"', manifest)
-        self.assertIn('VERSION = "1.5.0"', const)
+        self.assertIn('"version": "1.5.1"', manifest)
+        self.assertIn('VERSION = "1.5.1"', const)
 
 
 if __name__ == "__main__":
