@@ -72,11 +72,12 @@ class RuntimePersistenceContractTests(unittest.TestCase):
         self.assertIn("await self._runtime_store.async_save(payload)", source)
         self.assertIn('stored.get("date") != today.isoformat()', source)
 
-    def test_v153_retains_v152_v151_v15_and_v144_chain(self) -> None:
+    def test_v154_retains_v153_v152_v151_v15_and_v144_chain(self) -> None:
         source15 = (COMPONENT / "coordinator_v15.py").read_text(encoding="utf-8")
         source151 = (COMPONENT / "coordinator_v151.py").read_text(encoding="utf-8")
         source152 = (COMPONENT / "coordinator_v152.py").read_text(encoding="utf-8")
         source153 = (COMPONENT / "coordinator_v153.py").read_text(encoding="utf-8")
+        source154 = (COMPONENT / "coordinator_v154.py").read_text(encoding="utf-8")
         init_source = (COMPONENT / "__init__.py").read_text(encoding="utf-8")
         self.assertIn("from .coordinator_v144 import CasaESEnergyCoordinator as V144Coordinator", source15)
         self.assertIn("class CasaESEnergyCoordinator(V144Coordinator)", source15)
@@ -86,7 +87,9 @@ class RuntimePersistenceContractTests(unittest.TestCase):
         self.assertIn("class CasaESEnergyCoordinator(V151Coordinator)", source152)
         self.assertIn("from .coordinator_v152 import CasaESEnergyCoordinator as V152Coordinator", source153)
         self.assertIn("class CasaESEnergyCoordinator(V152Coordinator)", source153)
-        self.assertIn("from .coordinator_v153 import CasaESEnergyCoordinator", init_source)
+        self.assertIn("from .coordinator_v153 import CasaESEnergyCoordinator as V153Coordinator", source154)
+        self.assertIn("class CasaESEnergyCoordinator(V153Coordinator)", source154)
+        self.assertIn("from .coordinator_v154 import CasaESEnergyCoordinator", init_source)
 
     def test_v152_persists_wall_clock_transitions_and_reconciles_downtime(self) -> None:
         source = (COMPONENT / "coordinator_v152.py").read_text(encoding="utf-8")
@@ -97,11 +100,11 @@ class RuntimePersistenceContractTests(unittest.TestCase):
         self.assertIn("prior_active is True and running_now", source)
         self.assertIn("persistent_real_transition", source)
 
-    def test_version_is_153(self) -> None:
+    def test_version_is_154(self) -> None:
         manifest = (COMPONENT / "manifest.json").read_text(encoding="utf-8")
         const = (COMPONENT / "const.py").read_text(encoding="utf-8")
-        self.assertIn('"version": "1.5.3"', manifest)
-        self.assertIn('VERSION = "1.5.3"', const)
+        self.assertIn('"version": "1.5.4"', manifest)
+        self.assertIn('VERSION = "1.5.4"', const)
 
 
 if __name__ == "__main__":
