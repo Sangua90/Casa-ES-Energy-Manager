@@ -149,7 +149,7 @@ class TestUIContract(unittest.TestCase):
             self.assertIn("*", managed["data"][key])
             self.assertIn("Facoltativo", managed["data_description"][key])
 
-    def test_real_control_master_and_v151_controller_retain_v144_guarantees(self) -> None:
+    def test_real_control_master_and_v152_controller_retain_v144_guarantees(self) -> None:
         const_text = (INTEGRATION / "const.py").read_text(encoding="utf-8")
         init_text = (INTEGRATION / "__init__.py").read_text(encoding="utf-8")
         switch_text = (INTEGRATION / "switch.py").read_text(encoding="utf-8")
@@ -158,11 +158,14 @@ class TestUIContract(unittest.TestCase):
         coordinator144 = (INTEGRATION / "coordinator_v144.py").read_text(encoding="utf-8")
         coordinator15 = (INTEGRATION / "coordinator_v15.py").read_text(encoding="utf-8")
         coordinator151 = (INTEGRATION / "coordinator_v151.py").read_text(encoding="utf-8")
+        coordinator152 = (INTEGRATION / "coordinator_v152.py").read_text(encoding="utf-8")
         self.assertIn("DEFAULT_AUTOMATIC_REAL_LOAD_CONTROL = False", const_text)
         self.assertIn("Platform.SWITCH", init_text)
-        self.assertIn("coordinator_v151", init_text)
+        self.assertIn("coordinator_v152", init_text)
         self.assertIn("V144Coordinator", coordinator15)
         self.assertIn("V15Coordinator", coordinator151)
+        self.assertIn("V151Coordinator", coordinator152)
+        self.assertIn("persistent_real_transition", coordinator152)
         self.assertIn("Controllo automatico reale", switch_text)
         self.assertIn("_async_apply_real_control", coordinator14)
         self.assertIn("monitored_emergency_control", coordinator14)
@@ -193,7 +196,7 @@ class TestUIContract(unittest.TestCase):
         match = re.search(r'^VERSION = "([^"]+)"$', const_text, re.MULTILINE)
         self.assertIsNotNone(match)
         self.assertEqual(manifest["version"], match.group(1))
-        self.assertEqual("1.5.1", manifest["version"])
+        self.assertEqual("1.5.2", manifest["version"])
 
 
 if __name__ == "__main__":

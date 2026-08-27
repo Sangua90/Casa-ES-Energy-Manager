@@ -1,4 +1,4 @@
-"""Regression contracts for Casa ES Energy Manager v1.5.1 fixes."""
+"""Regression contracts for Casa ES Energy Manager v1.5.1 fixes retained by later releases."""
 
 from __future__ import annotations
 
@@ -28,13 +28,15 @@ class V151FixContractTests(unittest.TestCase):
         self.assertIn("grid_margin = 300.0", source)
         self.assertIn("inverter_margin", source)
 
-    def test_release_wiring_and_version(self) -> None:
+    def test_v151_remains_in_release_chain(self) -> None:
+        source152 = (COMPONENT / "coordinator_v152.py").read_text(encoding="utf-8")
         init_source = (COMPONENT / "__init__.py").read_text(encoding="utf-8")
         manifest = (COMPONENT / "manifest.json").read_text(encoding="utf-8")
         const = (COMPONENT / "const.py").read_text(encoding="utf-8")
-        self.assertIn("coordinator_v151", init_source)
-        self.assertIn('"version": "1.5.1"', manifest)
-        self.assertIn('VERSION = "1.5.1"', const)
+        self.assertIn("coordinator_v151", source152)
+        self.assertIn("coordinator_v152", init_source)
+        self.assertIn('"version": "1.5.2"', manifest)
+        self.assertIn('VERSION = "1.5.2"', const)
 
 
 if __name__ == "__main__":
