@@ -30,13 +30,15 @@ class V151FixContractTests(unittest.TestCase):
 
     def test_v151_remains_in_release_chain(self) -> None:
         source152 = (COMPONENT / "coordinator_v152.py").read_text(encoding="utf-8")
+        source153 = (COMPONENT / "coordinator_v153.py").read_text(encoding="utf-8")
         init_source = (COMPONENT / "__init__.py").read_text(encoding="utf-8")
         manifest = (COMPONENT / "manifest.json").read_text(encoding="utf-8")
         const = (COMPONENT / "const.py").read_text(encoding="utf-8")
         self.assertIn("coordinator_v151", source152)
-        self.assertIn("coordinator_v152", init_source)
-        self.assertIn('"version": "1.5.2"', manifest)
-        self.assertIn('VERSION = "1.5.2"', const)
+        self.assertIn("coordinator_v152", source153)
+        self.assertIn("coordinator_v153", init_source)
+        self.assertIn('"version": "1.5.3"', manifest)
+        self.assertIn('VERSION = "1.5.3"', const)
 
 
 if __name__ == "__main__":
