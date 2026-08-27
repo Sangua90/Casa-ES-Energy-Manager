@@ -149,7 +149,7 @@ class TestUIContract(unittest.TestCase):
             self.assertIn("*", managed["data"][key])
             self.assertIn("Facoltativo", managed["data_description"][key])
 
-    def test_real_control_master_and_v154_controller_retain_v144_guarantees(self) -> None:
+    def test_real_control_master_and_v155_controller_retain_v144_guarantees(self) -> None:
         const_text = (INTEGRATION / "const.py").read_text(encoding="utf-8")
         init_text = (INTEGRATION / "__init__.py").read_text(encoding="utf-8")
         switch_text = (INTEGRATION / "switch.py").read_text(encoding="utf-8")
@@ -161,9 +161,10 @@ class TestUIContract(unittest.TestCase):
         coordinator152 = (INTEGRATION / "coordinator_v152.py").read_text(encoding="utf-8")
         coordinator153 = (INTEGRATION / "coordinator_v153.py").read_text(encoding="utf-8")
         coordinator154 = (INTEGRATION / "coordinator_v154.py").read_text(encoding="utf-8")
+        coordinator155 = (INTEGRATION / "coordinator_v155.py").read_text(encoding="utf-8")
         self.assertIn("DEFAULT_AUTOMATIC_REAL_LOAD_CONTROL = False", const_text)
         self.assertIn("Platform.SWITCH", init_text)
-        self.assertIn("coordinator_v154", init_text)
+        self.assertIn("coordinator_v155", init_text)
         self.assertIn("V144Coordinator", coordinator15)
         self.assertIn("V15Coordinator", coordinator151)
         self.assertIn("V151Coordinator", coordinator152)
@@ -174,6 +175,9 @@ class TestUIContract(unittest.TestCase):
         self.assertIn("V153Coordinator", coordinator154)
         self.assertIn("entity_off_to_on_v154", coordinator154)
         self.assertIn("curtailment_harvest", coordinator154)
+        self.assertIn("V154Coordinator", coordinator155)
+        self.assertIn("virtual_surplus", coordinator155)
+        self.assertIn("thermal_end_of_solar", coordinator155)
         self.assertIn("Controllo automatico reale", switch_text)
         self.assertIn("_async_apply_real_control", coordinator14)
         self.assertIn("monitored_emergency_control", coordinator14)
@@ -204,7 +208,7 @@ class TestUIContract(unittest.TestCase):
         match = re.search(r'^VERSION = "([^"]+)"$', const_text, re.MULTILINE)
         self.assertIsNotNone(match)
         self.assertEqual(manifest["version"], match.group(1))
-        self.assertEqual("1.5.4", manifest["version"])
+        self.assertEqual("1.5.5", manifest["version"])
 
 
 if __name__ == "__main__":
