@@ -29,8 +29,9 @@ def calculate_metrics(
 ) -> dict[str, Any]:
     """Calculate read-only energy, solar-opportunity and protection metrics.
 
-    ``safety_margin_w`` is retained as a backward-compatible fallback. v1.5.1
-    allows separate margins for inverter, each phase and grid contract.
+    v1.5.1 keeps the legacy ``safety_margin_w`` as inverter fallback while using
+    safer independent defaults for each phase (150 W) and the 6 kW grid contract
+    (300 W). Explicit per-domain values override these defaults.
     """
     grid_import_w = max(grid_power_w, 0.0)
     grid_export_w = max(-grid_power_w, 0.0)
@@ -55,8 +56,8 @@ def calculate_metrics(
     inverter_margin = (
         safety_margin_w if inverter_safety_margin_w is None else inverter_safety_margin_w
     )
-    phase_margin = safety_margin_w if phase_safety_margin_w is None else phase_safety_margin_w
-    grid_margin = safety_margin_w if grid_safety_margin_w is None else grid_safety_margin_w
+    phase_margin = 150.0 if phase_safety_margin_w is None else phase_safety_margin_w
+    grid_margin = 300.0 if grid_safety_margin_w is None else grid_safety_margin_w
 
     safe_grid_limit_w = max(grid_limit_w - grid_margin, 0.0)
     safe_phase_limit_w = max(phase_limit_w - phase_margin, 0.0)
