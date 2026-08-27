@@ -2,7 +2,7 @@
 
 DOMAIN = "casa_es_energy_manager"
 NAME = "Casa ES Energy Manager"
-VERSION = "1.5.0"
+VERSION = "1.5.1"
 
 # Core electrical sensors.
 CONF_PV_POWER_SENSOR = "pv_power_sensor"
@@ -30,7 +30,10 @@ CONF_EXTRA_CONTEXT_SENSORS = "extra_context_sensors"
 CONF_INVERTER_POWER_LIMIT = "inverter_power_limit"
 CONF_PHASE_POWER_LIMIT = "phase_power_limit"
 CONF_GRID_POWER_LIMIT = "grid_power_limit"
-CONF_SAFETY_MARGIN = "safety_margin"
+CONF_SAFETY_MARGIN = "safety_margin"  # legacy fallback
+CONF_INVERTER_SAFETY_MARGIN = "inverter_safety_margin"
+CONF_PHASE_SAFETY_MARGIN = "phase_safety_margin"
+CONF_GRID_SAFETY_MARGIN = "grid_safety_margin"
 
 # AI / battery planner.
 CONF_AI_ENABLED = "ai_enabled"
@@ -81,9 +84,7 @@ CONF_DEVICE_ADAPTIVE_POWER = "adaptive_power_profile"
 CONF_DEVICE_MIN_ON_MINUTES = "min_on_minutes"
 CONF_DEVICE_MIN_OFF_MINUTES = "min_off_minutes"
 
-# v1.2 device type and climate/PDC mode profiling. A climate/PDC may still be
-# physically controlled by a switch while a climate entity supplies cool/heat/
-# dry mode information for separate learned profiles.
+# v1.2 device type and climate/PDC mode profiling.
 CONF_DEVICE_TYPE = "device_type"
 CONF_DEVICE_MODE_CLIMATE_ENTITY = "mode_climate_entity"
 DEVICE_TYPE_GENERIC = "generic"
@@ -93,7 +94,7 @@ DEFAULT_DEVICE_TYPE = DEVICE_TYPE_GENERIC
 
 # Runtime per-device modes exposed as select entities.
 DEVICE_MODE_AUTO = "auto"
-DEVICE_MODE_OVERRIDE = "override"  # User-facing label: Manuale.
+DEVICE_MODE_OVERRIDE = "override"
 DEVICE_MODE_OFF = "off"
 DEVICE_MODES = (DEVICE_MODE_AUTO, DEVICE_MODE_OVERRIDE, DEVICE_MODE_OFF)
 
@@ -109,11 +110,10 @@ CONF_DEVICE_BIG_CONSUMER = "big_consumer"
 CONF_DEVICE_BATTERY_DISCHARGE_OVERRIDE_W = "battery_discharge_override_w"
 CONF_DEVICE_ON_ONLY = "on_only"
 CONF_DEVICE_PROTECT_PREEMPTION = "protect_preemption"
-CONF_DEVICE_SWITCH_INTERVAL_SECONDS = "switch_interval_seconds"  # legacy compatibility
+CONF_DEVICE_SWITCH_INTERVAL_SECONDS = "switch_interval_seconds"
 CONF_DEVICE_MAX_GRID_POWER_W = "max_grid_power_w"
 
-# Legacy v1.0 keys intentionally kept only so old subentries can be read and
-# cleaned safely when reconfigured. They are no longer exposed or used.
+# Legacy v1.0 keys intentionally kept only so old subentries can be read and cleaned safely.
 CONF_DEVICE_REQUIRES_ENTITY = "requires_entity"
 CONF_DEVICE_DYNAMIC_CURRENT = "dynamic_current"
 CONF_DEVICE_CURRENT_ENTITY = "current_entity"
@@ -133,9 +133,7 @@ LEGACY_REMOVED_DEVICE_KEYS = (
     CONF_DEVICE_EV_TARGET_SOC,
 )
 
-# Monitored loads always contribute read-only phase attribution. They may expose
-# optional emergency control, but that path is used only for measured
-# grid/phase/inverter protection and never for PV/battery optimization or AI.
+# Monitored loads.
 SUBENTRY_TYPE_MONITORED_LOAD = "monitored_load"
 CONF_MONITORED_LOAD_NAME = "name"
 CONF_MONITORED_LOAD_POWER_SENSOR = "power_sensor"
@@ -158,13 +156,10 @@ MONITORED_EMERGENCY_RECOVERY_STABLE_SECONDS = 120
 DEFAULT_MONITORED_LOAD_ENABLED = True
 DEFAULT_MONITORED_LOAD_EMERGENCY_ENABLED = False
 
-# v1.4.3 same-day target recovery: after the configured target hour Casa ES
-# keeps trying only while there is still a meaningful solar opportunity.
 BATTERY_RECOVERY_MEASURED_PV_MIN_W = 100.0
 BATTERY_RECOVERY_POTENTIAL_PV_MIN_W = 200.0
 BATTERY_RECOVERY_FORECAST_REMAINING_MIN_KWH = 0.05
 
-# Numeric priority: 1 = highest, 100 = lowest.
 DEVICE_PRIORITY_MIN = 1
 DEVICE_PRIORITY_MAX = 100
 DEVICE_PHASES = ("l1", "l2", "l3", "three_phase")
@@ -173,6 +168,9 @@ DEFAULT_INVERTER_POWER_LIMIT = 10_000.0
 DEFAULT_PHASE_POWER_LIMIT = 3_000.0
 DEFAULT_GRID_POWER_LIMIT = 6_000.0
 DEFAULT_SAFETY_MARGIN = 250.0
+DEFAULT_INVERTER_SAFETY_MARGIN = 250.0
+DEFAULT_PHASE_SAFETY_MARGIN = 150.0
+DEFAULT_GRID_SAFETY_MARGIN = 300.0
 
 DEFAULT_AI_ENABLED = False
 DEFAULT_AI_INTERVAL_MINUTES = 30
@@ -206,16 +204,11 @@ DEFAULT_DEVICE_PROTECT_PREEMPTION = False
 DEFAULT_DEVICE_SWITCH_INTERVAL_SECONDS = 0
 DEFAULT_DEVICE_MAX_GRID_POWER_W = 0.0
 
-# Adaptive variable-load learning.
 ADAPTIVE_ACTIVE_POWER_THRESHOLD_W = 20.0
 ADAPTIVE_PROFILE_MIN_SAMPLES = 20
 ADAPTIVE_SAVE_EVERY_OBSERVATIONS = 60
-# Once a profile is mature, a single extreme historical spike must not inflate
-# future admission forever. Legitimate variable loads still retain up to 140%
-# of their learned mean, while sustained higher consumption moves the mean up.
 ADAPTIVE_ESTIMATE_MAX_MEAN_FACTOR = 1.40
 
-# Read-only heuristic used only to flag a likely zero-export curtailment condition.
 CURTAILMENT_SOC_THRESHOLD = 98.0
 CURTAILMENT_POTENTIAL_GAP_W = 400.0
 CURTAILMENT_GRID_IMPORT_MAX_W = 150.0
