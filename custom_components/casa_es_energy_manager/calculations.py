@@ -18,6 +18,9 @@ def calculate_metrics(
     phase_limit_w: float,
     grid_limit_w: float,
     safety_margin_w: float,
+    inverter_safety_margin_w: float | None = None,
+    phase_safety_margin_w: float | None = None,
+    grid_safety_margin_w: float | None = None,
     pv_potential_power_w: float | None = None,
     battery_soc: float | None = None,
     curtailment_soc_threshold: float = 98.0,
@@ -26,27 +29,15 @@ def calculate_metrics(
 ) -> dict[str, Any]:
     """Calculate read-only energy, solar-opportunity and protection metrics.
 
-    Sign conventions are intentionally fixed for the Casa ES installation:
-    * grid_power_w > 0 means grid import
-    * grid_power_w < 0 means grid export
-    * battery_power_w > 0 means battery charging
-    * battery_power_w < 0 means battery discharging
-
-    ``pv_power_w`` is measured inverter production. ``pv_potential_power_w`` is an
-    optional forecast/simulated estimate of what the array could produce if the
-    zero-export inverter were not curtailing production. The potential value is
-    never allowed to reduce the measured value.
+    ``safety_margin_w`` is retained as a backward-compatible fallback. v1.5.1
+    allows separate margins for inverter, each phase and grid contract.
     """
     grid_import_w = max(grid_power_w, 0.0)
     grid_export_w = max(-grid_power_w, 0.0)
     battery_charge_w = max(battery_power_w, 0.0)
     battery_discharge_w = max(-battery_power_w, 0.0)
 
-    # Measured PV remaining after the current measured house load.
     solar_after_house_w = max(pv_power_w - load_power_w, 0.0)
-
-    # The forecast can be pessimistic. Actual measured PV is therefore always the
-    # lower bound of our estimated production opportunity.
     potential_input = (
         pv_power_w if pv_potential_power_w is None else max(pv_potential_power_w, 0.0)
     )
@@ -54,9 +45,6 @@ def calculate_metrics(
     pv_potential_gap_w = max(pv_potential_w - pv_power_w, 0.0)
     pv_potential_after_house_w = max(pv_potential_w - load_power_w, 0.0)
 
-    # This is deliberately only a hint, not proof of curtailment. A forecast error
-    # can create the same pattern. It becomes useful for diagnostics and later
-    # conservative load-admission logic.
     pv_curtailment_likely = bool(
         battery_soc is not None
         and battery_soc >= curtailment_soc_threshold
@@ -64,18 +52,20 @@ def calculate_metrics(
         and pv_potential_gap_w >= curtailment_potential_gap_w
     )
 
-    safe_grid_limit_w = max(grid_limit_w - safety_margin_w, 0.0)
-    safe_phase_limit_w = max(phase_limit_w - safety_margin_w, 0.0)
-    safe_inverter_limit_w = max(inverter_limit_w - safety_margin_w, 0.0)
+    inverter_margin = (
+        safety_margin_w if inverter_safety_margin_w is None else inverter_safety_margin_w
+    )
+    phase_margin = safety_margin_w if phase_safety_margin_w is None else phase_safety_margin_w
+    grid_margin = safety_margin_w if grid_safety_margin_w is None else grid_safety_margin_w
+
+    safe_grid_limit_w = max(grid_limit_w - grid_margin, 0.0)
+    safe_phase_limit_w = max(phase_limit_w - phase_margin, 0.0)
+    safe_inverter_limit_w = max(inverter_limit_w - inverter_margin, 0.0)
 
     grid_headroom_w = max(safe_grid_limit_w - grid_import_w, 0.0)
     inverter_headroom_w = max(safe_inverter_limit_w - load_power_w, 0.0)
 
-    phases = {
-        "l1": phase_l1_w,
-        "l2": phase_l2_w,
-        "l3": phase_l3_w,
-    }
+    phases = {"l1": phase_l1_w, "l2": phase_l2_w, "l3": phase_l3_w}
     phase_headroom: dict[str, float | None] = {}
     phase_warning = False
     hottest_phase: str | None = None
@@ -85,7 +75,6 @@ def calculate_metrics(
         if power is None:
             phase_headroom[phase] = None
             continue
-
         positive_power = max(power, 0.0)
         phase_headroom[phase] = max(safe_phase_limit_w - positive_power, 0.0)
         if positive_power >= safe_phase_limit_w:
@@ -128,4 +117,7 @@ def calculate_metrics(
         "inverter_warning": inverter_warning,
         "hottest_phase": hottest_phase,
         "status": status,
+        "inverter_safety_margin_w": float(inverter_margin),
+        "phase_safety_margin_w": float(phase_margin),
+        "grid_safety_margin_w": float(grid_margin),
     }
