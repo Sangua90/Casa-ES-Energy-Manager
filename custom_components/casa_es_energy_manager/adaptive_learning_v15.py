@@ -21,6 +21,7 @@ class AdaptivePowerLearnerV15(AdaptivePowerLearner):
             item
             for item in devices
             if str(item.get("management_mode") or DEVICE_MODE_AUTO) == DEVICE_MODE_AUTO
+            and str(item.get("device_type") or "") != "thermal_storage"
             and not bool(item.get("learning_excluded"))
         ]
         await super().async_observe(automatic)
