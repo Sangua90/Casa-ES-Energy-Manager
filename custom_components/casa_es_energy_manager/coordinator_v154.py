@@ -28,6 +28,7 @@ from .device_dry_run import _is_running, _state_active
 ACTIVATION_COUNTER_MODE = "entity_off_to_on_v154"
 CURTAILMENT_TARGET_SOC_WINDOW_PCT = 2.5
 CURTAILMENT_HARVEST_RESERVE_W = 150.0
+CURTAILMENT_NEAR_TARGET_PROBE_MAX_W = 300.0
 
 
 def _number(value: Any, default: float = 0.0) -> float:
@@ -173,7 +174,14 @@ class CasaESEnergyCoordinator(V153Coordinator):
             data["v154_curtailment_harvest_active"] = False
             return
 
+        target_soc = _number(
+            self._config(CONF_BATTERY_TARGET_SOC, DEFAULT_BATTERY_TARGET_SOC),
+            DEFAULT_BATTERY_TARGET_SOC,
+        )
+        soc = _number(data.get("battery_soc"), 0.0)
+        target_reached = soc >= target_soc - 0.1
         available_w = max(_number(data.get("pv_potential_after_house_w"), 0.0), 0.0)
+        measured_surplus_w = max(_number(data.get("solar_after_house_w"), 0.0), 0.0)
         phase_headroom = {
             "l1": max(_number(data.get("phase_l1_headroom_w"), 0.0), 0.0),
             "l2": max(_number(data.get("phase_l2_headroom_w"), 0.0), 0.0),
@@ -202,13 +210,22 @@ class CasaESEnergyCoordinator(V153Coordinator):
             if power_w <= 0 or power_w + CURTAILMENT_HARVEST_RESERVE_W > available_w:
                 continue
 
+            # Below the actual target, use potential/curtailment as a cautious
+            # probe only for small loads (e.g. dehumidifier). Larger loads are
+            # released only if measured surplus already covers them. Once the
+            # battery target is reached, all clipped PV can be harvested.
+            if (
+                not target_reached
+                and power_w > CURTAILMENT_NEAR_TARGET_PROBE_MAX_W
+                and power_w + CURTAILMENT_HARVEST_RESERVE_W > measured_surplus_w
+            ):
+                continue
+
             phase = str(decision.get("phase") or "")
             if phase in phase_headroom and power_w + CURTAILMENT_HARVEST_RESERVE_W > phase_headroom[phase]:
                 continue
 
             if decision.get("entity_active"):
-                # Do not stop an already-running eligible load solely because
-                # battery-first became tight while PV is demonstrably clipped.
                 if decision.get("would_stop") and not decision.get("stop_is_hard_safety"):
                     decision["would_stop"] = False
                     decision["decision"] = "curtailment_harvest_running"
@@ -219,9 +236,6 @@ class CasaESEnergyCoordinator(V153Coordinator):
                     released.append(str(decision.get("name") or decision.get("entity_id") or ""))
                 continue
 
-            # waiting_energy is reached only after the normal daily/time/min-off
-            # gates have already admitted the device, with battery-first/budget
-            # being the blocker. Re-enable that start when clipped PV can cover it.
             decision["would_start"] = True
             decision["decision"] = "curtailment_harvest_start"
             decision["reason"] = (
@@ -233,6 +247,8 @@ class CasaESEnergyCoordinator(V153Coordinator):
         data["v154_curtailment_harvest_active"] = bool(released)
         data["v154_curtailment_harvest_candidates"] = released
         data["v154_curtailment_harvest_available_w"] = round(available_w, 1)
+        data["v154_curtailment_measured_surplus_w"] = round(measured_surplus_w, 1)
+        data["v154_curtailment_target_reached"] = target_reached
 
     async def _async_apply_real_control(self, data: dict[str, Any], now: Any) -> None:
         self._apply_curtailment_harvest(data)
@@ -245,4 +261,5 @@ class CasaESEnergyCoordinator(V153Coordinator):
         data["v154_min_on_normal_stop_enforced"] = True
         data["v154_curtailment_target_soc_window_pct"] = CURTAILMENT_TARGET_SOC_WINDOW_PCT
         data["v154_curtailment_harvest_reserve_w"] = CURTAILMENT_HARVEST_RESERVE_W
+        data["v154_curtailment_near_target_probe_max_w"] = CURTAILMENT_NEAR_TARGET_PROBE_MAX_W
         return data
