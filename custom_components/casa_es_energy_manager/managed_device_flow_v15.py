@@ -13,6 +13,8 @@ from homeassistant.helpers import selector
 from . import managed_device_flow_v1 as base
 from .const import (
     CONF_DEVICE_ENTITY,
+    CONF_DEVICE_MIN_OFF_MINUTES,
+    CONF_DEVICE_MIN_ON_MINUTES,
     CONF_DEVICE_MODE_CLIMATE_ENTITY,
     CONF_DEVICE_NAME,
     CONF_DEVICE_POWER_SENSOR,
@@ -48,8 +50,41 @@ CONF_THERMAL_LEARNING = "thermal_learning"
 CONF_THERMAL_STRATEGY = "thermal_strategy"
 THERMAL_STRATEGIES = ("balanced", "max_solar", "comfort")
 
+CLIMATE_DEFAULT_MIN_ON_MINUTES = 20.0
+CLIMATE_DEFAULT_MIN_OFF_MINUTES = 5.0
+
 # Reuse the mature v1 form helpers while expanding its recognized type list.
 base.DEVICE_TYPES = DEVICE_TYPES_V15
+
+
+def _apply_climate_cycle_profile(values: dict[str, Any]) -> None:
+    """Persist the effective 20/5 climate anti-cycle profile in visible config."""
+    dtype = str(values.get(CONF_DEVICE_TYPE) or DEVICE_TYPE_GENERIC)
+    entity_id = str(values.get(CONF_DEVICE_ENTITY) or "")
+    if dtype != DEVICE_TYPE_CLIMATE and not entity_id.startswith("climate."):
+        return
+
+    raw_on = values.get(CONF_DEVICE_MIN_ON_MINUTES)
+    raw_off = values.get(CONF_DEVICE_MIN_OFF_MINUTES)
+    try:
+        min_on = float(raw_on) if raw_on not in (None, "") else None
+        min_off = float(raw_off) if raw_off not in (None, "") else None
+    except (TypeError, ValueError):
+        min_on = min_off = None
+
+    # New climate entries receive the intended compressor-safe profile.
+    if min_on is None:
+        values[CONF_DEVICE_MIN_ON_MINUTES] = CLIMATE_DEFAULT_MIN_ON_MINUTES
+        min_on = CLIMATE_DEFAULT_MIN_ON_MINUTES
+    if min_off is None:
+        values[CONF_DEVICE_MIN_OFF_MINUTES] = CLIMATE_DEFAULT_MIN_OFF_MINUTES
+        min_off = CLIMATE_DEFAULT_MIN_OFF_MINUTES
+
+    # Existing v1.5 entries stored 20/20 even though v1.5.1 already applied
+    # 20/5 at runtime. Convert only that exact legacy pair so explicit custom
+    # values remain untouched.
+    if abs(min_on - 20.0) < 1e-9 and abs(min_off - 20.0) < 1e-9:
+        values[CONF_DEVICE_MIN_OFF_MINUTES] = CLIMATE_DEFAULT_MIN_OFF_MINUTES
 
 
 def _thermal_schema(current: dict[str, Any]) -> vol.Schema:
@@ -129,6 +164,7 @@ class ManagedDeviceSubentryFlow(base.ManagedDeviceSubentryFlow):
         if reconfigure and not self._values:
             self._values.update(self._get_reconfigure_subentry().data)
             base._remove_legacy_features(self._values)
+            _apply_climate_cycle_profile(self._values)
 
         errors: dict[str, str] = {}
         if user_input is not None:
@@ -171,6 +207,7 @@ class ManagedDeviceSubentryFlow(base.ManagedDeviceSubentryFlow):
                 base._remove_legacy_features(self._values)
                 dtype = str(self._values.get(CONF_DEVICE_TYPE) or DEVICE_TYPE_GENERIC)
                 if dtype == DEVICE_TYPE_CLIMATE:
+                    _apply_climate_cycle_profile(self._values)
                     return await self.async_step_climate()
                 self._values.pop(CONF_DEVICE_MODE_CLIMATE_ENTITY, None)
                 if dtype == DEVICE_TYPE_THERMAL:

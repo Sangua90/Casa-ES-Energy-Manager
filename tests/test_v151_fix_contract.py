@@ -32,15 +32,17 @@ class V151FixContractTests(unittest.TestCase):
         source152 = (COMPONENT / "coordinator_v152.py").read_text(encoding="utf-8")
         source153 = (COMPONENT / "coordinator_v153.py").read_text(encoding="utf-8")
         source154 = (COMPONENT / "coordinator_v154.py").read_text(encoding="utf-8")
+        source155 = (COMPONENT / "coordinator_v155.py").read_text(encoding="utf-8")
         init_source = (COMPONENT / "__init__.py").read_text(encoding="utf-8")
         manifest = (COMPONENT / "manifest.json").read_text(encoding="utf-8")
         const = (COMPONENT / "const.py").read_text(encoding="utf-8")
         self.assertIn("coordinator_v151", source152)
         self.assertIn("coordinator_v152", source153)
         self.assertIn("V153Coordinator", source154)
-        self.assertIn("coordinator_v154", init_source)
-        self.assertIn('"version": "1.5.4"', manifest)
-        self.assertIn('VERSION = "1.5.4"', const)
+        self.assertIn("V154Coordinator", source155)
+        self.assertIn("coordinator_v155", init_source)
+        self.assertIn('"version": "1.5.5"', manifest)
+        self.assertIn('VERSION = "1.5.5"', const)
 
 
 if __name__ == "__main__":
