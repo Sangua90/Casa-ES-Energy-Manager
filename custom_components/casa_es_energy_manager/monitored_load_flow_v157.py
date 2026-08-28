@@ -28,12 +28,7 @@ from .const import (
     SUBENTRY_TYPE_MONITORED_LOAD,
 )
 from .forecast_units import POWER_UNITS
-from .monitored_load_flow import (
-    CONTROL_DOMAINS,
-    _base_schema,
-    _command_schema,
-    _legacy_emergency_enabled,
-)
+from .monitored_load_flow import _base_schema, _command_schema
 
 MONITORED_EMERGENCY_MODE_SELECT_PAUSE_RESUME = "select_pause_resume"
 MONITORED_EMERGENCY_MODES_V157 = (
@@ -76,6 +71,12 @@ def _has_alias(options: list[Any], aliases: set[str]) -> bool:
 def _select_supported(state: Any) -> bool:
     options = list(getattr(state, "attributes", {}).get("options") or [])
     return _has_alias(options, PAUSE_ALIASES) and _has_alias(options, RESUME_ALIASES)
+
+
+def _legacy_emergency_enabled(current: dict[str, Any]) -> bool:
+    if CONF_MONITORED_LOAD_EMERGENCY_ENABLED in current:
+        return bool(current.get(CONF_MONITORED_LOAD_EMERGENCY_ENABLED))
+    return bool(current.get(CONF_MONITORED_LOAD_EMERGENCY_ENTITY))
 
 
 def _mode_schema_v157(current: dict[str, Any]) -> vol.Schema:
@@ -242,7 +243,7 @@ class MonitoredLoadSubentryFlow(ConfigSubentryFlow):
         self._pending[CONF_MONITORED_LOAD_EMERGENCY_MODE] = mode
         if mode == MONITORED_EMERGENCY_MODE_SELECT_PAUSE_RESUME:
             return self.async_show_form(
-                step_id="emergency_select_pause_resume",
+                step_id="emergency_pause_resume",
                 data_schema=_select_command_schema(self._pending),
                 errors={},
                 last_step=True,
@@ -265,34 +266,6 @@ class MonitoredLoadSubentryFlow(ConfigSubentryFlow):
             last_step=True,
         )
 
-    async def async_step_emergency_select_pause_resume(
-        self, user_input: dict[str, Any] | None = None
-    ) -> SubentryFlowResult:
-        errors: dict[str, str] = {}
-        if user_input is not None:
-            entity_id = str(user_input.get(CONF_MONITORED_LOAD_EMERGENCY_ENTITY) or "")
-            state = self.hass.states.get(entity_id) if entity_id else None
-            if not entity_id or state is None:
-                errors[CONF_MONITORED_LOAD_EMERGENCY_ENTITY] = "control_entity_not_found"
-            elif not entity_id.startswith("select."):
-                errors[CONF_MONITORED_LOAD_EMERGENCY_ENTITY] = "select_required"
-            elif not _select_supported(state):
-                errors[CONF_MONITORED_LOAD_EMERGENCY_ENTITY] = "select_pause_resume_not_supported"
-
-            self._pending.update(user_input)
-            if not errors:
-                # The same select entity owns both pause and resume. The runtime
-                # remembers ownership, so it resumes only a pause issued by Casa ES.
-                self._pending[CONF_MONITORED_LOAD_RESUME_ENTITY] = entity_id
-                return self._save()
-
-        return self.async_show_form(
-            step_id="emergency_select_pause_resume",
-            data_schema=_select_command_schema(self._pending),
-            errors=errors,
-            last_step=True,
-        )
-
     async def async_step_emergency_switch(
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
@@ -301,7 +274,33 @@ class MonitoredLoadSubentryFlow(ConfigSubentryFlow):
     async def async_step_emergency_pause_resume(
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
+        if str(self._pending.get(CONF_MONITORED_LOAD_EMERGENCY_MODE) or "") == MONITORED_EMERGENCY_MODE_SELECT_PAUSE_RESUME:
+            return await self._async_select_form(user_input)
         return await self._async_command_form(user_input, "emergency_pause_resume", True, False)
+
+    async def _async_select_form(
+        self, user_input: dict[str, Any] | None
+    ) -> SubentryFlowResult:
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            entity_id = str(user_input.get(CONF_MONITORED_LOAD_EMERGENCY_ENTITY) or "")
+            state = self.hass.states.get(entity_id) if entity_id else None
+            if not entity_id or state is None or not entity_id.startswith("select."):
+                errors[CONF_MONITORED_LOAD_EMERGENCY_ENTITY] = "control_entity_not_found"
+            elif not _select_supported(state):
+                errors[CONF_MONITORED_LOAD_EMERGENCY_ENTITY] = "control_entity_not_found"
+
+            self._pending.update(user_input)
+            if not errors:
+                self._pending[CONF_MONITORED_LOAD_RESUME_ENTITY] = entity_id
+                return self._save()
+
+        return self.async_show_form(
+            step_id="emergency_pause_resume",
+            data_schema=_select_command_schema(self._pending),
+            errors=errors,
+            last_step=True,
+        )
 
     async def async_step_emergency_stop_only(
         self, user_input: dict[str, Any] | None = None
