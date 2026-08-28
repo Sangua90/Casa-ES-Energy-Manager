@@ -9,7 +9,14 @@ from homeassistant.core import callback
 
 from .const import SUBENTRY_TYPE_MANAGED_DEVICE, SUBENTRY_TYPE_MONITORED_LOAD
 from .managed_device_flow_v15 import ManagedDeviceSubentryFlow
-from .monitored_load_flow_v157 import MonitoredLoadSubentryFlow
+from .monitored_load_flow import MonitoredLoadSubentryFlow as LegacyMonitoredLoadSubentryFlow
+from .monitored_load_flow_v157 import MonitoredLoadSubentryFlow as V157MonitoredLoadSubentryFlow
+
+
+class MonitoredLoadSubentryFlow(
+    V157MonitoredLoadSubentryFlow, LegacyMonitoredLoadSubentryFlow
+):
+    """v1.5.7 flow while retaining the previous monitored-flow contract."""
 
 
 class CasaESSubentrySupport:
