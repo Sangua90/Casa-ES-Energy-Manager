@@ -1,4 +1,4 @@
-"""Regression contracts for Casa ES Energy Manager v1.5.5."""
+"""Regression contracts for Casa ES Energy Manager v1.5.5 retained by later releases."""
 
 from __future__ import annotations
 
@@ -41,13 +41,15 @@ class V155SurplusThermalContractTests(unittest.TestCase):
         self.assertIn("abs(min_on - 20.0)", self.flow)
         self.assertIn("abs(min_off - 20.0)", self.flow)
 
-    def test_release_is_wired_to_v155(self) -> None:
+    def test_v155_remains_in_v156_release_chain(self) -> None:
         init_source = (COMPONENT / "__init__.py").read_text(encoding="utf-8")
+        source156 = (COMPONENT / "coordinator_v156.py").read_text(encoding="utf-8")
         manifest = (COMPONENT / "manifest.json").read_text(encoding="utf-8")
         const = (COMPONENT / "const.py").read_text(encoding="utf-8")
-        self.assertIn("coordinator_v155", init_source)
-        self.assertIn('"version": "1.5.5"', manifest)
-        self.assertIn('VERSION = "1.5.5"', const)
+        self.assertIn("V155Coordinator", source156)
+        self.assertIn("coordinator_v156", init_source)
+        self.assertIn('"version": "1.5.6"', manifest)
+        self.assertIn('VERSION = "1.5.6"', const)
 
 
 if __name__ == "__main__":
