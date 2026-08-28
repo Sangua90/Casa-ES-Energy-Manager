@@ -72,7 +72,7 @@ class RuntimePersistenceContractTests(unittest.TestCase):
         self.assertIn("await self._runtime_store.async_save(payload)", source)
         self.assertIn('stored.get("date") != today.isoformat()', source)
 
-    def test_v156_retains_v155_v154_v153_v152_v151_v15_and_v144_chain(self) -> None:
+    def test_v157_retains_v156_v155_v154_v153_v152_v151_v15_and_v144_chain(self) -> None:
         source15 = (COMPONENT / "coordinator_v15.py").read_text(encoding="utf-8")
         source151 = (COMPONENT / "coordinator_v151.py").read_text(encoding="utf-8")
         source152 = (COMPONENT / "coordinator_v152.py").read_text(encoding="utf-8")
@@ -80,6 +80,7 @@ class RuntimePersistenceContractTests(unittest.TestCase):
         source154 = (COMPONENT / "coordinator_v154.py").read_text(encoding="utf-8")
         source155 = (COMPONENT / "coordinator_v155.py").read_text(encoding="utf-8")
         source156 = (COMPONENT / "coordinator_v156.py").read_text(encoding="utf-8")
+        source157 = (COMPONENT / "coordinator_v157.py").read_text(encoding="utf-8")
         init_source = (COMPONENT / "__init__.py").read_text(encoding="utf-8")
         self.assertIn("from .coordinator_v144 import CasaESEnergyCoordinator as V144Coordinator", source15)
         self.assertIn("class CasaESEnergyCoordinator(V144Coordinator)", source15)
@@ -95,7 +96,9 @@ class RuntimePersistenceContractTests(unittest.TestCase):
         self.assertIn("class CasaESEnergyCoordinator(V154Coordinator)", source155)
         self.assertIn("from .coordinator_v155 import CasaESEnergyCoordinator as V155Coordinator", source156)
         self.assertIn("class CasaESEnergyCoordinator(V155Coordinator)", source156)
-        self.assertIn("from .coordinator_v156 import CasaESEnergyCoordinator", init_source)
+        self.assertIn("from .coordinator_v156 import CasaESEnergyCoordinator as V156Coordinator", source157)
+        self.assertIn("class CasaESEnergyCoordinator(V156Coordinator)", source157)
+        self.assertIn("from .coordinator_v157 import CasaESEnergyCoordinator", init_source)
 
     def test_v152_persists_wall_clock_transitions_and_reconciles_downtime(self) -> None:
         source = (COMPONENT / "coordinator_v152.py").read_text(encoding="utf-8")
@@ -106,11 +109,11 @@ class RuntimePersistenceContractTests(unittest.TestCase):
         self.assertIn("prior_active is True and running_now", source)
         self.assertIn("persistent_real_transition", source)
 
-    def test_version_is_156(self) -> None:
+    def test_version_is_157(self) -> None:
         manifest = (COMPONENT / "manifest.json").read_text(encoding="utf-8")
         const = (COMPONENT / "const.py").read_text(encoding="utf-8")
-        self.assertIn('"version": "1.5.6"', manifest)
-        self.assertIn('VERSION = "1.5.6"', const)
+        self.assertIn('"version": "1.5.7"', manifest)
+        self.assertIn('VERSION = "1.5.7"', const)
 
 
 if __name__ == "__main__":
