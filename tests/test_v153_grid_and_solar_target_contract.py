@@ -46,17 +46,19 @@ class V153GridAndSolarTargetContractTests(unittest.TestCase):
         self.assertIn("battery_target_dynamic_from_solar_end", self.source)
         self.assertIn("Forecast curve unavailable", self.source)
 
-    def test_v153_remains_in_v155_release_chain(self) -> None:
+    def test_v153_remains_in_v156_release_chain(self) -> None:
         init_source = (COMPONENT / "__init__.py").read_text(encoding="utf-8")
         source154 = (COMPONENT / "coordinator_v154.py").read_text(encoding="utf-8")
         source155 = (COMPONENT / "coordinator_v155.py").read_text(encoding="utf-8")
+        source156 = (COMPONENT / "coordinator_v156.py").read_text(encoding="utf-8")
         manifest = (COMPONENT / "manifest.json").read_text(encoding="utf-8")
         const = (COMPONENT / "const.py").read_text(encoding="utf-8")
         self.assertIn("V153Coordinator", source154)
         self.assertIn("V154Coordinator", source155)
-        self.assertIn("coordinator_v155", init_source)
-        self.assertIn('"version": "1.5.5"', manifest)
-        self.assertIn('VERSION = "1.5.5"', const)
+        self.assertIn("V155Coordinator", source156)
+        self.assertIn("coordinator_v156", init_source)
+        self.assertIn('"version": "1.5.6"', manifest)
+        self.assertIn('VERSION = "1.5.6"', const)
 
 
 if __name__ == "__main__":
