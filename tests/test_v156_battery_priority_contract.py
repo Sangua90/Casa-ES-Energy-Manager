@@ -1,4 +1,4 @@
-"""Regression contracts for Casa ES Energy Manager v1.5.6."""
+"""Regression contracts for Casa ES Energy Manager v1.5.6 retained by later releases."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ COMPONENT = ROOT / "custom_components" / "casa_es_energy_manager"
 class V156BatteryPriorityContractTests(unittest.TestCase):
     def setUp(self) -> None:
         self.source = (COMPONENT / "coordinator_v156.py").read_text(encoding="utf-8")
+        self.source157 = (COMPONENT / "coordinator_v157.py").read_text(encoding="utf-8")
         self.init = (COMPONENT / "__init__.py").read_text(encoding="utf-8")
 
     def test_battery_charge_cap_is_explicit(self) -> None:
@@ -45,12 +46,13 @@ class V156BatteryPriorityContractTests(unittest.TestCase):
         self.assertIn("async_update_subentry", self.init)
         self.assertIn("CONF_DEVICE_MIN_OFF_MINUTES] = 5.0", self.init)
 
-    def test_release_is_v156(self) -> None:
+    def test_v156_remains_in_v157_release_chain(self) -> None:
         manifest = (COMPONENT / "manifest.json").read_text(encoding="utf-8")
         const = (COMPONENT / "const.py").read_text(encoding="utf-8")
-        self.assertIn("coordinator_v156", self.init)
-        self.assertIn('"version": "1.5.6"', manifest)
-        self.assertIn('VERSION = "1.5.6"', const)
+        self.assertIn("V156Coordinator", self.source157)
+        self.assertIn("coordinator_v157", self.init)
+        self.assertIn('"version": "1.5.7"', manifest)
+        self.assertIn('VERSION = "1.5.7"', const)
 
 
 if __name__ == "__main__":
