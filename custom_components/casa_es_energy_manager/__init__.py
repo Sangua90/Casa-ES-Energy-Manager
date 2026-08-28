@@ -8,8 +8,15 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_call_later, async_track_time_interval
 
 from .ai_planner_v1 import CasaESAIPlanner
-from .const import DOMAIN
-from .coordinator_v155 import CasaESEnergyCoordinator
+from .const import (
+    CONF_DEVICE_MIN_OFF_MINUTES,
+    CONF_DEVICE_MIN_ON_MINUTES,
+    CONF_DEVICE_TYPE,
+    DEVICE_TYPE_CLIMATE,
+    DOMAIN,
+    SUBENTRY_TYPE_MANAGED_DEVICE,
+)
+from .coordinator_v156 import CasaESEnergyCoordinator
 
 PLATFORMS: list[Platform] = [
     Platform.SENSOR,
@@ -20,8 +27,33 @@ PLATFORMS: list[Platform] = [
 ]
 
 
+def _persist_climate_anti_cycle_migration(hass: HomeAssistant, entry: ConfigEntry) -> int:
+    """Persist the legacy 20/20 climate profile as the intended 20/5 profile."""
+    migrated = 0
+    for subentry in entry.subentries.values():
+        if subentry.subentry_type != SUBENTRY_TYPE_MANAGED_DEVICE:
+            continue
+        data = dict(subentry.data)
+        if str(data.get(CONF_DEVICE_TYPE) or "") != DEVICE_TYPE_CLIMATE:
+            continue
+        try:
+            min_on = float(data.get(CONF_DEVICE_MIN_ON_MINUTES) or 0.0)
+            min_off = float(data.get(CONF_DEVICE_MIN_OFF_MINUTES) or 0.0)
+        except (TypeError, ValueError):
+            continue
+        if abs(min_on - 20.0) > 1e-9 or abs(min_off - 20.0) > 1e-9:
+            continue
+        data[CONF_DEVICE_MIN_ON_MINUTES] = 20.0
+        data[CONF_DEVICE_MIN_OFF_MINUTES] = 5.0
+        hass.config_entries.async_update_subentry(entry, subentry, data=data)
+        migrated += 1
+    return migrated
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Casa ES Energy Manager from a config entry."""
+    _persist_climate_anti_cycle_migration(hass, entry)
+
     coordinator = CasaESEnergyCoordinator(hass, entry)
     await coordinator.async_initialize()
     await coordinator.async_config_entry_first_refresh()
@@ -42,7 +74,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload a config entry safely."""
+    """Unload Casa ES Energy Manager safely."""
     coordinator = hass.data.get(DOMAIN, {}).get(entry.entry_id)
     if coordinator is not None:
         await coordinator.async_prepare_unload()
