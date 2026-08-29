@@ -16,7 +16,7 @@ from .const import (
     DOMAIN,
     SUBENTRY_TYPE_MANAGED_DEVICE,
 )
-from .coordinator_v158 import CasaESEnergyCoordinator
+from .coordinator_v1510 import CasaESEnergyCoordinator
 
 PLATFORMS: list[Platform] = [
     Platform.SENSOR,
@@ -30,7 +30,7 @@ CONF_DEVICE_STOP_PERSISTENCE_MINUTES = "stop_persistence_minutes"
 
 
 def _persist_climate_anti_cycle_migration(hass: HomeAssistant, entry: ConfigEntry) -> int:
-    """Persist the v1.5.8 20/20/20 climate/PDC anti-chatter profile."""
+    """Persist the 20/20/20 climate/PDC anti-chatter profile."""
     migrated = 0
     for subentry in entry.subentries.values():
         if subentry.subentry_type != SUBENTRY_TYPE_MANAGED_DEVICE:
@@ -50,7 +50,6 @@ def _persist_climate_anti_cycle_migration(hass: HomeAssistant, entry: ConfigEntr
             data[CONF_DEVICE_MIN_ON_MINUTES] = 20.0
             min_on = 20.0
             changed = True
-        # Convert the v1.5.7 default 20/5 profile to the requested 20/20 profile.
         if min_off <= 0 or (abs(min_on - 20.0) < 1e-9 and abs(min_off - 5.0) < 1e-9):
             data[CONF_DEVICE_MIN_OFF_MINUTES] = 20.0
             changed = True
