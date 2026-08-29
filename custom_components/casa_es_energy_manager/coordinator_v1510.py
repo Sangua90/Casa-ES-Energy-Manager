@@ -1,17 +1,19 @@
 """Casa ES Energy Manager v1.5.10 climate/thermal corrective layer.
 
-Fixes three issues observed in live diagnostics:
-- phase-only warnings must never become immediate managed-load hard stops;
-- max daily activations blocks the next start but never stops an active climate;
-- thermal storage below base temperature must not remain idle indefinitely when
-  the appliance is not heating and sufficient PV is available.
-Also restores the configured climate minimum-OFF value after legacy v1.5.1
-runtime migration logic and resets contaminated climate activation counts once.
+Fixes live issues observed in diagnostics:
+- phase-only warnings never become immediate managed-load hard stops;
+- max daily activations blocks only the next start, never stops an active climate;
+- thermal storage below base temperature cannot remain idle indefinitely when
+  the appliance is not heating and sufficient PV is available;
+- configured climate minimum-OFF always wins over the legacy v1.5.1 runtime 20/5 migration.
+Contaminated climate activation counters are reset once per day/version marker.
 """
 
 from __future__ import annotations
 
 from typing import Any
+
+from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_DEVICE_MIN_BATTERY_SOC,
@@ -28,6 +30,8 @@ from .managed_device_flow_v15 import (
     DEVICE_TYPE_THERMAL,
 )
 
+RESET_MARKER_KEY = "v1510_climate_activation_reset_date"
+
 
 def _number(value: Any, default: float = 0.0) -> float:
     try:
@@ -37,25 +41,42 @@ def _number(value: Any, default: float = 0.0) -> float:
 
 
 class CasaESEnergyCoordinator(V158Coordinator):
-    """v1.5.10 final corrective layer for climate stability and DHW recovery."""
+    """v1.5.10 corrective layer for climate stability and DHW recovery."""
 
     def __init__(self, hass: Any, entry: Any) -> None:
         super().__init__(hass, entry)
-        self._v1510_activation_reset_done = False
+        self._v1510_activation_reset_date: str | None = None
 
     async def async_initialize(self) -> None:
         await super().async_initialize()
-        # Counts collected before v1.5.10 include cycles caused by the phase-stop
-        # and 20/5 bugs. Reset only climate counters once for a clean baseline.
-        if not self._v1510_activation_reset_done:
-            climate_ids = {
-                str(subentry.subentry_id)
-                for subentry in self.entry.subentries.values()
-                if str(subentry.data.get(CONF_DEVICE_TYPE) or "") == DEVICE_TYPE_CLIMATE
-            }
-            for subentry_id in climate_ids:
-                self._runtime_activations[subentry_id] = 0
-            self._v1510_activation_reset_done = True
+        today = dt_util.now().date().isoformat()
+        stored = await self._runtime_store.async_load()
+        marker = stored.get(RESET_MARKER_KEY) if isinstance(stored, dict) else None
+        if marker == today:
+            self._v1510_activation_reset_date = today
+            return
+
+        climate_ids = {
+            str(subentry.subentry_id)
+            for subentry in self.entry.subentries.values()
+            if str(subentry.data.get(CONF_DEVICE_TYPE) or "") == DEVICE_TYPE_CLIMATE
+        }
+        for subentry_id in climate_ids:
+            self._runtime_activations[subentry_id] = 0
+        self._v1510_activation_reset_date = today
+        await self._async_save_runtime_state()
+
+    async def _async_save_runtime_state(self) -> None:
+        await super()._async_save_runtime_state()
+        if not self._v1510_activation_reset_date:
+            return
+        stored = await self._runtime_store.async_load()
+        if not isinstance(stored, dict):
+            return
+        if stored.get(RESET_MARKER_KEY) == self._v1510_activation_reset_date:
+            return
+        stored[RESET_MARKER_KEY] = self._v1510_activation_reset_date
+        await self._runtime_store.async_save(stored)
 
     def _managed_device_snapshots(self) -> list[dict[str, Any]]:
         devices = super()._managed_device_snapshots()
@@ -76,19 +97,26 @@ class CasaESEnergyCoordinator(V158Coordinator):
         return devices
 
     @staticmethod
-    def _normalize_climate_stop_decisions(data: dict[str, Any]) -> None:
+    def _normalize_stop_decisions(data: dict[str, Any]) -> None:
+        configs = {
+            str(item.get("subentry_id") or ""): item
+            for item in (data.get("managed_device_configs") or [])
+        }
         phase_only = bool(
             data.get("phase_warning")
             and not data.get("inverter_warning")
             and not data.get("grid_warning")
         )
+
         for decision in data.get("dry_run_decisions") or []:
-            if str(decision.get("device_type") or "") not in {"", DEVICE_TYPE_CLIMATE}:
-                continue
             if not decision.get("entity_active"):
                 continue
-
+            source = configs.get(str(decision.get("subentry_id") or "")) or {}
+            is_climate = str(source.get(CONF_DEVICE_TYPE) or "") == DEVICE_TYPE_CLIMATE
             reason = str(decision.get("reason") or "")
+
+            # v1.5.6 design: phase-only warning is diagnostic/advisory for every
+            # managed load. Hard action belongs to inverter/grid protection.
             if phase_only and decision.get("stop_is_hard_safety"):
                 decision["would_stop"] = False
                 decision["stop_is_hard_safety"] = False
@@ -96,14 +124,16 @@ class CasaESEnergyCoordinator(V158Coordinator):
                 decision["reason"] = (
                     "Avviso carico fase: solo diagnostica, nessuno spegnimento automatico."
                 )
+                continue
 
-            if "Numero massimo di avvii giornalieri raggiunto" in reason:
+            # A daily activation cap is a start-admission rule, not a running-stop rule.
+            if is_climate and "Numero massimo di avvii giornalieri raggiunto" in reason:
                 decision["would_stop"] = False
                 decision["stop_is_hard_safety"] = False
                 decision["decision"] = "daily_activation_limit_running"
                 decision["reason"] = (
-                    "Limite avvii raggiunto: il dispositivo già acceso resta attivo; "
-                    "Casa ES bloccherà soltanto un nuovo avvio automatico."
+                    "Limite avvii raggiunto: il climatizzatore già acceso resta attivo; "
+                    "Casa ES blocca soltanto un nuovo avvio automatico."
                 )
 
     async def _async_apply_thermal_control(
@@ -142,13 +172,14 @@ class CasaESEnergyCoordinator(V158Coordinator):
                     continue
 
                 nominal = max(_number(item.get(CONF_DEVICE_NOMINAL_POWER_W), 0.0), 1.0)
-                if below_target:
-                    available = overflow
-                else:
-                    available = max(
+                available = (
+                    overflow
+                    if below_target
+                    else max(
                         _number(data.get("solar_after_house_w"), 0.0),
                         _number(data.get("pv_potential_after_house_w"), 0.0),
                     )
+                )
                 if available < nominal * 0.9:
                     continue
 
@@ -175,15 +206,15 @@ class CasaESEnergyCoordinator(V158Coordinator):
         return await super()._async_apply_thermal_control(data, now)
 
     async def _async_apply_real_control(self, data: dict[str, Any], now: Any) -> None:
-        self._normalize_climate_stop_decisions(data)
+        self._normalize_stop_decisions(data)
         await super()._async_apply_real_control(data, now)
 
     async def _async_update_data(self) -> dict[str, Any]:
         data = await super()._async_update_data()
-        self._normalize_climate_stop_decisions(data)
+        self._normalize_stop_decisions(data)
         data["v1510_climate_min_off_uses_configured_value"] = True
         data["v1510_phase_only_warning_advisory"] = True
         data["v1510_daily_activation_limit_stops_running"] = False
         data["v1510_thermal_below_base_recovery"] = True
-        data["v1510_activation_counter_reset"] = self._v1510_activation_reset_done
+        data["v1510_activation_counter_reset_date"] = self._v1510_activation_reset_date
         return data
