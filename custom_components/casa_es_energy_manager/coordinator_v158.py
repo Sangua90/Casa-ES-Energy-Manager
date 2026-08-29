@@ -97,7 +97,6 @@ class CasaESEnergyCoordinator(V157Coordinator):
             else:
                 decision["stop_persistence_state"] = "satisfied"
 
-        # Remove stale timers for deleted/non-present climate subentries.
         for subentry_id in list(self._climate_stop_pending_since):
             if subentry_id not in seen:
                 self._climate_stop_pending_since.pop(subentry_id, None)
@@ -115,9 +114,10 @@ class CasaESEnergyCoordinator(V157Coordinator):
             "hard_safety_bypass": True,
         }
 
-    async def _async_apply_real_control(self, data: dict[str, Any], now: Any) -> None:
+    def _enforce_cross_type_priority(self, data: dict[str, Any], now: Any) -> None:
+        """Run v1.5.6 priority logic, then gate all normal climate stop requests."""
+        super()._enforce_cross_type_priority(data, now)
         self._apply_climate_stop_persistence(data, now)
-        await super()._async_apply_real_control(data, now)
 
     async def _async_update_data(self) -> dict[str, Any]:
         data = await super()._async_update_data()
