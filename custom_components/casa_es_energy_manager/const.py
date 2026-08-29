@@ -2,7 +2,7 @@
 
 DOMAIN = "casa_es_energy_manager"
 NAME = "Casa ES Energy Manager"
-VERSION = "1.5.7"
+VERSION = "1.5.8"
 
 # Core electrical sensors.
 CONF_PV_POWER_SENSOR = "pv_power_sensor"
@@ -83,6 +83,7 @@ CONF_DEVICE_ENABLED = "enabled"
 CONF_DEVICE_ADAPTIVE_POWER = "adaptive_power_profile"
 CONF_DEVICE_MIN_ON_MINUTES = "min_on_minutes"
 CONF_DEVICE_MIN_OFF_MINUTES = "min_off_minutes"
+CONF_DEVICE_STOP_PERSISTENCE_MINUTES = "stop_persistence_minutes"
 
 # v1.2 device type and climate/PDC mode profiling.
 CONF_DEVICE_TYPE = "device_type"
