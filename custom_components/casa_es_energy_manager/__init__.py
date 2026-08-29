@@ -16,9 +16,7 @@ from .const import (
     DOMAIN,
     SUBENTRY_TYPE_MANAGED_DEVICE,
 )
-# v1.5.7 extends the complete previous chain:
-# from .coordinator_v156 import CasaESEnergyCoordinator
-from .coordinator_v157 import CasaESEnergyCoordinator
+from .coordinator_v158 import CasaESEnergyCoordinator
 
 PLATFORMS: list[Platform] = [
     Platform.SENSOR,
@@ -28,9 +26,11 @@ PLATFORMS: list[Platform] = [
     Platform.SWITCH,
 ]
 
+CONF_DEVICE_STOP_PERSISTENCE_MINUTES = "stop_persistence_minutes"
+
 
 def _persist_climate_anti_cycle_migration(hass: HomeAssistant, entry: ConfigEntry) -> int:
-    """Persist the legacy 20/20 climate profile as the intended 20/5 profile."""
+    """Persist the v1.5.8 20/20/20 climate/PDC anti-chatter profile."""
     migrated = 0
     for subentry in entry.subentries.values():
         if subentry.subentry_type != SUBENTRY_TYPE_MANAGED_DEVICE:
@@ -38,17 +38,29 @@ def _persist_climate_anti_cycle_migration(hass: HomeAssistant, entry: ConfigEntr
         data = dict(subentry.data)
         if str(data.get(CONF_DEVICE_TYPE) or "") != DEVICE_TYPE_CLIMATE:
             continue
+
+        changed = False
         try:
             min_on = float(data.get(CONF_DEVICE_MIN_ON_MINUTES) or 0.0)
             min_off = float(data.get(CONF_DEVICE_MIN_OFF_MINUTES) or 0.0)
         except (TypeError, ValueError):
-            continue
-        if abs(min_on - 20.0) > 1e-9 or abs(min_off - 20.0) > 1e-9:
-            continue
-        data[CONF_DEVICE_MIN_ON_MINUTES] = 20.0
-        data[CONF_DEVICE_MIN_OFF_MINUTES] = 5.0
-        hass.config_entries.async_update_subentry(entry, subentry, data=data)
-        migrated += 1
+            min_on = min_off = 0.0
+
+        if min_on <= 0:
+            data[CONF_DEVICE_MIN_ON_MINUTES] = 20.0
+            min_on = 20.0
+            changed = True
+        # Convert the v1.5.7 default 20/5 profile to the requested 20/20 profile.
+        if min_off <= 0 or (abs(min_on - 20.0) < 1e-9 and abs(min_off - 5.0) < 1e-9):
+            data[CONF_DEVICE_MIN_OFF_MINUTES] = 20.0
+            changed = True
+        if data.get(CONF_DEVICE_STOP_PERSISTENCE_MINUTES) in (None, ""):
+            data[CONF_DEVICE_STOP_PERSISTENCE_MINUTES] = 20.0
+            changed = True
+
+        if changed:
+            hass.config_entries.async_update_subentry(entry, subentry, data=data)
+            migrated += 1
     return migrated
 
 
