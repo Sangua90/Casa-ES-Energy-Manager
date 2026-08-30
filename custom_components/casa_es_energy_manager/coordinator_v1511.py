@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from homeassistant.util import dt as dt_util
+
 from .coordinator_v1510 import CasaESEnergyCoordinator as V1510Coordinator
 from .managed_device_flow_v15 import (
     CONF_THERMAL_BASE_TEMP_C,
@@ -69,7 +71,7 @@ class CasaESEnergyCoordinator(V1510Coordinator):
     async def _async_update_data(self) -> dict[str, Any]:
         data = await super()._async_update_data()
         targets: list[dict[str, Any]] = []
-        now = __import__("homeassistant.util.dt", fromlist=["now"]).now()
+        now = dt_util.now()
         for raw in data.get("managed_device_configs") or []:
             if str(raw.get("device_type") or "") != "thermal_storage":
                 continue
