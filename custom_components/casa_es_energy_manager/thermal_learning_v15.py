@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any
 
 from homeassistant.helpers.storage import Store
@@ -14,6 +15,7 @@ MIN_SAMPLE_SECONDS = 20.0
 MAX_SAMPLE_SECONDS = 900.0
 MAX_PASSIVE_LOSS_C_PER_H = 2.0
 MIN_HEATING_GAIN_C_PER_H = 0.05
+RECENT_DRAW_DAYS = 7
 
 
 def _f(value: Any) -> float | None:
@@ -86,6 +88,10 @@ class ThermalLearnerV15:
             if res_power and res_rate and res_rate > 0
             else None
         )
+        profile["recent_7d_expected_draw_c"] = round(
+            self.expected_draw_c_recent(subentry_id, dt_util.now().hour, 24), 2
+        )
+        profile["recent_7d_days"] = self.recent_draw_days(subentry_id)
         return profile
 
     def expected_draw_c(self, subentry_id: str, start_hour: int, end_hour: int = 24) -> float:
@@ -98,6 +104,61 @@ class ThermalLearnerV15:
             if samples > 0:
                 total += max(float(bucket.get("mean_drop_c", 0.0)), 0.0)
         return total
+
+    def _recent_draw_map(self, subentry_id: str) -> dict[str, Any]:
+        profile = self.data.get("devices", {}).get(subentry_id, {})
+        recent = profile.get("recent_draw_by_day", {}) if isinstance(profile, dict) else {}
+        return recent if isinstance(recent, dict) else {}
+
+    def recent_draw_days(self, subentry_id: str) -> int:
+        now = dt_util.now().date()
+        cutoff = now - timedelta(days=RECENT_DRAW_DAYS - 1)
+        days = 0
+        for day in self._recent_draw_map(subentry_id):
+            try:
+                parsed = dt_util.parse_date(day)
+            except (TypeError, ValueError):
+                parsed = None
+            if parsed is not None and cutoff <= parsed <= now:
+                days += 1
+        return days
+
+    def expected_draw_c_recent(
+        self, subentry_id: str, start_hour: int, end_hour: int = 24
+    ) -> float:
+        """Return the mean daily draw-induced temperature drop over the last 7 days."""
+        now = dt_util.now().date()
+        cutoff = now - timedelta(days=RECENT_DRAW_DAYS - 1)
+        totals: list[float] = []
+        for day, day_data in self._recent_draw_map(subentry_id).items():
+            try:
+                parsed = dt_util.parse_date(day)
+            except (TypeError, ValueError):
+                parsed = None
+            if parsed is None or parsed < cutoff or parsed > now or not isinstance(day_data, dict):
+                continue
+            total = 0.0
+            for hour in range(max(start_hour, 0), min(end_hour, 24)):
+                total += max(float(day_data.get(str(hour), 0.0) or 0.0), 0.0)
+            totals.append(total)
+        if not totals:
+            return 0.0
+        return sum(totals) / len(totals)
+
+    @staticmethod
+    def _prune_recent_draws(dev: dict[str, Any], now_date: Any) -> None:
+        recent = dev.setdefault("recent_draw_by_day", {})
+        if not isinstance(recent, dict):
+            dev["recent_draw_by_day"] = {}
+            return
+        cutoff = now_date - timedelta(days=RECENT_DRAW_DAYS - 1)
+        for day in list(recent):
+            try:
+                parsed = dt_util.parse_date(day)
+            except (TypeError, ValueError):
+                parsed = None
+            if parsed is None or parsed < cutoff or parsed > now_date:
+                recent.pop(day, None)
 
     async def async_observe(self, devices: list[dict[str, Any]]) -> None:
         now = dt_util.now()
@@ -137,8 +198,9 @@ class ThermalLearnerV15:
             rate = delta * 3600.0 / elapsed
             dev = self.data.setdefault("devices", {}).setdefault(
                 subentry_id,
-                {"draw_by_hour": {}},
+                {"draw_by_hour": {}, "recent_draw_by_day": {}},
             )
+            self._prune_recent_draws(dev, now.date())
 
             heating = bool(previous.get("heating")) and bool(current.get("heating"))
             boost = bool(previous.get("boost")) and bool(current.get("boost"))
@@ -163,15 +225,19 @@ class ThermalLearnerV15:
                     changed = True
                 elif loss_rate > MAX_PASSIVE_LOSS_C_PER_H:
                     hour = str(now.hour)
+                    drop = max(-delta, 0.0)
                     hourly = dev.setdefault("draw_by_hour", {})
                     bucket = hourly.setdefault(hour, {"days": 0, "mean_drop_c": 0.0})
                     old_n = int(bucket.get("days", 0))
                     new_n = old_n + 1
-                    drop = max(-delta, 0.0)
                     bucket["mean_drop_c"] = float(bucket.get("mean_drop_c", 0.0)) + (
                         drop - float(bucket.get("mean_drop_c", 0.0))
                     ) / new_n
                     bucket["days"] = new_n
+
+                    recent = dev.setdefault("recent_draw_by_day", {})
+                    day_bucket = recent.setdefault(now.date().isoformat(), {})
+                    day_bucket[hour] = float(day_bucket.get(hour, 0.0) or 0.0) + drop
                     changed = True
 
         for subentry_id in set(self._last) - active_ids:
