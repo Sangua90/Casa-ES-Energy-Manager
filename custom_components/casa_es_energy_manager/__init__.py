@@ -16,7 +16,7 @@ from .const import (
     DOMAIN,
     SUBENTRY_TYPE_MANAGED_DEVICE,
 )
-from .coordinator_v1511 import CasaESEnergyCoordinator
+from .coordinator_v1512 import CasaESEnergyCoordinator
 
 PLATFORMS: list[Platform] = [
     Platform.SENSOR,
