@@ -8,7 +8,7 @@ from homeassistant.config_entries import ConfigEntry, ConfigSubentryFlow
 from homeassistant.core import callback
 
 from .const import SUBENTRY_TYPE_MANAGED_DEVICE, SUBENTRY_TYPE_MONITORED_LOAD
-from .managed_device_flow_v158 import ManagedDeviceSubentryFlow
+from .managed_device_flow_v1513 import ManagedDeviceSubentryFlow
 from .monitored_load_flow import MonitoredLoadSubentryFlow as LegacyMonitoredLoadSubentryFlow
 from .monitored_load_flow_v157 import MonitoredLoadSubentryFlow as V157MonitoredLoadSubentryFlow
 
