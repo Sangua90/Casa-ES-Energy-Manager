@@ -8,13 +8,14 @@ from homeassistant.const import STATE_OFF, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.exceptions import HomeAssistantError
 
 from .const import (
-    CONF_DEVICE_CLIMATE_GROUP_ENTITIES,
     CONF_DEVICE_ENTITY,
     CONF_DEVICE_TYPE,
     DEVICE_MODE_AUTO,
     DEVICE_TYPE_CLIMATE,
 )
 from .coordinator_v1512 import CasaESEnergyCoordinator as V1512Coordinator
+
+CONF_DEVICE_CLIMATE_GROUP_ENTITIES = "climate_group_entities"
 
 
 class CasaESEnergyCoordinator(V1512Coordinator):
@@ -27,10 +28,7 @@ class CasaESEnergyCoordinator(V1512Coordinator):
 
     @staticmethod
     def _climate_state_active(state: Any) -> bool:
-        return bool(
-            state is not None
-            and state.state not in (STATE_OFF, STATE_UNKNOWN, STATE_UNAVAILABLE)
-        )
+        return bool(state is not None and state.state not in (STATE_OFF, STATE_UNKNOWN, STATE_UNAVAILABLE))
 
     def _configured_climate_groups(self) -> dict[str, tuple[str, list[str]]]:
         groups: dict[str, tuple[str, list[str]]] = {}
@@ -59,48 +57,31 @@ class CasaESEnergyCoordinator(V1512Coordinator):
                 await super()._async_call_entity_control(entity_id, turn_on)
             except Exception as err:
                 errors[entity_id] = str(err)
-
-        # Service calls are blocking, but integrations may publish state just after
-        # returning. Re-read the actual HA states and retry only mismatching members.
-        mismatched: list[str] = []
-        for entity_id in entities:
-            active = self._climate_state_active(self.hass.states.get(entity_id))
-            if active != turn_on:
-                mismatched.append(entity_id)
-        for entity_id in list(mismatched):
+        mismatched = [
+            entity_id for entity_id in entities
+            if self._climate_state_active(self.hass.states.get(entity_id)) != turn_on
+        ]
+        for entity_id in mismatched:
             try:
                 await super()._async_call_entity_control(entity_id, turn_on)
             except Exception as err:
                 errors[entity_id] = str(err)
-
         states = {
-            entity_id: (
-                self.hass.states.get(entity_id).state
-                if self.hass.states.get(entity_id) is not None
-                else "missing"
-            )
+            entity_id: (self.hass.states.get(entity_id).state if self.hass.states.get(entity_id) is not None else "missing")
             for entity_id in entities
         }
         verified = all(
             self._climate_state_active(self.hass.states.get(entity_id)) == turn_on
             for entity_id in entities
         )
-        return {
-            "target": service,
-            "verified": verified,
-            "states": states,
-            "errors": errors,
-        }
+        return {"target": service, "verified": verified, "states": states, "errors": errors}
 
     async def _async_call_entity_control(self, entity_id: str, turn_on: bool) -> None:
         group = self._configured_climate_groups().get(entity_id)
         if group is None:
             await super()._async_call_entity_control(entity_id, turn_on)
             return
-
         subentry_id, entities = group
-        # Generic real control reaches this method only for an Auto decision.
-        # Override/manual mode therefore remains completely free for the user.
         if self.device_modes.get(subentry_id, DEVICE_MODE_AUTO) != DEVICE_MODE_AUTO:
             return
         result = await self._async_call_group(entities, turn_on)
@@ -117,34 +98,24 @@ class CasaESEnergyCoordinator(V1512Coordinator):
         diagnostics: list[dict[str, Any]] = []
         for primary, (subentry_id, entities) in self._configured_climate_groups().items():
             states = {
-                entity_id: (
-                    self.hass.states.get(entity_id).state
-                    if self.hass.states.get(entity_id) is not None
-                    else "missing"
-                )
+                entity_id: (self.hass.states.get(entity_id).state if self.hass.states.get(entity_id) is not None else "missing")
                 for entity_id in entities
             }
-            active = [
-                entity_id
-                for entity_id in entities
-                if self._climate_state_active(self.hass.states.get(entity_id))
-            ]
-            diagnostics.append(
-                {
-                    "subentry_id": subentry_id,
-                    "primary_entity": primary,
-                    "entities": entities,
-                    "states": states,
-                    "active_count": len(active),
-                    "total_count": len(entities),
-                    "all_on": len(active) == len(entities),
-                    "all_off": len(active) == 0,
-                    "synchronized": len(active) in (0, len(entities)),
-                    "management_mode": self.device_modes.get(subentry_id, DEVICE_MODE_AUTO),
-                    "last_auto_target_on": self._v1513_group_last_target.get(subentry_id),
-                    "last_command_result": self._v1513_group_last_result.get(subentry_id),
-                }
-            )
+            active = [entity_id for entity_id in entities if self._climate_state_active(self.hass.states.get(entity_id))]
+            diagnostics.append({
+                "subentry_id": subentry_id,
+                "primary_entity": primary,
+                "entities": entities,
+                "states": states,
+                "active_count": len(active),
+                "total_count": len(entities),
+                "all_on": len(active) == len(entities),
+                "all_off": len(active) == 0,
+                "synchronized": len(active) in (0, len(entities)),
+                "management_mode": self.device_modes.get(subentry_id, DEVICE_MODE_AUTO),
+                "last_auto_target_on": self._v1513_group_last_target.get(subentry_id),
+                "last_command_result": self._v1513_group_last_result.get(subentry_id),
+            })
         data["v1513_climate_groups"] = {
             "manual_mode_independent": True,
             "auto_mode_group_control": True,
