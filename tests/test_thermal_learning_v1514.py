@@ -15,9 +15,12 @@ pkg.__path__ = [str(ROOT)]
 sys.modules[PACKAGE] = pkg
 
 ha = types.ModuleType("homeassistant")
+ha.__path__ = []
 ha_helpers = types.ModuleType("homeassistant.helpers")
+ha_helpers.__path__ = []
 ha_storage = types.ModuleType("homeassistant.helpers.storage")
 ha_util = types.ModuleType("homeassistant.util")
+ha_util.__path__ = []
 ha_dt = types.ModuleType("homeassistant.util.dt")
 
 
@@ -34,9 +37,12 @@ class Store:
 
 _clock = {"now": datetime(2026, 9, 2, 7, 0, tzinfo=timezone.utc)}
 ha_dt.now = lambda: _clock["now"]
-ha_dt.parse_date = lambda value: datetime.fromisoformat(value).date()
+ha_dt.parse_date = lambda value: datetime.fromisoformat(str(value)).date()
 ha_storage.Store = Store
+ha_helpers.storage = ha_storage
 ha_util.dt = ha_dt
+ha.helpers = ha_helpers
+ha.util = ha_util
 sys.modules["homeassistant"] = ha
 sys.modules["homeassistant.helpers"] = ha_helpers
 sys.modules["homeassistant.helpers.storage"] = ha_storage
@@ -46,8 +52,8 @@ sys.modules["homeassistant.util.dt"] = ha_dt
 spec = importlib.util.spec_from_file_location(
     f"{PACKAGE}.thermal_learning_v15", ROOT / "thermal_learning_v15.py"
 )
-thermal = importlib.util.module_from_spec(spec)
 assert spec and spec.loader
+thermal = importlib.util.module_from_spec(spec)
 sys.modules[f"{PACKAGE}.thermal_learning_v15"] = thermal
 spec.loader.exec_module(thermal)
 
