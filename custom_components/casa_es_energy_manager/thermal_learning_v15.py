@@ -11,10 +11,10 @@ from homeassistant.util import dt as dt_util
 STORE_VERSION = 1
 SCHEMA_VERSION = 1
 SAVE_EVERY = 24
-MIN_SAMPLE_SECONDS = 20.0
-MAX_SAMPLE_SECONDS = 900.0
+MAX_SAMPLE_SECONDS = 43_200.0
 MAX_PASSIVE_LOSS_C_PER_H = 2.0
 MIN_HEATING_GAIN_C_PER_H = 0.05
+MIN_DRAW_DROP_C = 0.4
 RECENT_DRAW_DAYS = 7
 
 
@@ -45,6 +45,11 @@ class ThermalLearnerV15:
             f"casa_es_energy_manager.{entry_id}.thermal_profiles",
         )
         self.data: dict[str, Any] = {"schema_version": SCHEMA_VERSION, "devices": {}}
+        # Baselines are intentionally kept until temperature or operating state
+        # changes. The coordinator refreshes every few seconds while the Ariston
+        # temperature normally changes much more slowly; replacing the baseline
+        # on every refresh would make every observation interval too short and
+        # prevent thermal learning entirely.
         self._last: dict[str, dict[str, Any]] = {}
         self._dirty = 0
 
@@ -160,6 +165,33 @@ class ThermalLearnerV15:
             if parsed is None or parsed < cutoff or parsed > now_date:
                 recent.pop(day, None)
 
+    @staticmethod
+    def _record_draw(
+        dev: dict[str, Any], now: Any, drop: float, while_heating: bool
+    ) -> None:
+        hour = str(now.hour)
+        hourly = dev.setdefault("draw_by_hour", {})
+        bucket = hourly.setdefault(hour, {"days": 0, "mean_drop_c": 0.0})
+        old_n = int(bucket.get("days", 0))
+        new_n = old_n + 1
+        bucket["mean_drop_c"] = float(bucket.get("mean_drop_c", 0.0)) + (
+            drop - float(bucket.get("mean_drop_c", 0.0))
+        ) / new_n
+        bucket["days"] = new_n
+
+        recent = dev.setdefault("recent_draw_by_day", {})
+        day_bucket = recent.setdefault(now.date().isoformat(), {})
+        day_bucket[hour] = float(day_bucket.get(hour, 0.0) or 0.0) + drop
+
+        dev["draw_events"] = int(dev.get("draw_events", 0)) + 1
+        if while_heating:
+            dev["draw_events_while_heating"] = int(
+                dev.get("draw_events_while_heating", 0)
+            ) + 1
+        dev["last_draw_at"] = now.isoformat()
+        dev["last_draw_drop_c"] = round(drop, 3)
+        dev["last_draw_while_heating"] = bool(while_heating)
+
     async def async_observe(self, devices: list[dict[str, Any]]) -> None:
         now = dt_util.now()
         changed = False
@@ -179,7 +211,6 @@ class ThermalLearnerV15:
                 self._last.pop(subentry_id, None)
                 continue
 
-            previous = self._last.get(subentry_id)
             current = {
                 "at": now,
                 "temp": temp,
@@ -187,20 +218,45 @@ class ThermalLearnerV15:
                 "boost": bool(device.get("thermal_boost_active")),
                 "power_w": _f(device.get("current_power_w")),
             }
-            self._last[subentry_id] = current
+            previous = self._last.get(subentry_id)
             if not previous:
+                self._last[subentry_id] = current
+                continue
+
+            # A source-state transition starts a fresh baseline. This prevents a
+            # temperature change spanning OFF->PDC or PDC->Boost from being
+            # attributed to the wrong source.
+            if (
+                bool(previous.get("heating")) != bool(current.get("heating"))
+                or bool(previous.get("boost")) != bool(current.get("boost"))
+            ):
+                self._last[subentry_id] = current
+                continue
+
+            # Keep the timestamp of the last actual temperature change. Ariston
+            # commonly reports quantized temperatures, so identical 5-second
+            # refreshes must not erase the useful elapsed interval.
+            delta = temp - float(previous["temp"])
+            if abs(delta) < 0.001:
                 continue
 
             elapsed = (now - previous["at"]).total_seconds()
-            if elapsed < MIN_SAMPLE_SECONDS or elapsed > MAX_SAMPLE_SECONDS:
+            self._last[subentry_id] = current
+            if elapsed <= 0 or elapsed > MAX_SAMPLE_SECONDS:
                 continue
-            delta = temp - float(previous["temp"])
+
             rate = delta * 3600.0 / elapsed
             dev = self.data.setdefault("devices", {}).setdefault(
                 subentry_id,
                 {"draw_by_hour": {}, "recent_draw_by_day": {}},
             )
             self._prune_recent_draws(dev, now.date())
+            dev["temperature_change_samples"] = int(
+                dev.get("temperature_change_samples", 0)
+            ) + 1
+            dev["last_temperature_change_at"] = now.isoformat()
+            dev["last_temperature_delta_c"] = round(delta, 3)
+            dev["last_temperature_rate_c_per_h"] = round(rate, 3)
 
             heating = bool(previous.get("heating")) and bool(current.get("heating"))
             boost = bool(previous.get("boost")) and bool(current.get("boost"))
@@ -215,29 +271,28 @@ class ThermalLearnerV15:
                     _mean_update(dev, "heat_pump_c_per_h", rate)
                     if power is not None and power > 20:
                         _mean_update(dev, "heat_pump_mean_power_w", power)
+                dev["heating_gain_samples"] = int(dev.get("heating_gain_samples", 0)) + 1
                 changed = True
                 continue
 
-            if not heating and not boost and delta < 0:
+            if not boost and delta < 0:
                 loss_rate = -rate
-                if 0 < loss_rate <= MAX_PASSIVE_LOSS_C_PER_H:
-                    _mean_update(dev, "standby_loss_c_per_h", loss_rate)
-                    changed = True
-                elif loss_rate > MAX_PASSIVE_LOSS_C_PER_H:
-                    hour = str(now.hour)
-                    drop = max(-delta, 0.0)
-                    hourly = dev.setdefault("draw_by_hour", {})
-                    bucket = hourly.setdefault(hour, {"days": 0, "mean_drop_c": 0.0})
-                    old_n = int(bucket.get("days", 0))
-                    new_n = old_n + 1
-                    bucket["mean_drop_c"] = float(bucket.get("mean_drop_c", 0.0)) + (
-                        drop - float(bucket.get("mean_drop_c", 0.0))
-                    ) / new_n
-                    bucket["days"] = new_n
+                drop = max(-delta, 0.0)
 
-                    recent = dev.setdefault("recent_draw_by_day", {})
-                    day_bucket = recent.setdefault(now.date().isoformat(), {})
-                    day_bucket[hour] = float(day_bucket.get(hour, 0.0) or 0.0) + drop
+                # A slow fall while idle is standby loss. A faster fall is a hot
+                # water draw. If the native PDC is already running, a negative
+                # temperature change still means demand exceeded heating input,
+                # so it must be learned as a draw instead of being discarded.
+                if not heating and 0 < loss_rate <= MAX_PASSIVE_LOSS_C_PER_H:
+                    _mean_update(dev, "standby_loss_c_per_h", loss_rate)
+                    dev["passive_loss_samples"] = int(
+                        dev.get("passive_loss_samples", 0)
+                    ) + 1
+                    changed = True
+                elif drop >= MIN_DRAW_DROP_C and (
+                    heating or loss_rate > MAX_PASSIVE_LOSS_C_PER_H
+                ):
+                    self._record_draw(dev, now, drop, heating)
                     changed = True
 
         for subentry_id in set(self._last) - active_ids:
