@@ -28,10 +28,41 @@ class CasaESEnergyCoordinator(V1513Coordinator):
         self.thermal_learner = ThermalLearnerV1515(hass, entry.entry_id)
         self._thermal_stalled_since: dict[str, Any] = {}
         self._thermal_stalled_retries: dict[str, int] = {}
+        self._thermal_main_entity_commands_blocked = 0
 
     def _clear_stalled_thermal(self, subentry_id: str) -> None:
         self._thermal_stalled_since.pop(subentry_id, None)
         self._thermal_stalled_retries.pop(subentry_id, None)
+
+    def _configured_thermal_main_entities(self) -> set[str]:
+        """Return water-heater entities that Casa ES must never turn on/off."""
+        entities: set[str] = set()
+        for subentry in self.entry.subentries.values():
+            data = subentry.data
+            if str(data.get(CONF_DEVICE_TYPE) or "") != DEVICE_TYPE_THERMAL:
+                continue
+            entity_id = str(data.get(CONF_DEVICE_ENTITY) or "")
+            if entity_id:
+                entities.add(entity_id)
+        return entities
+
+    async def _async_call_entity_control(self, entity_id: str, turn_on: bool) -> None:
+        """Hard firewall: thermal main entity is never managed as an on/off load.
+
+        The Ariston must stay continuously available in its native heat-pump mode.
+        Casa ES is allowed to manage only the dedicated Boost path (plus the
+        temperature setpoint needed for that Boost), never water_heater turn_on/
+        turn_off through generic managed-load control.
+        """
+        if entity_id in self._configured_thermal_main_entities():
+            self._thermal_main_entity_commands_blocked += 1
+            self._last_thermal_action = "main_entity_on_off_blocked"
+            self._last_thermal_reason = (
+                f"Comando generico {'ON' if turn_on else 'OFF'} bloccato su {entity_id}: "
+                "il boiler resta sempre sotto controllo nativo; Casa ES gestisce solo Boost."
+            )
+            return
+        await super()._async_call_entity_control(entity_id, turn_on)
 
     async def _async_apply_thermal_control(self, data: dict[str, Any], now: Any) -> bool:
         """Recover a Casa ES-owned Boost that is ON in HA but not really heating."""
@@ -98,8 +129,8 @@ class CasaESEnergyCoordinator(V1513Coordinator):
             if not boost_entity or not entity_id:
                 continue
 
-            # Re-arm the Ariston command sequence. Some integrations can expose
-            # BOOST=on before the appliance actually starts heating.
+            # Re-arm only the dedicated Boost path. This never uses generic
+            # water_heater turn_on/turn_off on the main Ariston entity.
             await self._set_boost(boost_entity, False)
             await self._set_water_temperature(entity_id, target)
             await self._set_boost(boost_entity, True)
@@ -114,3 +145,14 @@ class CasaESEnergyCoordinator(V1513Coordinator):
             return True
 
         return await super()._async_apply_thermal_control(data, now)
+
+    async def _async_update_data(self) -> dict[str, Any]:
+        data = await super()._async_update_data()
+        data["v1515_thermal_main_entity_policy"] = {
+            "main_entity_always_native": True,
+            "generic_on_off_blocked": True,
+            "casa_es_controls_boost_only": True,
+            "blocked_generic_commands": self._thermal_main_entity_commands_blocked,
+            "thermal_main_entities": sorted(self._configured_thermal_main_entities()),
+        }
+        return data
