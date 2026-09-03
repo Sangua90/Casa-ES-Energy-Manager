@@ -16,6 +16,9 @@ MAX_PASSIVE_LOSS_C_PER_H = 2.0
 MIN_HEATING_GAIN_C_PER_H = 0.05
 MIN_DRAW_DROP_C = 0.4
 RECENT_DRAW_DAYS = 7
+DRAW_HEATING_START_WINDOW_SECONDS = 2_700.0
+DRAW_HEATING_START_MIN_ABOVE_BASE_C = 1.0
+DRAW_HEATING_START_SYNTHETIC_DROP_C = 1.0
 
 
 def _f(value: Any) -> float | None:
@@ -32,6 +35,21 @@ def _mean_update(bucket: dict[str, Any], key: str, value: float) -> None:
     new_n = old_n + 1
     bucket[key] = old_mean + (value - old_mean) / new_n
     bucket[n_key] = new_n
+
+
+def _mean_remove(bucket: dict[str, Any], key: str, value: float) -> None:
+    """Remove one previously-added sample from an online mean."""
+    n_key = f"{key}_samples"
+    old_n = int(bucket.get(n_key, 0))
+    if old_n <= 0 or key not in bucket:
+        return
+    if old_n == 1:
+        bucket.pop(key, None)
+        bucket.pop(n_key, None)
+        return
+    old_mean = float(bucket.get(key, 0.0))
+    bucket[key] = (old_mean * old_n - value) / (old_n - 1)
+    bucket[n_key] = old_n - 1
 
 
 class ThermalLearnerV15:
@@ -51,6 +69,10 @@ class ThermalLearnerV15:
         # on every refresh would make every observation interval too short and
         # prevent thermal learning entirely.
         self._last: dict[str, dict[str, Any]] = {}
+        # A 1 C quantized Ariston step can look deceptively slow even when caused
+        # by a shower. Keep the latest negative step briefly so a subsequent
+        # native-PDC start can reclassify it as a draw instead of standby loss.
+        self._recent_negative: dict[str, dict[str, Any]] = {}
         self._dirty = 0
 
     async def async_load(self) -> None:
@@ -192,6 +214,64 @@ class ThermalLearnerV15:
         dev["last_draw_drop_c"] = round(drop, 3)
         dev["last_draw_while_heating"] = bool(while_heating)
 
+    def _infer_draw_from_native_heating_start(
+        self,
+        subentry_id: str,
+        device: dict[str, Any],
+        current: dict[str, Any],
+        now: Any,
+    ) -> bool:
+        """Infer a draw when native PDC starts well above its base target.
+
+        Ariston temperature is quantized. A shower may therefore appear as one
+        slow -1 C step and get provisionally learned as standby loss. If native
+        heating starts shortly afterwards while the tank is still at least 1 C
+        above the configured base temperature, demand is a much stronger
+        explanation than normal thermostat recovery. Reclassify the recent step.
+        """
+        if bool(current.get("boost")) or not bool(current.get("heating")):
+            return False
+
+        base_temp = _f(device.get("thermal_base_temperature_c"))
+        if base_temp is None:
+            base_temp = 53.0
+        current_temp = _f(current.get("temp"))
+        if current_temp is None or current_temp < base_temp + DRAW_HEATING_START_MIN_ABOVE_BASE_C:
+            return False
+
+        dev = self.data.setdefault("devices", {}).setdefault(
+            subentry_id,
+            {"draw_by_hour": {}, "recent_draw_by_day": {}},
+        )
+        self._prune_recent_draws(dev, now.date())
+
+        candidate = self._recent_negative.get(subentry_id)
+        drop = DRAW_HEATING_START_SYNTHETIC_DROP_C
+        reclassified = False
+        if candidate is not None:
+            elapsed = (now - candidate["at"]).total_seconds()
+            if 0 <= elapsed <= DRAW_HEATING_START_WINDOW_SECONDS:
+                drop = max(float(candidate.get("drop", 0.0)), MIN_DRAW_DROP_C)
+                if candidate.get("classified_passive"):
+                    passive_rate = float(candidate.get("loss_rate", 0.0))
+                    _mean_remove(dev, "standby_loss_c_per_h", passive_rate)
+                    dev["passive_loss_samples"] = max(
+                        int(dev.get("passive_loss_samples", 0)) - 1,
+                        0,
+                    )
+                    reclassified = True
+
+        self._record_draw(dev, now, drop, True)
+        dev["draw_events_inferred_from_heating_start"] = int(
+            dev.get("draw_events_inferred_from_heating_start", 0)
+        ) + 1
+        dev["last_draw_inference"] = "native_pdc_started_above_base"
+        dev["last_draw_reclassified_passive"] = reclassified
+        dev["last_draw_heating_start_temp_c"] = round(current_temp, 2)
+        dev["last_draw_base_temp_c"] = round(base_temp, 2)
+        self._recent_negative.pop(subentry_id, None)
+        return True
+
     async def async_observe(self, devices: list[dict[str, Any]]) -> None:
         now = dt_util.now()
         changed = False
@@ -204,11 +284,13 @@ class ThermalLearnerV15:
             active_ids.add(subentry_id)
             if device.get("management_mode") != "auto" or device.get("learning_excluded"):
                 self._last.pop(subentry_id, None)
+                self._recent_negative.pop(subentry_id, None)
                 continue
 
             temp = _f(device.get("thermal_current_temperature_c"))
             if temp is None:
                 self._last.pop(subentry_id, None)
+                self._recent_negative.pop(subentry_id, None)
                 continue
 
             current = {
@@ -223,13 +305,21 @@ class ThermalLearnerV15:
                 self._last[subentry_id] = current
                 continue
 
-            # A source-state transition starts a fresh baseline. This prevents a
-            # temperature change spanning OFF->PDC or PDC->Boost from being
-            # attributed to the wrong source.
-            if (
-                bool(previous.get("heating")) != bool(current.get("heating"))
-                or bool(previous.get("boost")) != bool(current.get("boost"))
-            ):
+            heating_changed = bool(previous.get("heating")) != bool(current.get("heating"))
+            boost_changed = bool(previous.get("boost")) != bool(current.get("boost"))
+            if heating_changed or boost_changed:
+                # Before resetting the baseline, use a native-PDC start above the
+                # base target to rescue a quantized shower drop that otherwise
+                # looked like slow passive cooling.
+                if (
+                    not bool(previous.get("heating"))
+                    and bool(current.get("heating"))
+                    and not bool(current.get("boost"))
+                    and self._infer_draw_from_native_heating_start(
+                        subentry_id, device, current, now
+                    )
+                ):
+                    changed = True
                 self._last[subentry_id] = current
                 continue
 
@@ -263,6 +353,7 @@ class ThermalLearnerV15:
             power = current.get("power_w")
 
             if heating and rate >= MIN_HEATING_GAIN_C_PER_H:
+                self._recent_negative.pop(subentry_id, None)
                 if boost:
                     _mean_update(dev, "resistance_c_per_h", rate)
                     if power is not None and power > 20:
@@ -279,24 +370,34 @@ class ThermalLearnerV15:
                 loss_rate = -rate
                 drop = max(-delta, 0.0)
 
-                # A slow fall while idle is standby loss. A faster fall is a hot
-                # water draw. If the native PDC is already running, a negative
-                # temperature change still means demand exceeded heating input,
-                # so it must be learned as a draw instead of being discarded.
+                # A slow fall while idle is provisionally standby loss. Keep the
+                # observation briefly so an imminent native-PDC start above base
+                # can reclassify it as a hot-water draw. A faster fall or any fall
+                # while heating is immediately a draw.
                 if not heating and 0 < loss_rate <= MAX_PASSIVE_LOSS_C_PER_H:
                     _mean_update(dev, "standby_loss_c_per_h", loss_rate)
                     dev["passive_loss_samples"] = int(
                         dev.get("passive_loss_samples", 0)
                     ) + 1
+                    self._recent_negative[subentry_id] = {
+                        "at": now,
+                        "drop": drop,
+                        "loss_rate": loss_rate,
+                        "classified_passive": True,
+                    }
                     changed = True
                 elif drop >= MIN_DRAW_DROP_C and (
                     heating or loss_rate > MAX_PASSIVE_LOSS_C_PER_H
                 ):
                     self._record_draw(dev, now, drop, heating)
+                    self._recent_negative.pop(subentry_id, None)
                     changed = True
+            elif delta > 0:
+                self._recent_negative.pop(subentry_id, None)
 
         for subentry_id in set(self._last) - active_ids:
             self._last.pop(subentry_id, None)
+            self._recent_negative.pop(subentry_id, None)
 
         if changed:
             self._dirty += 1
