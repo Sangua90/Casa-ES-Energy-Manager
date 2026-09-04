@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from homeassistant.util import dt as dt_util
+
 from .thermal_learning_v15 import (
     DRAW_HEATING_START_MIN_ABOVE_BASE_C,
     DRAW_HEATING_START_WINDOW_SECONDS,
@@ -130,7 +132,7 @@ class ThermalLearnerV1515(ThermalLearnerV15):
         episode.setdefault("passive_rates", []).append(loss_rate)
 
     async def async_observe(self, devices: list[dict[str, Any]]) -> None:
-        now = __import__("homeassistant.util.dt", fromlist=["now"]).now()
+        now = dt_util.now()
         for device in devices:
             self._track_quantized_episode(device, now)
 
