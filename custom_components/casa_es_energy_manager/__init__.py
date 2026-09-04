@@ -16,7 +16,7 @@ from .const import (
     DOMAIN,
     SUBENTRY_TYPE_MANAGED_DEVICE,
 )
-from .coordinator_v1515 import CasaESEnergyCoordinator
+from .coordinator_v1517 import CasaESEnergyCoordinator
 
 PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BINARY_SENSOR, Platform.BUTTON, Platform.SELECT, Platform.SWITCH]
 CONF_DEVICE_STOP_PERSISTENCE_MINUTES = "stop_persistence_minutes"
