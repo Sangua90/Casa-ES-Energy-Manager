@@ -1,0 +1,26 @@
+name: Publish 1.5.18 release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/release-1.5.18.yml
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view 1.5.18 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
+          gh release create 1.5.18 \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "a5ee8de895ed23df529ea3365f6acad4102cfeb0" \
+            --title "Casa ES Energy Manager 1.5.18" \
+            --notes "Adaptive boiler target now adds a fixed +2 °C storage buffer on top of the learned target, while preserving the configured 65 °C normal ceiling and 53 °C native heat-pump base target."
