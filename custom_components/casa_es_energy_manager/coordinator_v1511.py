@@ -3,8 +3,9 @@
 The native boiler/heat-pump remains responsible for the configured base
 comfort temperature. Casa ES uses resistance Boost only above that base and
 chooses the extra storage temperature from the last seven days of observed DHW
-draws, with a small comfort margin. The normal configured maximum remains a
-hard ceiling for ordinary surplus harvesting.
+draws, with a comfort margin plus an additional storage buffer to compensate
+for thermal decay when useful PV arrives early in the day. The normal
+configured maximum remains a hard ceiling for ordinary surplus harvesting.
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ from .managed_device_flow_v15 import (
 
 THERMAL_DRAW_WINDOW_DAYS = 7
 THERMAL_DRAW_MARGIN_C = 2.0
+THERMAL_ADAPTIVE_STORAGE_BUFFER_C = 2.0
 THERMAL_DRAW_CAP_C = 10.0
 THERMAL_RECENT_MIN_DAYS = 1
 
@@ -58,12 +60,14 @@ class CasaESEnergyCoordinator(V1510Coordinator):
             source = "bootstrap storico in attesa della finestra 7 giorni"
 
         expected_draw = min(max(recent_draw, 0.0), THERMAL_DRAW_CAP_C)
-        target = min(base + expected_draw + THERMAL_DRAW_MARGIN_C, normal_max)
+        learned_target = base + expected_draw + THERMAL_DRAW_MARGIN_C
+        target = min(learned_target + THERMAL_ADAPTIVE_STORAGE_BUFFER_C, normal_max)
         target = max(target, base)
 
         reason = (
             f"base PDC {base:.1f}°C; {source}: prelievo previsto "
-            f"{expected_draw:.1f}°C; margine {THERMAL_DRAW_MARGIN_C:.1f}°C; "
+            f"{expected_draw:.1f}°C; margine comfort {THERMAL_DRAW_MARGIN_C:.1f}°C; "
+            f"buffer accumulo {THERMAL_ADAPTIVE_STORAGE_BUFFER_C:.1f}°C; "
             f"massimo normale {normal_max:.1f}°C"
         )
         return round(target, 1), reason
@@ -91,12 +95,14 @@ class CasaESEnergyCoordinator(V1510Coordinator):
                         self.thermal_learner.expected_draw_c_recent(subentry_id, now.hour, 24), 2
                     ),
                     "margin_c": THERMAL_DRAW_MARGIN_C,
+                    "adaptive_storage_buffer_c": THERMAL_ADAPTIVE_STORAGE_BUFFER_C,
                     "reason": reason,
                 }
             )
         data["v1511_thermal_adaptive_target"] = {
             "window_days": THERMAL_DRAW_WINDOW_DAYS,
             "margin_c": THERMAL_DRAW_MARGIN_C,
+            "adaptive_storage_buffer_c": THERMAL_ADAPTIVE_STORAGE_BUFFER_C,
             "base_owned_by_native_heat_pump": True,
             "resistance_boost_only_above_base": True,
             "normal_max_is_ceiling": True,
