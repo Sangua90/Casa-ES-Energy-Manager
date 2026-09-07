@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from homeassistant.util import dt as dt_util
+
 from .coordinator_v1517 import CasaESEnergyCoordinator as V1517Coordinator
 from .managed_device_flow_v15 import (
     CONF_THERMAL_BASE_TEMP_C,
@@ -83,11 +85,12 @@ class CasaESEnergyCoordinator(V1517Coordinator):
         diag["margin_c"] = THERMAL_DRAW_MARGIN_C
         diag["adaptive_storage_buffer_c"] = THERMAL_ADAPTIVE_STORAGE_BUFFER_C
 
+        now = dt_util.now()
         for target in diag.get("targets") or []:
             subentry_id = str(target.get("subentry_id") or "")
             expected = round(
                 self.thermal_learner.expected_draw_c_recent(
-                    subentry_id, __import__("homeassistant.util.dt", fromlist=["now"]).now().hour, 24
+                    subentry_id, now.hour, 24
                 ),
                 2,
             )
