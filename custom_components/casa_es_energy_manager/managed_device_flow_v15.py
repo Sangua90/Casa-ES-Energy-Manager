@@ -109,7 +109,7 @@ def _thermal_schema(current: dict[str, Any]) -> vol.Schema:
             CONF_THERMAL_NORMAL_MAX_TEMP_C,
             default=current.get(CONF_THERMAL_NORMAL_MAX_TEMP_C, 65.0),
         )
-    ] = base._num(45, 72, 0.5, "°C")
+    ] = base._num(45, 75, 0.5, "°C")
     fields[
         vol.Required(
             CONF_THERMAL_HARD_MAX_TEMP_C,
