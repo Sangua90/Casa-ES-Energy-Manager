@@ -31,6 +31,7 @@ _POWER = {"unit": UnitOfPower.WATT, "device_class": SensorDeviceClass.POWER, "st
 _ENERGY = {"unit": UnitOfEnergy.KILO_WATT_HOUR, "device_class": SensorDeviceClass.ENERGY, "state_class": SensorStateClass.MEASUREMENT}
 
 SENSORS = (
+    CasaESSensorDescription(key="dhw_plan_status", name="Piano acqua calda", attributes_key="dhw_plan_devices"),
     CasaESSensorDescription(key="solar_after_house_w", name="FV misurato dopo i carichi casa", **_POWER),
     CasaESSensorDescription(key="pv_potential_w", name="Potenza FV potenziale stimata", **_POWER),
     CasaESSensorDescription(key="pv_potential_gap_w", name="Potenziale FV non sfruttato stimato", **_POWER),
