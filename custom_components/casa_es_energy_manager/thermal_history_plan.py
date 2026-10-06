@@ -128,6 +128,8 @@ def reconstruct(history: dict[str, list[dict]], entities: dict[str, str],
     gains = [delta / hours for _, delta, hours, flags, mode, temp in raw
              if delta > 0 and flags[0] and not flags[1] and mode.upper() == "GREEN"
              and temp <= 53 and 0.5 <= delta / hours <= 10]
+    boost_gains = sorted(delta / hours for _, delta, hours, flags, _, _ in raw
+                         if delta > 0 and flags[1] and 1 <= delta / hours <= 20)
     draws: dict[str, dict[str, float]] = {}
     for local, delta, hours, flags, _, _ in raw:
         if delta >= 0 or flags[1]:
@@ -156,6 +158,8 @@ def reconstruct(history: dict[str, list[dict]], entities: dict[str, str],
             "standby_loss_c_per_h": round(standby, 3),
             "green_c_per_h": round(median(gains), 3) if len(gains) >= 3 else 2.0,
             "green_rate_samples": len(gains), "completed_observed_days": len(complete),
+            "boost_c_per_h": round(min(boost_gains[(len(boost_gains) - 1) // 4], 12), 3) if len(boost_gains) >= 6 else 4.0,
+            "boost_rate_samples": len(boost_gains),
             "invalid_days": sorted(invalid_days), "masked_draws_possible": True,
             "source": "home_assistant_recorder", "updated_at": now.isoformat()}
 
@@ -215,12 +219,19 @@ def plan(model: dict, now: datetime, current: float, base: float, maximum: float
     green_target = min(target, green_maximum)
     rate = max(number(model.get("green_c_per_h"), 2), 0.5)
     lead_hours = max((green_target - current) / rate, 0) * 1.25 + 0.5
+    boost_rate = min(max(number(model.get("boost_c_per_h"), 4), 1), 12)
+    boost_heating_hours = max((target - current) / boost_rate, 0) * 1.25 + 0.5
+    recovery_lead_hours = boost_heating_hours + 0.75  # 45 minutes to answer.
     return {"target_c": round(target, 1), "required_uncapped_c": round(required, 1),
             "green_target_c": round(green_target, 1), "reserve_c": round(margin, 1),
             "expected_remaining_draw_c": round(remaining, 2),
             "deadline": deadline.isoformat(), "green_lead_hours": round(lead_hours, 2),
             "green_start": datetime.fromtimestamp(deadline.timestamp() - lead_hours * 3600, now.tzinfo).isoformat(),
             "green_due": hours <= lead_hours, "capacity_shortfall_c": round(max(required - maximum, 0), 1),
+            "boost_c_per_h": boost_rate, "boost_heating_hours": round(boost_heating_hours, 2),
+            "recovery_request_lead_hours": round(recovery_lead_hours, 2),
+            "recovery_request_at": datetime.fromtimestamp(deadline.timestamp() - recovery_lead_hours * 3600, now.tzinfo).isoformat(),
+            "recovery_request_due": hours <= recovery_lead_hours,
             "green_shortfall_c": round(max(required - green_maximum, 0), 1),
             "tomorrow_hourly_draw_c": [round(x, 2) for x in tomorrow],
             "tomorrow_reserve_c": round(tomorrow_margin, 1),

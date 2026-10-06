@@ -61,8 +61,32 @@ Only owned Boost can be stopped, returning the setpoint to the native base.
 
 An Ariston Lydos Hybrid heat pump cannot provide a 60–65 C tank using GREEN
 alone. If the predicted need exceeds 53 C without solar surplus, the plan
-exposes the shortfall. This change does not authorize night/grid resistance
-or promise that any number of showers fits in a finite tank.
+exposes the shortfall. Grid resistance requires an explicit, expiring
+approval from the configured Home Assistant Companion phone notification.
+It cannot promise that any number of showers fits in a finite tank.
+
+## Actionable recovery notification (1.5.21)
+
+Configure `thermal_notify_service` as a single `notify.mobile_app_*` service.
+The controller asks before the predicted use when current surplus cannot
+cover Boost and GREEN cannot reach the planned reserve target. Advance notice
+is computed from the current temperature gap and the observed Boost heating
+rate, with 25% extra heating time, 30 minutes heating margin and 45 minutes to
+answer. The observed rate is the lower quartile of at least six valid positive
+Boost temperature intervals, capped at 12 C/h; fallback is a conservative
+4 C/h. Precharge target changes also recompute notification timing.
+
+YES authorizes one recovery up to the requested temperature, also from grid,
+while retaining electrical, main-power, manual-mode and legionella protections.
+The time limit matches the estimated heating duration, at least 2 hours and
+at most 24 hours. NO or no answer never authorizes grid resistance; independent
+solar Boost continues under the existing surplus rules. Replies expire after
+45 minutes and unique tokens prevent old or duplicate buttons from restarting
+heating. Decisions are persisted and deduplicated for the requested usage day.
+Owned grid Boost stops at target, expiration or electrical protection, returning
+to the native base. Restart recovers owned grid Boost for safe cleanup. The
+notification cannot guarantee timely comfort if the user replies late or
+electrical protections prevent heating.
 
 The sensor **Piano acqua calda** exposes per-boiler target, deadline, GREEN
 start time, tomorrow's demand, reserve, bootstrap status and capacity shortfall.

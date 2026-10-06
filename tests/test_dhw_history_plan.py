@@ -31,6 +31,17 @@ def history():
 
 
 class HistoryTests(unittest.TestCase):
+    def test_boost_rate_learned_without_legionella_intervals(self):
+        start = NOW.replace(day=4, hour=18)
+        h = {ENTITIES[role]: [row(start, "on" if role != "legionella" else "off")]
+             for role in ("heating", "boost", "legionella")}
+        h[ENTITIES["water"]] = [row(start + timedelta(minutes=20 * i), "BOOST", 46 + 2 * i) for i in range(8)]
+        model = dhw.reconstruct(h, ENTITIES, NOW)
+        self.assertEqual(model["boost_c_per_h"], 6)
+        self.assertEqual(model["boost_rate_samples"], 7)
+        h[ENTITIES["legionella"]] = [row(start, "on")]
+        self.assertEqual(dhw.reconstruct(h, ENTITIES, NOW)["boost_rate_samples"], 0)
+
     def test_rome_dst_days_and_local_draw_bucket(self):
         try:
             rome = ZoneInfo("Europe/Rome")

@@ -16,8 +16,10 @@ from .managed_device_flow_v15 import (
     CONF_THERMAL_BASE_TEMP_C, CONF_THERMAL_NORMAL_MAX_TEMP_C,
     CONF_THERMAL_HARD_MAX_TEMP_C, CONF_THERMAL_BOOST_ENTITY,
     CONF_THERMAL_HEATING_ENTITY, CONF_THERMAL_LEGIONELLA_ENTITY,
+    CONF_THERMAL_NOTIFY_SERVICE,
 )
 from .thermal_history_plan import number, temperature, reconstruct, plan, forecast
+from .dhw_recovery_consent import DHWRecoveryConsent
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -66,13 +68,77 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         self.thermal_learner = RecorderThermalProfiles(self)
         self._dhw_boost_last_stop = {}
         self._dhw_store = Store(hass, 1, f"casa_es_energy_manager.{entry.entry_id}.dhw_recorder_profiles")
+        self._dhw_consent_store = Store(hass, 1, f"casa_es_energy_manager.{entry.entry_id}.dhw_recovery_consent")
+        self._dhw_consent = DHWRecoveryConsent()
+        self._dhw_notify_error = None
 
     async def async_initialize(self) -> None:
+        self._dhw_consent = DHWRecoveryConsent(await self._dhw_consent_store.async_load())
+        # Recover ownership even after an expired approval so our Boost can be
+        # stopped safely on the next update; do not adopt manual appliance Boost.
+        for sid, record in self._dhw_consent.records.items():
+            if record.get("owned"):
+                self._thermal_boost_owned.add(sid)
+                self._thermal_target_c[sid] = record["target_c"]
         saved = await self._dhw_store.async_load()
         if isinstance(saved, dict) and isinstance(saved.get("models"), dict):
             self._dhw_models = saved["models"]
         await super().async_initialize()
+        self.entry.async_on_unload(self.hass.bus.async_listen(
+            "mobile_app_notification_action", self._async_dhw_notification_action))
         await self._refresh_dhw_history()
+
+    async def _async_dhw_notification_action(self, event) -> None:
+        sid = self._dhw_consent.answer(event.data.get("action"), dt_util.now())
+        if sid is None:
+            return
+        await self._dhw_consent_store.async_save(self._dhw_consent.records)
+        await self.async_request_refresh()
+
+    async def _async_request_dhw_recovery(self, item, result, now) -> None:
+        service = str(item.get(CONF_THERMAL_NOTIFY_SERVICE, ""))
+        if not service.startswith("notify.mobile_app_"):
+            return
+        service = service.split(".", 1)[1]
+        if not self.hass.services.has_service("notify", service):
+            self._dhw_notify_error = "Servizio notifica telefono non disponibile"
+            return
+        deadline = dt_util.parse_datetime(result["deadline"])
+        hours = (deadline.timestamp() - now.timestamp()) / 3600
+        if not result["recovery_request_due"] or hours < -1:
+            return
+        if result["green_shortfall_c"] <= 1 or result["target_c"] <= item["thermal_current_temperature_c"] + 1:
+            return
+        sid = str(item["subentry_id"])
+        record = self._dhw_consent.request(sid, result, now)
+        if record is None:
+            return
+        await self._dhw_consent_store.async_save(self._dhw_consent.records)
+        token = record["token"]
+        try:
+            await self.hass.services.async_call("notify", service, {
+                "title": "Energy Meter · acqua calda",
+                "message": (f"Per gli usi previsti alle {deadline.strftime('%H:%M')} e la riserva "
+                            f"del {deadline.strftime('%d/%m')} servono circa {result['target_c']:.0f} °C. Il surplus FV ora non basta. "
+                            "Vuoi autorizzare la resistenza, anche usando elettricità dalla rete? "
+                            f"Tempo prudente di riscaldamento: {result['boost_heating_hours']:.1f} ore. "
+                            "Il consenso vale per un solo recupero e scade al termine del tempo previsto. "
+                            "Rispondi entro 45 minuti; senza risposta resta GREEN."),
+                "data": {"tag": f"casa_es_dhw_{sid}", "actions": [
+                    {"action": f"CASA_ES_DHW_YES_{token}", "title": "Sì, usa la resistenza", "authenticationRequired": True},
+                    {"action": f"CASA_ES_DHW_NO_{token}", "title": "No"}]}}, blocking=True)
+            self._dhw_notify_error = None
+        except Exception as err:
+            record["status"] = "notification_failed"
+            record["retry_at"] = (now + timedelta(minutes=30)).isoformat()
+            self._dhw_notify_error = type(err).__name__
+            await self._dhw_consent_store.async_save(self._dhw_consent.records)
+            _LOGGER.warning("DHW notification unavailable: %s", type(err).__name__)
+
+    async def _stop_owned_thermal_boost(self, item, reason, now) -> None:
+        await super()._stop_owned_thermal_boost(item, reason, now)
+        self._dhw_consent.finish(str(item.get("subentry_id", "")))
+        await self._dhw_consent_store.async_save(self._dhw_consent.records)
 
     async def _refresh_dhw_history(self) -> None:
         now = dt_util.now()
@@ -171,6 +237,13 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
             result["target_c"] = round(min(required, maximum), 1)
             result["capacity_shortfall_c"] = round(max(required - maximum, 0), 1)
             result["green_shortfall_c"] = round(max(required - 53, 0), 1)
+            deadline = dt_util.parse_datetime(result["deadline"])
+            heating_hours = max((result["target_c"] - current) / result["boost_c_per_h"], 0) * 1.25 + 0.5
+            lead_hours = heating_hours + 0.75
+            result.update(boost_heating_hours=round(heating_hours, 2),
+                          recovery_request_lead_hours=round(lead_hours, 2),
+                          recovery_request_at=(deadline - timedelta(hours=lead_hours)).isoformat(),
+                          recovery_request_due=deadline.timestamp() - now.timestamp() <= lead_hours * 3600)
         self._dhw_plans[subentry_id] = result
         return result["target_c"], (
             f"storico HA: prelievo residuo {result['expected_remaining_draw_c']:.1f}°C; "
@@ -208,6 +281,9 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
                 self._thermal_target_c.pop(sid, None)
                 self._dhw_boost_last_stop[sid] = now
                 owned = False
+                if self._dhw_consent.records.get(sid, {}).get("owned"):
+                    self._dhw_consent.finish(sid)
+                    await self._dhw_consent_store.async_save(self._dhw_consent.records)
             current = item.get("thermal_current_temperature_c")
             if current is None:
                 continue
@@ -217,6 +293,15 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
                 continue
             target, reason = self._thermal_target(item, data, now)
             result = self._dhw_plans[sid]
+            approved_target = self._dhw_consent.approved_target(sid, now)
+            grid_cycle = self._dhw_consent.records.get(sid, {}).get("owned", False)
+            if approved_target is not None:
+                # A reply authorizes only the temperature shown in that request.
+                target = min(target, approved_target)
+                if owned and not grid_cycle:
+                    self._dhw_consent.records[sid]["owned"] = True
+                    grid_cycle = True
+                    await self._dhw_consent_store.async_save(self._dhw_consent.records)
             nominal = max(number(item.get("nominal_power_w"), 1200), 1)
             allocation = data.get("v156_battery_allocation") or self._battery_allocation(data)
             # Export is measured surplus remaining after house AND battery.
@@ -240,10 +325,11 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
                              and phase_margin >= (0 if owned else nominal)
                              and number(data.get("inverter_headroom_w"), 0) >= (0 if owned else nominal))
             pv_ok = available >= nominal * (0.8 if owned else 0.95) and soc_ok and electrical_ok
+            approved_ok = approved_target is not None and electrical_ok
             entity_id = str(item.get("entity_id", ""))
             boost_id = str(item.get(CONF_THERMAL_BOOST_ENTITY, ""))
             if owned:
-                if current >= target - 0.3 or not pv_ok:
+                if current >= target - 0.3 or not electrical_ok or (grid_cycle and approved_target is None) or not (pv_ok or approved_ok):
                     await self._stop_owned_thermal_boost(item, "Target raggiunto o FV misurato insufficiente; ritorno GREEN", now)
                     self._dhw_boost_last_stop[sid] = now
                     return True
@@ -256,7 +342,11 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
             last_stop = self._dhw_boost_last_stop.get(sid)
             min_off = max(number(item.get("min_off_minutes"), 5), 5)
             restart_ok = last_stop is None or (now - last_stop).total_seconds() >= min_off * 60
-            if pv_ok and restart_ok and target > current + 0.5:
+            if (pv_ok or approved_ok) and restart_ok and target > current + 0.5:
+                if approved_ok:
+                    record = self._dhw_consent.records[sid]
+                    record["owned"] = True
+                    await self._dhw_consent_store.async_save(self._dhw_consent.records)
                 await self._set_water_temperature(entity_id, target)
                 await self._set_boost(boost_id, True)
                 self._thermal_boost_owned.add(sid)
@@ -265,6 +355,11 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
                 self._last_thermal_reason = reason
                 self._last_thermal_at = now.isoformat()
                 return True
+            if approved_target is not None and current >= target - 0.3:
+                self._dhw_consent.finish(sid)
+                await self._dhw_consent_store.async_save(self._dhw_consent.records)
+            if not pv_ok and approved_target is None:
+                await self._async_request_dhw_recovery(item, result, now)
             # GREEN is capped at the manufacturer's heat-pump limit. It never
             # promises >53 C or quietly substitutes grid-powered resistance.
             water = self.hass.states.get(entity_id)
@@ -284,6 +379,9 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         await self._refresh_dhw_history()
         data = await super()._async_update_data()
         data["dhw_history_error"] = self._dhw_history_error
+        data["dhw_notification_error"] = self._dhw_notify_error
+        data["dhw_recovery_decisions"] = {sid: {k: v for k, v in record.items() if k != "token"}
+                                          for sid, record in self._dhw_consent.records.items()}
         data["dhw_plans"] = self._dhw_plans
         data["dhw_history_models"] = self._dhw_models
         diag = data.get("v1511_thermal_adaptive_target")
