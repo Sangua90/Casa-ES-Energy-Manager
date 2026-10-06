@@ -116,6 +116,14 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(len(result["tomorrow_hourly_draw_c"]), 24)
         self.assertIn("2026-10-07", result["deadline"])
 
+    def test_after_last_use_reserve_and_all_draws_belong_to_tomorrow(self):
+        model = {"draw_by_day": {"2026-09-15": {"5": 100}, "2026-09-22": {"5": 100},
+                                  "2026-09-23": {"19": 8, "20": 4}, "2026-09-30": {"19": 6, "20": 4}}}
+        result = dhw.plan(model, NOW.replace(hour=23), 45, 53, 65)
+        self.assertEqual(result["reserve_c"], result["tomorrow_reserve_c"])
+        self.assertAlmostEqual(result["expected_remaining_draw_c"], sum(result["tomorrow_hourly_draw_c"]), places=1)
+        self.assertIn("2026-10-07T19", result["deadline"])
+
     def test_repeated_draws_same_hour_sum_before_forecast(self):
         m = {"draw_by_day": {"2026-10-04": {"18": 12}, "2026-10-05": {"18": 8}}}
         hourly, _ = dhw.forecast(m, NOW)

@@ -202,8 +202,9 @@ def plan(model: dict, now: datetime, current: float, base: float, maximum: float
     else:
         hour = next((h for h, demand in enumerate(tomorrow) if demand >= 0.4), 7)
         deadline = (now + timedelta(days=1)).replace(hour=hour, minute=0, second=0, microsecond=0)
+        margin = tomorrow_margin
     hours = max((deadline.timestamp() - now.timestamp()) / 3600, 0)
-    remaining = sum(hourly[now.hour:]) if upcoming else sum(tomorrow[:deadline.hour + 1])
+    remaining = sum(hourly[now.hour:]) if upcoming else sum(tomorrow)
     if upcoming:
         # Do not predict the same current-hour draw twice after it happened.
         observed_this_hour = number(model.get("today_draw", {}).get(str(now.hour)), 0)
