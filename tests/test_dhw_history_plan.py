@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 import importlib.util
 from pathlib import Path
 import unittest
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("dhw", ROOT / "custom_components/casa_es_energy_manager/thermal_history_plan.py")
@@ -30,6 +31,20 @@ def history():
 
 
 class HistoryTests(unittest.TestCase):
+    def test_rome_dst_days_and_local_draw_bucket(self):
+        try:
+            rome = ZoneInfo("Europe/Rome")
+        except ZoneInfoNotFoundError:
+            self.skipTest("tzdata required on Windows")
+        start = datetime(2026, 10, 25, 0, tzinfo=rome)
+        end = datetime(2026, 10, 26, 0, tzinfo=rome)
+        self.assertEqual(end.timestamp() - start.timestamp(), 25 * 3600)
+        h = {ENTITIES[role]: [row(start, "off")] for role in ("heating", "boost", "legionella")}
+        h[ENTITIES["water"]] = [row(start, "GREEN", 53), row(start.replace(hour=18), "GREEN", 53),
+                                row(start.replace(hour=18, minute=10), "GREEN", 45), row(end, "GREEN", 45)]
+        model = dhw.reconstruct(h, ENTITIES, end.replace(hour=12))
+        self.assertIn("18", model["draw_by_day"]["2026-10-25"])
+
     def test_passive_cooling_is_not_a_draw(self):
         model = dhw.reconstruct(history(), ENTITIES, NOW)
         self.assertNotIn("1", model["draw_by_day"]["2026-10-04"])

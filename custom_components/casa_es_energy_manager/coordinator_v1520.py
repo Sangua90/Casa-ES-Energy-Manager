@@ -109,9 +109,14 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
             unit = self.hass.config.units.temperature_unit
             for subentry_id, mapping in mappings.items():
                 model = reconstruct(rows, mapping, now, unit)
+                model["entity_ids"] = mapping
+                model["timezone"] = str(now.tzinfo)
                 if not rows.get(mapping["water"]):
                     model["history_unavailable"] = True
-                previous_days = self._dhw_models.get(subentry_id, {}).get("draw_by_day", {})
+                previous_model = self._dhw_models.get(subentry_id, {})
+                previous_days = (previous_model.get("draw_by_day", {})
+                                 if previous_model.get("entity_ids") == mapping and previous_model.get("timezone") == str(now.tzinfo)
+                                 else {})
                 # Retain completed recorder-derived aggregates when recorder has
                 # shorter raw retention; replace overlapping dates, never add.
                 cutoff = (now - timedelta(days=30)).date().isoformat()

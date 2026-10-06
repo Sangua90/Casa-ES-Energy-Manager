@@ -5,6 +5,7 @@
     "@Sangua90"
   ],
   "config_flow": true,
+  "dependencies": ["recorder"],
   "documentation": "https://github.com/Sangua90/Casa-ES-Energy-Manager",
   "integration_type": "hub",
   "iot_class": "calculated",

@@ -76,6 +76,12 @@ early GREEN, owned/manual Boost, battery/grid supply, phase protection and
 main boiler power protection. Existing static version-contract failures also
 occur on the original 1.5.19 repository; they are not runtime verification.
 
+Local results: 22 new tests pass, including the 25-hour Europe/Rome autumn DST
+day. GitHub's existing Home Assistant 2026.8.3 import/form runtime smoke and HACS
+validation passed on the first patch. The recorder dependency is declared for
+startup ordering and hassfest. The original 11 static failures are left visible
+rather than changing unrelated climate policy or weakening historical tests.
+
 Install the reviewed integration files using the existing HACS/custom integration
 workflow and restart/reload Home Assistant. This source change alone does not
 update an installation still running 1.5.18. Verify recorder retention, the
