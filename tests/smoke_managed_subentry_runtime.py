@@ -44,6 +44,11 @@ async def _run() -> None:
     # Exercise the actual ConfigFlow class used by Home Assistant, including its
     # MRO/subentry registration, not only the helper mixin in isolation.
     supported = CasaESEnergyManagerConfigFlow.async_get_supported_subentry_types(None)
+    for profile_type in ("house_climate", "climate_room"):
+        profile = supported[profile_type]()
+        profile.init_step = SOURCE_USER
+        fields = _serialize(await profile.async_step_user(None))
+        assert fields
 
     managed_type = supported[SUBENTRY_TYPE_MANAGED_DEVICE]
     assert issubclass(managed_type, ManagedDeviceSubentryFlow)
@@ -143,3 +148,4 @@ async def _run() -> None:
 
 if __name__ == "__main__":
     asyncio.run(_run())
+

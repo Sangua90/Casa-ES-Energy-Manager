@@ -2,7 +2,7 @@
 
 DOMAIN = "casa_es_energy_manager"
 NAME = "Casa ES Energy Manager"
-VERSION = "1.5.21"
+VERSION = "1.5.22"
 
 # Core electrical sensors.
 CONF_PV_POWER_SENSOR = "pv_power_sensor"
@@ -215,3 +215,4 @@ CURTAILMENT_POTENTIAL_GAP_W = 400.0
 CURTAILMENT_GRID_IMPORT_MAX_W = 150.0
 
 UPDATE_INTERVAL_SECONDS = 5
+

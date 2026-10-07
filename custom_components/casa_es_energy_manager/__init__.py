@@ -16,7 +16,7 @@ from .const import (
     DOMAIN,
     SUBENTRY_TYPE_MANAGED_DEVICE,
 )
-from .coordinator_v1520 import CasaESEnergyCoordinator
+from .coordinator_v1522 import CasaESEnergyCoordinator
 
 PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BINARY_SENSOR, Platform.BUTTON, Platform.SELECT, Platform.SWITCH]
 CONF_DEVICE_STOP_PERSISTENCE_MINUTES = "stop_persistence_minutes"
@@ -76,3 +76,4 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if unloaded:
         hass.data[DOMAIN].pop(entry.entry_id, None)
     return unloaded
+

@@ -1,0 +1,19 @@
+name: Energy Meter Engine
+version: "0.1.0"
+slug: energy_meter_engine
+description: Pianificazione termica, apprendimento e diagnostica per Energy Meter
+arch:
+  - amd64
+  - aarch64
+startup: application
+boot: auto
+init: false
+ports:
+  8099/tcp: null
+options:
+  api_token: ""
+schema:
+  api_token: password
+watchdog: http://[HOST]:8099/health
+url: https://github.com/Sangua90/Casa-ES-Energy-Manager
+

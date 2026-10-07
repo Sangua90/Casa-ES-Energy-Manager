@@ -31,6 +31,10 @@ _POWER = {"unit": UnitOfPower.WATT, "device_class": SensorDeviceClass.POWER, "st
 _ENERGY = {"unit": UnitOfEnergy.KILO_WATT_HOUR, "device_class": SensorDeviceClass.ENERGY, "state_class": SensorStateClass.MEASUREMENT}
 
 SENSORS = (
+    CasaESSensorDescription(key="house_climate_status", name="Gestione clima casa", attributes_key="house_climate_rooms"),
+    CasaESSensorDescription(key="house_climate_gas_demand", name="Richiesta riscaldamento gas"),
+    CasaESSensorDescription(key="engine_state", name="Stato Engine", attributes_key="engine_recent_decisions"),
+    CasaESSensorDescription(key="house_climate_gas_demand_room_count", name="Stanze in richiesta riscaldamento"),
     CasaESSensorDescription(key="dhw_plan_status", name="Piano acqua calda", attributes_key="dhw_plan_devices"),
     CasaESSensorDescription(key="solar_after_house_w", name="FV misurato dopo i carichi casa", **_POWER),
     CasaESSensorDescription(key="pv_potential_w", name="Potenza FV potenziale stimata", **_POWER),
@@ -131,3 +135,4 @@ class CasaESEnergySensor(CoordinatorEntity[CasaESEnergyCoordinator], SensorEntit
             return None
         value = self.coordinator.data.get(self.description.attributes_key)
         return {"devices": value if isinstance(value, list) else []}
+
