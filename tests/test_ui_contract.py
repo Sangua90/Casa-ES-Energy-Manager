@@ -218,3 +218,10 @@ class TestUIContract(unittest.TestCase):
 if __name__ == "__main__":
     unittest.main()
 
+
+class EnergySensorMetadataTests(unittest.TestCase):
+    def test_forecasts_and_budgets_are_not_statistics_counters(self):
+        import ast
+        tree = ast.parse((INTEGRATION / "sensor.py").read_text(encoding="utf-8"))
+        energy = next(n.value for n in tree.body if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "_ENERGY" for t in n.targets))
+        self.assertNotIn("state_class", [k.value for k in energy.keys])

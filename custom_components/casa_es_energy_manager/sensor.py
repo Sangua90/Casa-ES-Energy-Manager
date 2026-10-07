@@ -28,7 +28,8 @@ class CasaESSensorDescription:
 
 
 _POWER = {"unit": UnitOfPower.WATT, "device_class": SensorDeviceClass.POWER, "state_class": SensorStateClass.MEASUREMENT}
-_ENERGY = {"unit": UnitOfEnergy.KILO_WATT_HOUR, "device_class": SensorDeviceClass.ENERGY, "state_class": SensorStateClass.MEASUREMENT}
+# Forecasts and remaining budgets are not measured cumulative energy counters.
+_ENERGY = {"unit": UnitOfEnergy.KILO_WATT_HOUR, "device_class": SensorDeviceClass.ENERGY}
 
 SENSORS = (
     CasaESSensorDescription(key="house_climate_status", name="Gestione clima casa", attributes_key="house_climate_rooms"),
