@@ -97,7 +97,7 @@ class ClimateRoomFlow(HouseClimateFlow):
                                         ("temperature_entity", ["sensor"], False), ("window_entity", ["binary_sensor"], False)):
             marker = vol.Optional(key, default=current[key]) if current.get(key) else vol.Optional(key)
             fields[marker] = selector.EntitySelector(selector.EntitySelectorConfig(domain=domains, multiple=multiple))
-        for key, default, bounds in (("base_temperature", 17, (10, 22, .5)), ("comfort_temperature", 21, (16, 26, .5)),
+        for key, default, bounds in (("base_temperature", 17, (10, 22, .5)), ("comfort_temperature", 21, (16, 22, .5)),
                                      ("cooling_temperature", 26, (20, 30, .5)), ("preheat_minutes", 90, (0, 240, 5)),
                                      ("heat_pump_cop", 3, (1, 7, .1)), ("nominal_power_w", 1200, (100, 10000, 50))):
             fields[vol.Required(key, default=current.get(key, default))] = num(*bounds)

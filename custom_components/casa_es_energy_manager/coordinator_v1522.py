@@ -247,6 +247,8 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
             if not is_owned and now.timestamp() - self._house_last_start < 120:
                 electrical = False
             solar = available + covered >= watts * (.8 if is_owned else .95)
+            if not solar and (allocation.get("below_target") or finite(data.get("grid_headroom_w"), 0) < (0 if is_owned else watts)):
+                electrical = False
             machine = room.get("machine", "none")
             machine_mode = self.house_machine_modes.get(machine, "manual")
             if machine_mode != "auto":

@@ -226,3 +226,46 @@ class ControlTests(unittest.IsolatedAsyncioTestCase):
         await c._async_house_plan(data, NOW)
         self.assertFalse(any(call.args[2]["entity_id"] == "climate.hp" for call in c.hass.services.async_call.call_args_list))
 
+    async def test_unknown_valve_action_cannot_prove_open_hydraulic_path(self):
+        c, house, _, data, states = self.setup_control()
+        house["enabled"] = True
+        states["climate.valve"].attributes["temperature"] = 21
+        data["grid_export_w"] = 0
+        await c._async_house_plan(data, NOW)
+        self.assertFalse(data["house_climate_gas_demand"])
+
+    async def test_strong_single_zone_requires_hydraulic_confirmation_and_open_delay(self):
+        c, house, _, data, states = self.setup_control()
+        house["enabled"] = True
+        data["grid_export_w"] = 0
+        states["climate.valve"].attributes.update(temperature=21, hvac_action="heating")
+        await c._async_house_plan(data, NOW)
+        self.assertFalse(data["house_climate_gas_demand"])
+        house["hydraulics_confirmed"] = False
+        await c._async_house_plan(data, NOW + timedelta(minutes=5))
+        self.assertFalse(data["house_climate_gas_demand"])
+        house["hydraulics_confirmed"] = True
+        await c._async_house_plan(data, NOW + timedelta(minutes=6))
+        self.assertTrue(data["house_climate_gas_demand"])
+
+    async def test_multisplit_incompatible_manual_head_blocks_start(self):
+        c, house, room, data, states = self.setup_control()
+        house["enabled"] = True
+        room["machine"] = "p1"
+        states["climate.other"] = SimpleNamespace(state="cool", attributes={"current_temperature": 23})
+        other = {"name": "Other", "reviewed": True, "manual_only": True,
+                 "machine": "p1", "heat_pump_entity": "climate.other"}
+        c._house_config = lambda: (house, [SimpleNamespace(data=room, subentry_id="one"),
+                                         SimpleNamespace(data=other, subentry_id="two")])
+        await c._async_house_plan(data, NOW)
+        self.assertFalse(any(call.args[2]["entity_id"] == "climate.hp" for call in c.hass.services.async_call.call_args_list))
+
+    async def test_machine_manual_does_not_stop_previously_owned_heat_pump(self):
+        c, house, _, data, states = self.setup_control()
+        house["enabled"] = True
+        c.house_machine_modes["salotto"] = "manual"
+        states["climate.hp"].state = "heat"
+        c._house_owned["climate.hp"] = {"mode": "heat", "target": 21, "at": (NOW - timedelta(minutes=30)).timestamp()}
+        await c._async_house_plan(data, NOW)
+        self.assertFalse(any(call.args[2]["entity_id"] == "climate.hp" for call in c.hass.services.async_call.call_args_list))
+
