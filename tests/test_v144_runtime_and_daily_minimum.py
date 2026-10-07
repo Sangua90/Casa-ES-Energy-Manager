@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import importlib.util
 from pathlib import Path
 import unittest
+from release_contract import release_chain_source, assert_release_version
 
 ROOT = Path(__file__).parents[1]
 COMPONENT = ROOT / "custom_components" / "casa_es_energy_manager"
@@ -81,7 +82,7 @@ class RuntimePersistenceContractTests(unittest.TestCase):
         source155 = (COMPONENT / "coordinator_v155.py").read_text(encoding="utf-8")
         source156 = (COMPONENT / "coordinator_v156.py").read_text(encoding="utf-8")
         source157 = (COMPONENT / "coordinator_v157.py").read_text(encoding="utf-8")
-        init_source = (COMPONENT / "__init__.py").read_text(encoding="utf-8")
+        init_source = release_chain_source(COMPONENT)
         self.assertIn("from .coordinator_v144 import CasaESEnergyCoordinator as V144Coordinator", source15)
         self.assertIn("class CasaESEnergyCoordinator(V144Coordinator)", source15)
         self.assertIn("from .coordinator_v15 import CasaESEnergyCoordinator as V15Coordinator", source151)
@@ -112,9 +113,9 @@ class RuntimePersistenceContractTests(unittest.TestCase):
     def test_version_is_157(self) -> None:
         manifest = (COMPONENT / "manifest.json").read_text(encoding="utf-8")
         const = (COMPONENT / "const.py").read_text(encoding="utf-8")
-        self.assertIn('"version": "1.5.7"', manifest)
-        self.assertIn('VERSION = "1.5.7"', const)
+        assert_release_version(self, COMPONENT, "1.5.7")
 
 
 if __name__ == "__main__":
     unittest.main()
+
