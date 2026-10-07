@@ -53,6 +53,15 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(result["source"], "economic_heat_pump")
         self.assertEqual(result["radiator_target"], 17)
 
+    def test_nominal_cop_does_not_authorize_cold_or_missing_weather(self):
+        room = {**self.room(), "heat_pump_cop": 3.83, "cop_policy": "nominal_guarded"}
+        for temperature in (None, -5, 6.9, 25):
+            cost = plan.heat_costs({"economics_confirmed": True, "outdoor_temperature": temperature}, room)
+            self.assertFalse(cost["economics_verified"])
+        cost = plan.heat_costs({"economics_confirmed": True, "outdoor_temperature": 7}, room)
+        self.assertTrue(cost["economics_verified"])
+        self.assertAlmostEqual(cost["cop_used"], 3.83 * .85)
+
     def test_unverified_cop_or_cost_never_select_grid_heat_pump(self):
         for house, room in (({"season": "winter", "allow_economic_grid": True}, self.room()),
                             ({"season": "winter", "allow_economic_grid": True, "economics_confirmed": True},

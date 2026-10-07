@@ -114,11 +114,18 @@ def heat_costs(house, room):
     efficiency = finite(house.get("gas_efficiency"), 0.9)
     cop = finite(room.get("heat_pump_cop"))
     gas_cost = gas_price / (gas_energy * efficiency) if gas_energy > 0 and 0 < efficiency <= 1 else None
-    hp_cost = electricity / cop if cop is not None and cop > 0 else None
-    return {"gas_eur_kwh_heat": gas_cost, "heat_pump_eur_kwh_heat": hp_cost,
+    nominal_policy = room.get("cop_policy") == "nominal_guarded"
+    outdoor = finite(house.get("outdoor_temperature"))
+    temperature_ok = not nominal_policy or outdoor is not None and 7 <= outdoor <= 24
+    # Nominal EN14511 data is not a measured cold-weather curve. Do not
+    # extrapolate below the reference conditions or invent learned COP.
+    effective_cop = cop * .85 if nominal_policy and cop is not None else cop
+    hp_cost = electricity / effective_cop if effective_cop is not None and effective_cop > 0 else None
+    return {"cop_used": effective_cop, "cop_basis": "nominal_with_15_percent_margin" if nominal_policy else "configured",
+            "cop_temperature_allowed": temperature_ok, "gas_eur_kwh_heat": gas_cost, "heat_pump_eur_kwh_heat": hp_cost,
             "break_even_cop": electricity / gas_cost if gas_cost else None,
             "economics_verified": bool(house.get("economics_confirmed") and room.get("cop_confirmed")
-                                       and gas_cost is not None and hp_cost is not None)}
+                                       and temperature_ok and gas_cost is not None and hp_cost is not None)}
 
 
 def room_plan(house, room, now, current, solar_available, electrical_ok):

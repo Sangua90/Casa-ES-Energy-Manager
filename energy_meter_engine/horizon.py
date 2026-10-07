@@ -42,7 +42,7 @@ def optimize(house, zones, models, now, energy):
             if deficit < .25 or not room.get("reviewed"):
                 continue
             priority = finite(room.get("priority"), 2) * deficit * (2 if occupied and not preparing else 1)
-            cost = heat_costs(house, room)
+            cost = heat_costs({**house, "outdoor_temperature": outdoor}, room)
             source = "off"
             # Budget is only certified overflow. Purchased energy requires
             # independently confirmed marginal prices and COP.
@@ -65,7 +65,10 @@ def optimize(house, zones, models, now, energy):
             if watts + increment > finite(energy.get("hvac_power_limit_w"), 3000):
                 continue
             needed = increment * .25 / 1000
-            if source != "gas" and needed > budget and not house.get("allow_economic_grid"):
+            allocation_cost = heat_costs({**house, "outdoor_temperature": outdoor_at(zone, at)}, room)
+            grid_allowed = bool(house.get("allow_economic_grid") and allocation_cost["economics_verified"]
+                                and allocation_cost["heat_pump_eur_kwh_heat"] < allocation_cost["gas_eur_kwh_heat"] * .95)
+            if source != "gas" and needed > budget and not grid_allowed:
                 continue
             watts += increment
             groups[group] = max(groups.get(group, 0), power)

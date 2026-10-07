@@ -154,7 +154,7 @@ class Engine:
                 deficit = max(projected - target if cooling else target - projected, 0)
                 minutes = deficit / conservative * 60
                 room["preheat_minutes"] = min(max(minutes * 1.25 + 15, 15), 480)
-            decision = room_plan(house, room, now, current, bool(zone.get("solar_available")), bool(zone.get("electrical_ok")))
+            decision = room_plan({**house, "outdoor_temperature": finite(zone.get("outdoor_temperature"))}, room, now, current, bool(zone.get("solar_available")), bool(zone.get("electrical_ok")))
             inertia = model.get("inertia", {})
             decision.update(overshoot_c=inertia.get("overshoot_c", 0) if inertia.get("samples", 0) >= 5 else 0,
                             model=model, preheat_minutes=room.get("preheat_minutes", 90),

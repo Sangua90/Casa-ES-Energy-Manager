@@ -106,6 +106,8 @@ class ClimateRoomFlow(HouseClimateFlow):
                                      ("cooling_temperature", 26, (20, 30, .5)), ("preheat_minutes", 90, (0, 480, 5)),
                                      ("heat_pump_cop", 3, (1, 7, .1)), ("nominal_power_w", 1200, (100, 10000, 50))):
             fields[vol.Required(key, default=current.get(key, default))] = num(*bounds)
+        fields[vol.Required("cop_policy", default=current.get("cop_policy", "nominal_guarded"))] = selector.SelectSelector(
+            selector.SelectSelectorConfig(options=[{"value": "nominal_guarded", "label": "Dato di targa con margine e limite di temperatura"}, {"value": "fixed_verified", "label": "Valore fisso verificato"}]))
         for key in ("reviewed", "manual_only", "cop_confirmed", "base_enabled"):
             fields[vol.Required(key, default=current.get(key, False))] = selector.BooleanSelector()
         fields[vol.Required("machine", default=current.get("machine", "none"))] = selector.SelectSelector(

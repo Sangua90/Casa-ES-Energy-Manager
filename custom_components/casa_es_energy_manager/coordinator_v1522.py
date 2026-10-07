@@ -247,6 +247,8 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         rooms = sorted(rooms, key=lambda r: -finite(r.data.get("priority"), 2))
         meter = self.hass.states.get(house.get("gas_meter_entity", ""))
         house["gas_meter_reading"] = finite(meter.state) if meter else None
+        outside = self.hass.states.get(house.get("outdoor_entity", ""))
+        house["outdoor_temperature"] = celsius(outside.state, outside.attributes.get("unit_of_measurement"), -40) if outside else None
         house["gas_mode"] = self.house_gas_mode
         house["machine_modes"] = self.house_machine_modes
         if house.get("weather_entity") and now.timestamp() - getattr(self, "_house_weather_last_at", 0) >= 3600:
