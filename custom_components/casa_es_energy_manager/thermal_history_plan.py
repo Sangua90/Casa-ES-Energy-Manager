@@ -186,14 +186,9 @@ def forecast(model: dict, day: datetime) -> tuple[list[float], float]:
     else:
         # Explicit bootstrap, never advertised as learned household demand.
         hourly[7], hourly[18] = 3.0, 6.0
-    # Positive historical residuals adapt the reserve; keep a 4.5 C floor.
-    # Unexpected visitors/showers need evidence from all days, not only a small
-    # same-weekday sample that can hide recent high-demand evenings.
-    observed_totals = [sum(max(number(v, 0), 0) for v in buckets.values())
-                       for buckets in days.values()]
-    errors = sorted(max(x - sum(hourly), 0) for x in observed_totals)
-    error = errors[int((len(errors) - 1) * 0.8)] if len(errors) >= 3 else 0
-    return hourly, min(4.5 + error, 8.0)
+    # User-requested trial: keep the additional reserve at 4 C, including
+    # tomorrow, rather than automatically increasing it from residual errors.
+    return hourly, 4.0
 
 
 def plan(model: dict, now: datetime, current: float, base: float, maximum: float,

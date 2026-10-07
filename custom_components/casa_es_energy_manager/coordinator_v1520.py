@@ -422,8 +422,8 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         data["dhw_history_models"] = self._dhw_models
         diag = data.get("v1511_thermal_adaptive_target")
         if isinstance(diag, dict):
-            diag.update(model="recorder_completed_demand_days", margin_c=4.5,
-                        adaptive_storage_buffer_c=0.0, adaptive_margin_cap_c=8.0,
+            diag.update(model="recorder_completed_demand_days", margin_c=4.0,
+                        adaptive_storage_buffer_c=0.0, adaptive_margin_cap_c=4.0,
                         history_source="home_assistant_recorder",
                         heat_pump_max_c=53.0, current_day_in_training=False)
         data["dhw_plan_devices"] = [{"subentry_id": sid, **value} for sid, value in self._dhw_plans.items()]

@@ -117,7 +117,7 @@ class PlanTests(unittest.TestCase):
     def test_limits_and_reserve_are_explicit(self):
         result = dhw.plan(self.model(), NOW.replace(hour=12), 40, 53, 60)
         self.assertLessEqual(result["target_c"], 60)
-        self.assertGreaterEqual(result["reserve_c"], 4.5)
+        self.assertEqual(result["reserve_c"], 4.0)
         self.assertGreater(result["capacity_shortfall_c"], 0)
         self.assertGreater(result["green_shortfall_c"], 0)
 
@@ -149,3 +149,11 @@ class PlanTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FixedReserveTrialTests(unittest.TestCase):
+    def test_high_demand_history_does_not_raise_trial_reserve(self):
+        model = {"draw_by_day": {(NOW-timedelta(days=d)).date().isoformat(): {"18": value} for d,value in enumerate([30,2,40,1,50,3],1)}}
+        result=dhw.plan(model,NOW,40,53,73)
+        self.assertEqual(result["reserve_c"],4.0)
+        self.assertEqual(result["tomorrow_reserve_c"],4.0)
