@@ -203,10 +203,14 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
             zones.append({"id": s.subentry_id, "config": r, "temperature": self._room_temperature(r),
                           "thermal_source": thermal_source, "contamination": contamination,
                           "solar_available": False, "electrical_ok": False})
-        self._house_engine_result = await async_plan(self.hass, house, zones, {
-            "pv_remaining_kwh": data.get("forecast_remaining_kwh"),
-            "battery_capacity_kwh": self._config("battery_capacity_kwh"),
-            "soc": data.get("battery_soc"), "target_soc": data.get("battery_target_soc")}, now)
+        if now.timestamp() - getattr(self, "_house_engine_last_at", 0) >= 60:
+            self._house_engine_result = await async_plan(self.hass, house, zones, {
+                "pv_remaining_kwh": data.get("forecast_energy_to_target_kwh"),
+                "battery_input_need_kwh": data.get("battery_input_energy_needed_kwh"),
+                "house_remaining_kwh": data.get("base_load_energy_to_target_kwh"),
+                "battery_capacity_kwh": self._config("battery_capacity_kwh"),
+                "soc": data.get("battery_soc"), "target_soc": (data.get("v156_battery_allocation") or {}).get("target_soc")}, now)
+            self._house_engine_last_at = now.timestamp()
         data["engine_state"] = self._house_engine_result.get("state", "DEGRADED")
         data["engine_reasons"] = self._house_engine_result.get("reasons", [])
         data["engine_recent_decisions"] = self._house_engine_result.get("recent_decisions", [])

@@ -36,6 +36,13 @@ class EngineTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 self.engine.plan({**self.payload(), **changes})
 
+    def test_verified_battery_input_need_includes_charging_losses(self):
+        payload = self.payload()
+        payload["energy"]["battery_input_need_kwh"] = 6.5
+        result = self.engine.plan(payload)
+        self.assertEqual(result["energy_budget"]["battery_need_kwh"], 6.5)
+        self.assertEqual(result["energy_budget"]["unallocated_kwh"], .5)
+
     def test_missing_forecast_is_degraded_without_disabling_room_planning(self):
         payload = self.payload()
         payload["energy"].pop("pv_remaining_kwh")

@@ -131,6 +131,14 @@ class CasaESEnergySensor(CoordinatorEntity[CasaESEnergyCoordinator], SensorEntit
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
+        if self.description.key == "engine_state":
+            return {"reasons": self.coordinator.data.get("engine_reasons", []),
+                    "energy_budget": self.coordinator.data.get("engine_energy_budget", {}),
+                    "recent_decisions": self.coordinator.data.get("engine_recent_decisions", [])}
+        if self.description.key == "house_climate_status":
+            return {"profile_ready": self.coordinator.data.get("house_climate_profile_ready", False),
+                    "error": self.coordinator.data.get("house_climate_error"),
+                    "rooms": self.coordinator.data.get("house_climate_rooms", [])}
         if not self.description.attributes_key:
             return None
         value = self.coordinator.data.get(self.description.attributes_key)

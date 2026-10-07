@@ -90,6 +90,11 @@ class Engine:
         soc, target = finite(energy.get("soc")), finite(energy.get("target_soc"))
         battery_need = (max(target - soc, 0) * capacity / 100
                         if capacity and soc is not None and target is not None else None)
+        # Prefer the integration's verified, same-horizon calculation, which
+        # already includes configured charge efficiency and dynamic SOC target.
+        battery_input_need = finite(energy.get("battery_input_need_kwh"))
+        if battery_input_need is not None and battery_input_need >= 0:
+            battery_need = battery_input_need
         if remaining is None:
             reasons.append("forecast_unavailable")
         if battery_need is None:
