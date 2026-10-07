@@ -93,6 +93,16 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         return [(sid, r) for sid, r in self._dhw_consent.records.items()
                 if r.get("status") == "pending" and dt_util.parse_datetime(r["expires"]).timestamp() > now.timestamp()]
 
+    async def async_resend_dhw_recovery(self):
+        # Explicit user action is required to reopen a declined/expired episode.
+        # Never reset an active recovery or adopt a manually started Boost.
+        for sid, record in list(self._dhw_consent.records.items()):
+            if record.get("status") not in ("declined", "expired", "notification_failed", "completed") or record.get("owned"):
+                continue
+            self._dhw_consent.records.pop(sid)
+        await self._dhw_consent_store.async_save(self._dhw_consent.records)
+        await self.async_request_refresh()
+
     async def async_answer_dhw_recovery(self, yes):
         pending = self.pending_dhw_recoveries()
         if len(pending) != 1:

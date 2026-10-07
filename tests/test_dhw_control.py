@@ -242,3 +242,22 @@ class PersistentConsentTests(unittest.IsolatedAsyncioTestCase):
         await c._async_sync_dhw_notices()
         self.assertEqual(c._dhw_consent.records["boiler"]["status"], "expired")
         self.assertIn("scaduta", c.hass.services.async_call.call_args.args[2]["message"])
+
+
+class ResendConsentTests(unittest.IsolatedAsyncioTestCase):
+    setup_control=ControlTests.setup_control
+    consent_control=PersistentConsentTests.consent_control
+    async def test_explicit_resend_reopens_declined_but_never_approves(self):
+        c=self.consent_control()
+        await c.async_answer_dhw_recovery(False)
+        await c.async_resend_dhw_recovery()
+        self.assertNotIn("boiler",c._dhw_consent.records)
+        c._set_boost.assert_not_awaited()
+        self.assertIsNone(c._dhw_consent.approved_target("boiler",NOW))
+    async def test_resend_preserves_pending_and_owned_recovery(self):
+        c=self.consent_control()
+        await c.async_resend_dhw_recovery()
+        self.assertEqual(c._dhw_consent.records['boiler']['status'],'pending')
+        c._dhw_consent.records['boiler'].update(status='completed',owned=True)
+        await c.async_resend_dhw_recovery()
+        self.assertIn('boiler',c._dhw_consent.records)
