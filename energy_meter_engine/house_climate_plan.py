@@ -39,14 +39,14 @@ def start_time(room, prefix, suffix, day):
 
 
 
-def occupancy(room, now):
+def occupancy(room, now, non_working_day=False):
     """A cross-midnight period belongs to the day on which it STARTED."""
     if room.get("manual_only", False):
         return False, False
     preheat = timedelta(minutes=finite(room.get("preheat_minutes"), 90))
     for offset in (-1, 0, 1):
         day = now.date() + timedelta(days=offset)
-        prefix = "weekend" if day.weekday() >= 5 else "weekday"
+        prefix = "weekend" if non_working_day or day.weekday() >= 5 else "weekday"
         for suffix in ("", "_second"):
             if not room.get(prefix + suffix + "_enabled", False):
                 continue
@@ -67,6 +67,8 @@ def occupancy(room, now):
 def situation(house, now):
     """Expired overrides return to routines; never change learned habits."""
     exception = house.get("exception", {})
+    if exception.get("persistent") and exception.get("mode") in ("guest", "holiday"):
+        return exception["mode"]
     try:
         expiry = datetime.fromisoformat(exception.get("expires_at", ""))
         if expiry.tzinfo and expiry.timestamp() > now.timestamp():
@@ -76,13 +78,13 @@ def situation(house, now):
     return "normal"
 
 
-def next_deadline(room, now):
+def next_deadline(room, now, non_working_day=False):
     if room.get("manual_only"):
         return None
     starts = []
     for offset in (0, 1, 2):
         day = now.date() + timedelta(days=offset)
-        prefix = "weekend" if day.weekday() >= 5 else "weekday"
+        prefix = "weekend" if non_working_day or day.weekday() >= 5 else "weekday"
         for suffix in ("", "_second"):
             if room.get(prefix + suffix + "_enabled"):
                 start = datetime.combine(day, datetime.fromisoformat("2000-01-01T" + start_time(room, prefix, suffix, day)).time(), now.tzinfo)
@@ -92,8 +94,8 @@ def next_deadline(room, now):
 
 
 def target_level(house, room, now):
-    occupied, preparing = occupancy(room, now)
     mode = situation(house, now)
+    occupied, preparing = occupancy(room, now, non_working_day=mode == "guest")
     maintenance = finite(room.get("maintenance_temperature"), finite(room.get("base_temperature"), 17))
     base = finite(room.get("day_base_temperature"), 19)
     if mode in ("away", "weekend_away", "holiday"):
@@ -137,7 +139,7 @@ def room_plan(house, room, now, current, solar_available, electrical_ok):
     season = house.get("season", "shoulder")
     result = {"room": room.get("name", "Stanza"), "occupied": occupied,
               "preparing": preparing, "current_temperature": current,
-              "radiator_target": base if season == "winter" else None, "heat_pump_mode": "off", "heat_pump_target": None,
+              "radiator_target": min(base, target) if season == "winter" else None, "heat_pump_mode": "off", "heat_pump_target": None,
               "source": "base_gas" if season == "winter" else "none", "target_level": level,
               "room_target": target, **cost}
     if current is None:

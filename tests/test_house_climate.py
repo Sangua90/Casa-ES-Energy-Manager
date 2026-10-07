@@ -402,3 +402,38 @@ class ControlTests(unittest.IsolatedAsyncioTestCase):
         c._house_owned["climate.hp"] = {"mode": "heat", "target": 21, "at": (NOW - timedelta(minutes=30)).timestamp()}
         await c._async_house_plan(data, NOW)
         self.assertFalse(any(call.args[2]["entity_id"] == "climate.hp" for call in c.hass.services.async_call.call_args_list))
+
+
+class SpecialModesTests(unittest.TestCase):
+    room=PlanTests.room
+    def test_guest_uses_weekend_on_workday(self):
+        room=self.room();now=NOW.replace(hour=9)
+        normal=plan.target_level({},room,now)
+        guests=plan.target_level({"exception":{"mode":"guest","persistent":True}},room,now)
+        self.assertNotEqual(normal[1],"comfort")
+        self.assertEqual(guests[1],"comfort")
+        self.assertEqual(plan.situation({"exception":{"mode":"guest","persistent":True}},now+timedelta(days=30)),"guest")
+
+    def test_guest_manual_room_and_electrical_guards_remain(self):
+        house={"season":"summer","exception":{"mode":"guest","persistent":True}}
+        room=self.room();room["manual_only"]=True
+        self.assertFalse(plan.target_level(house,room,NOW)[2])
+        room["manual_only"]=False
+        self.assertEqual(plan.room_plan(house,room,NOW.replace(hour=9),30,True,False)["heat_pump_mode"],"off")
+
+    def test_vacation_persists_and_keeps_radiator_at_maintenance(self):
+        house={"season":"winter","exception":{"mode":"holiday","persistent":True}}
+        room=self.room();room['maintenance_temperature']=16
+        for offset in (0,8,30):
+            now=NOW+timedelta(days=offset)
+            self.assertEqual(plan.situation(house,now),"holiday")
+            result=plan.room_plan(house,room,now,20,True,True)
+            self.assertEqual(result["room_target"],16)
+            self.assertEqual(result["radiator_target"],16)
+            self.assertEqual(result["heat_pump_mode"],"off")
+
+    def test_normal_restores_weekday_schedule_and_deadlines(self):
+        room=self.room();now=NOW.replace(hour=9)
+        self.assertEqual(plan.next_deadline(room,now).hour,21)
+        self.assertEqual(plan.next_deadline(room,now,non_working_day=True).hour,22)
+        self.assertEqual(plan.situation({},now),"normal")

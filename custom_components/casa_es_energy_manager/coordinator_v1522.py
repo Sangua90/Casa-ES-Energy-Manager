@@ -240,6 +240,12 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         house["pv_entity"] = self._config("pv_power_sensor")
         house["timezone"] = getattr(self.hass.config, "time_zone", "UTC")
         house["exception"] = getattr(self, "_house_exception", {})
+        guest = self.hass.states.get((self._config("house_guest_entity") or "input_boolean.modalita_ospite"))
+        if guest and guest.state == "on":
+            if self._house_exception:
+                self._house_exception = {}
+                await self._house_save()
+            house["exception"] = {"mode": "guest", "persistent": True}
         if situation(house, now) == "normal" and house["exception"]:
             self._house_exception = {}
             house["exception"] = {}
@@ -569,9 +575,15 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         return critical
 
     async def async_set_house_exception(self, mode, hours=12):
-        if mode not in ("normal", "home", "away", "weekend_away", "holiday"):
+        if mode not in ("normal", "guest", "holiday"):
             raise ValueError("Invalid house situation")
-        self._house_exception = {} if mode == "normal" else {"mode": mode, "expires_at": dt_util.utc_from_timestamp(dt_util.now().timestamp() + max(1, min(float(hours), 720)) * 3600).astimezone(dt_util.now().tzinfo).isoformat()}
+        entity = (self._config("house_guest_entity") or "input_boolean.modalita_ospite")
+        state = self.hass.states.get(entity)
+        if mode == "guest" and (not state or state.state in ("unknown", "unavailable")):
+            raise ValueError("Modalità ospiti non disponibile")
+        if state and state.state not in ("unknown", "unavailable"):
+            await self.hass.services.async_call("input_boolean", "turn_on" if mode == "guest" else "turn_off", {"entity_id": entity}, blocking=True)
+        self._house_exception = {"mode": "holiday", "persistent": True} if mode == "holiday" else {}
         await self._house_save()
         await self.async_request_refresh()
 

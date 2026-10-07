@@ -1,5 +1,5 @@
 name: Energy Meter Engine
-version: "0.2.5"
+version: "0.2.6"
 slug: energy_meter_engine
 description: Pianificazione termica, apprendimento e diagnostica per Energy Meter
 arch:

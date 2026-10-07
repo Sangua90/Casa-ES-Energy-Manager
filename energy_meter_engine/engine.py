@@ -128,7 +128,7 @@ class Engine:
             heating = [m["rate_c_h"] for source, m in model.items()
                        if source in ("gas", "heat_pump", "combined") and m.get("samples", 0) >= 10 and m.get("rate_c_h", 0) > .1]
             current = finite(zone.get("temperature"))
-            deadline = next_deadline(room, now)
+            deadline = next_deadline(room, now, non_working_day=house.get("exception", {}).get("mode") == "guest")
             if current is not None:
                 cooling = house.get("season") == "summer"
                 sources = ("cooling",) if cooling else (("heat_pump",) if not house.get("hydraulics_confirmed") else ("gas", "heat_pump", "combined"))

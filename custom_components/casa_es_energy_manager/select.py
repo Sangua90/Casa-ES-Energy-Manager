@@ -229,7 +229,7 @@ class CasaESHouseSituationSelect(_CasaESSelectBase):
     """Time-limited house overrides; routines resume at explicit expiry."""
     _attr_name = "Situazione casa"
     _attr_icon = "mdi:home-clock"
-    _attr_options = ["Normale", "Qualcuno a casa (12 ore)", "Assenza breve (4 ore)", "Weekend fuori (48 ore)", "Vacanza (7 giorni)"]
+    _attr_options = ["Normale", "Ospiti", "Vacanza"]
 
     def __init__(self, coordinator, entry):
         self.coordinator = coordinator
@@ -245,11 +245,14 @@ class CasaESHouseSituationSelect(_CasaESSelectBase):
         from .house_climate_plan import situation
         from homeassistant.util import dt as dt_util
         mode = situation({"exception": self.coordinator._house_exception}, dt_util.now())
-        return {"normal": self.options[0], "home": self.options[1], "away": self.options[2], "weekend_away": self.options[3], "holiday": self.options[4]}.get(mode, self.options[0])
+        guest = self.coordinator.hass.states.get((self.coordinator._config("house_guest_entity") or "input_boolean.modalita_ospite"))
+        if guest and guest.state == "on":
+            return "Ospiti"
+        return "Vacanza" if mode == "holiday" else "Normale"
 
     async def async_select_option(self, option):
         if option not in self.options:
             raise ValueError("Situazione casa non valida")
         index = self.options.index(option)
-        await self.coordinator.async_set_house_exception(["normal", "home", "away", "weekend_away", "holiday"][index], [1, 12, 4, 48, 168][index])
+        await self.coordinator.async_set_house_exception(["normal", "guest", "holiday"][index])
         self.async_write_ha_state()
