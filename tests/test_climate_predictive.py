@@ -12,7 +12,7 @@ sys.path.insert(0, str(ROOT / "energy_meter_engine"))
 from engine import Engine
 from thermal_model import estimate, fit_context
 from horizon import optimize
-from house_climate_plan import target_level, situation
+from house_climate_plan import target_level, situation, next_deadline, celsius, auxiliary_active
 
 package = types.ModuleType("climate_test_package")
 package.__path__ = [str(ROOT / "custom_components/casa_es_energy_manager")]
@@ -28,13 +28,14 @@ class PredictiveTests(unittest.TestCase):
         return {"name": "Camera", "reviewed": True, "machine": "p1", "heat_pump_entity": "climate.hp",
                 "temperature_entity": "sensor.room", "comfort_temperature": 21, "maintenance_temperature": 17,
                 "weekday_enabled": True, "weekday_start": "17:00:00", "weekday_end": "20:00:00", "preheat_minutes": 90,
-                "nominal_power_w": 1400, "window_entities": ["binary_sensor.window"]}
+                "power_entity": "sensor.power", "nominal_power_w": 1400, "window_entities": ["binary_sensor.window"]}
 
     def test_replay_keeps_attributes_and_absolute_timestamps(self):
         def row(state, attributes):
             return {"last_updated": NOW.isoformat(), "state": state, "attributes": attributes}
         rows = {"sensor.room": [row("68", {"unit_of_measurement": "°F"})],
                 "climate.hp": [row("heat", {"current_temperature": 21, "realtime_power": 800})],
+                "sensor.power": [row(".8", {"unit_of_measurement": "kW"})],
                 "binary_sensor.window": [row("off", {})]}
         points = history.replay(rows, {"r": self.room()}, {}, NOW, NOW + timedelta(hours=1))
         self.assertEqual(len(points), 5)
@@ -46,6 +47,26 @@ class PredictiveTests(unittest.TestCase):
         points = history.replay({}, {"r": self.room()}, {}, NOW, NOW + timedelta(hours=1))
         self.assertIn("window_open_or_unknown", points[0]["zones"][0]["contamination"])
         self.assertIn("heat_pump_state_missing", points[0]["zones"][0]["contamination"])
+
+    def test_heat_mode_with_standby_power_is_not_heating(self):
+        def row(state, attributes):
+            return {"last_updated": NOW.isoformat(), "state": state, "attributes": attributes}
+        rows = {"climate.hp": [row("heat", {"current_temperature": 21})],
+                "sensor.power": [row("14", {"unit_of_measurement": "W"})],
+                "binary_sensor.window": [row("off", {})]}
+        point = history.replay(rows, {"r": self.room()}, {}, NOW, NOW + timedelta(hours=1))[0]
+        self.assertEqual(point["zones"][0]["thermal_source"], "off")
+
+    def test_weekday_early_routine_does_not_apply_on_other_days(self):
+        room = {**self.room(), "weekday_start": "18:00:00", "weekday_early_start": "16:30:00", "weekday_early_days": ["0", "2", "4"]}
+        self.assertEqual(next_deadline(room, NOW).hour, 16)
+        self.assertEqual(next_deadline(room, NOW - timedelta(days=1)).hour, 18)
+
+    def test_outdoor_freezing_fahrenheit_and_oven_standby_units(self):
+        self.assertAlmostEqual(celsius(0, "°F", -40), -17.7777777778)
+        self.assertIsNone(celsius(0, "°F"))
+        self.assertFalse(auxiliary_active("1.3", {"unit_of_measurement": "W"}))
+        self.assertTrue(auxiliary_active(".2", {"unit_of_measurement": "kW"}))
 
     def test_bias_requires_independent_reference_and_enough_samples(self):
         model = {}

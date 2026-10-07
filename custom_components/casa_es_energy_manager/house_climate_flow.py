@@ -97,7 +97,7 @@ class ClimateRoomFlow(HouseClimateFlow):
     def fields(self, current):
         fields = {vol.Required("name", default=current.get("name", "")): selector.TextSelector()}
         for key, domains, multiple in (("radiator_entities", ["climate"], True), ("heat_pump_entity", ["climate"], False),
-                                        ("temperature_entity", ["sensor"], False), ("window_entity", ["binary_sensor"], False), ("window_entities", ["binary_sensor"], True),
+                                        ("temperature_entity", ["sensor"], False), ("power_entity", ["sensor"], False), ("window_entity", ["binary_sensor"], False), ("window_entities", ["binary_sensor"], True),
                                         ("contamination_entities", ["climate", "binary_sensor", "sensor"], True),
                                         ("neighbor_temperature_entities", ["climate", "sensor"], True)):
             marker = vol.Optional(key, default=current[key]) if current.get(key) else vol.Optional(key)
@@ -116,4 +116,6 @@ class ClimateRoomFlow(HouseClimateFlow):
             fields[vol.Required(prefix + "_enabled", default=current.get(prefix + "_enabled", False))] = selector.BooleanSelector()
             for key in ("start", "end"):
                 fields[vol.Required(prefix + "_" + key, default=current.get(prefix + "_" + key, "00:00:00"))] = selector.TimeSelector()
+        fields[vol.Required("weekday_early_days", default=current.get("weekday_early_days", []))] = selector.SelectSelector(selector.SelectSelectorConfig(options=["0", "1", "2", "3", "4"], multiple=True, translation_key="house_weekdays"))
+        fields[vol.Required("weekday_early_start", default=current.get("weekday_early_start", "16:30:00"))] = selector.TimeSelector()
         return fields

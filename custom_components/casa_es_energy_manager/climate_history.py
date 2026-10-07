@@ -71,7 +71,11 @@ def replay(rows, rooms, house, start, end, unit="°C"):
                 event = history.state(entity, at)
                 if not event or auxiliary_active(event.get("state"), event.get("attributes", {})):
                     flags.append("auxiliary_source_or_unknown")
-            hp_active = bool(hp and hp.get("state") in ("heat", "cool") and (hp.get("attributes", {}).get("hvac_action") in ("heating", "cooling") or finite(hp.get("attributes", {}).get("realtime_power"), 0) > 50 or finite(hp.get("attributes", {}).get("compressor_frequency"), 0) > 0))
+            power_row = history.state(room.get("power_entity", ""), at)
+            power = finite((power_row or {}).get("state"))
+            power_unit = (power_row or {}).get("attributes", {}).get("unit_of_measurement")
+            power = max(power * (1000 if power_unit == "kW" else 1), 0) if power is not None and power_unit in ("W", "kW") else None
+            hp_active = bool(hp and hp.get("state") in ("heat", "cool") and (hp.get("attributes", {}).get("hvac_action") in ("heating", "cooling") or finite(power, 0) > 100 or finite(hp.get("attributes", {}).get("compressor_frequency"), 0) > 0))
             valve_heating = any((v := history.state(e, at)) and v.get("attributes", {}).get("hvac_action") == "heating" for e in room.get("radiator_entities", []))
             gas_active = bool(gas and gas.get("attributes", {}).get("hvac_action") == "heating" and valve_heating)
             source = "combined" if hp_active and gas_active else "cooling" if hp_active and hp["state"] == "cool" else "heat_pump" if hp_active else "gas" if gas_active else "off"
@@ -82,7 +86,7 @@ def replay(rows, rooms, house, start, end, unit="°C"):
             neighbors = {e: value - temperature for e in room.get("neighbor_temperature_entities", []) if temperature is not None and (value := history.temperature(e, at, unit)) is not None}
             zones.append({"id": key, "config": room, "temperature": temperature, "sensors": sensors,
                           "independent_temperature": independent, "thermal_source": source,
-                          "contamination": flags, "power_w": finite((hp or {}).get("attributes", {}).get("realtime_power")),
+                          "contamination": flags, "power_w": power,
                           "solar_power_w": solar_power, "neighbor_gradients": neighbors, "outdoor_temperature": history.temperature(house.get("outdoor_entity", ""), at, unit, -40)})
         points.append({"at": at, "zones": zones})
     return points

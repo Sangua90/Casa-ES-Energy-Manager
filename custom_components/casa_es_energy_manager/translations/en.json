@@ -670,7 +670,10 @@
             "day_base_temperature": "Temperatura base",
             "base_enabled": "Usa temperatura base fuori dagli orari comfort",
             "priority": "Priorità comfort (1–5)",
-            "neighbor_temperature_entities": "Temperature delle stanze comunicanti"
+            "neighbor_temperature_entities": "Temperature delle stanze comunicanti",
+            "power_entity": "Potenza misurata della macchina",
+            "weekday_early_days": "Giorni con utilizzo anticipato",
+            "weekday_early_start": "Orario anticipato in questi giorni"
           },
           "data_description": {
             "name": "Nome stanza. Valore configurabile; verificare prima di abilitare i comandi.",
@@ -707,7 +710,10 @@
             "day_base_temperature": "Livello configurabile; non viene appreso automaticamente dalle eccezioni.",
             "base_enabled": "Livello configurabile; non viene appreso automaticamente dalle eccezioni.",
             "priority": "Ordine di allocazione del budget condiviso; non cambia le protezioni hardware.",
-            "neighbor_temperature_entities": "Modello prudente del trasferimento di calore; nessun riscaldamento di stanze inutilizzate senza beneficio verificato."
+            "neighbor_temperature_entities": "Modello prudente del trasferimento di calore; nessun riscaldamento di stanze inutilizzate senza beneficio verificato.",
+            "power_entity": "Sensore con unità W o kW. Per P1 usa lo stesso sensore del gruppo, senza sommare le unità interne.",
+            "weekday_early_days": "Negli altri feriali resta l’orario normale. Nessun giorno selezionato disattiva la variante.",
+            "weekday_early_start": "Modifica solo l’inizio del primo periodo feriale, senza aggiungere un’abitudine da un singolo evento."
           }
         },
         "reconfigure": {
@@ -748,7 +754,10 @@
             "day_base_temperature": "Temperatura base",
             "base_enabled": "Usa temperatura base fuori dagli orari comfort",
             "priority": "Priorità comfort (1–5)",
-            "neighbor_temperature_entities": "Temperature delle stanze comunicanti"
+            "neighbor_temperature_entities": "Temperature delle stanze comunicanti",
+            "power_entity": "Potenza misurata della macchina",
+            "weekday_early_days": "Giorni con utilizzo anticipato",
+            "weekday_early_start": "Orario anticipato in questi giorni"
           },
           "data_description": {
             "name": "Nome stanza. Valore configurabile; verificare prima di abilitare i comandi.",
@@ -785,7 +794,10 @@
             "day_base_temperature": "Livello configurabile; non viene appreso automaticamente dalle eccezioni.",
             "base_enabled": "Livello configurabile; non viene appreso automaticamente dalle eccezioni.",
             "priority": "Ordine di allocazione del budget condiviso; non cambia le protezioni hardware.",
-            "neighbor_temperature_entities": "Modello prudente del trasferimento di calore; nessun riscaldamento di stanze inutilizzate senza beneficio verificato."
+            "neighbor_temperature_entities": "Modello prudente del trasferimento di calore; nessun riscaldamento di stanze inutilizzate senza beneficio verificato.",
+            "power_entity": "Sensore con unità W o kW. Per P1 usa lo stesso sensore del gruppo, senza sommare le unità interne.",
+            "weekday_early_days": "Negli altri feriali resta l’orario normale. Nessun giorno selezionato disattiva la variante.",
+            "weekday_early_start": "Modifica solo l’inizio del primo periodo feriale, senza aggiungere un’abitudine da un singolo evento."
           }
         }
       },
@@ -848,6 +860,15 @@
         "salotto": "Clima Salotto",
         "ester": "Clima Ester",
         "p1": "Clima P1 multisplit"
+      }
+    },
+    "house_weekdays": {
+      "options": {
+        "0": "Lunedì",
+        "1": "Martedì",
+        "2": "Mercoledì",
+        "3": "Giovedì",
+        "4": "Venerdì"
       }
     }
   }

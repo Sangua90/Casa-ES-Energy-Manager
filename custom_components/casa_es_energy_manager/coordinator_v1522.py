@@ -259,7 +259,8 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
             r = dict(s.data)
             hp = self.hass.states.get(r.get("heat_pump_entity", ""))
             valves = [self.hass.states.get(e) for e in r.get("radiator_entities", [])]
-            hp_heat = bool(hp and hp.state == "heat" and (hp.attributes.get("hvac_action") == "heating" or finite(hp.attributes.get("realtime_power"), 0) > 50 or finite(hp.attributes.get("compressor_frequency"), 0) > 0))
+            measured_power = self._house_power_w(r, hp)
+            hp_heat = bool(hp and hp.state == "heat" and (hp.attributes.get("hvac_action") == "heating" or finite(measured_power, 0) > 100 or finite(hp.attributes.get("compressor_frequency"), 0) > 0))
             gas_state = self.hass.states.get(house.get("gas_entity", ""))
             gas_heat = bool(gas_state and gas_state.attributes.get("hvac_action") == "heating" and any(v and v.attributes.get("hvac_action") == "heating" for v in valves))
             thermal_source = "combined" if hp_heat and gas_heat else "heat_pump" if hp_heat else "gas" if gas_heat else "off"
@@ -286,7 +287,7 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
                           "thermal_source": thermal_source, "contamination": contamination,
                           "sensors": sensors, "independent_temperature": sensors.get(r.get("temperature_entity")),
                           "outdoor_temperature": celsius(outdoor.state, outdoor.attributes.get("unit_of_measurement"), -40) if outdoor else None,
-                          "power_w": finite(hp.attributes.get("realtime_power")) if hp else None,
+                          "power_w": measured_power,
                           "solar_power_w": finite(data.get("pv_power_w")),
                           "neighbor_gradients": {e: temp - self._room_temperature(r) for e in r.get("neighbor_temperature_entities", []) if self._room_temperature(r) is not None and (temp := self._room_sensor_values({"temperature_entity": e} if e.startswith("sensor.") else {"heat_pump_entity": e}).get(e)) is not None},
                           "solar_available": live_surplus >= finite(r.get("nominal_power_w"), 1200) * .95,
@@ -341,7 +342,7 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
             watts = finite(room.get("nominal_power_w"), 1200)
             phase = room.get("phase", "unknown")
             is_owned = hp in self._house_owned and hp_state and hp_state.state != "off"
-            real_watts = finite(hp_state.attributes.get("realtime_power"), 0) if hp_state else 0
+            real_watts = finite(self._house_power_w(room, hp_state), 0)
             covered = max(real_watts - finite(data.get("grid_import_w"), 0) - finite(data.get("battery_discharge_w"), 0), 0) if is_owned else 0
             electrical = (not data.get("grid_warning") and not data.get("inverter_warning") and phase in phase_budget
                           and phase_budget[phase] >= (0 if is_owned else watts)
@@ -376,7 +377,7 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
             if (room.get("window_entity") and (not window or window.state != "off")) or any(not (w := self.hass.states.get(e)) or w.state != "off" for e in room.get("window_entities", [])):
                 decision.update(source="window_open_or_unknown", radiator_target=5, heat_pump_mode="off")
             if hp_state and hp_state.state not in ("off", "unknown", "unavailable") and not is_owned:
-                decision.update(source="manual_heat_pump", radiator_target=None, heat_pump_mode="off")
+                decision.update(source="manual_heat_pump", radiator_target=finite(room.get("maintenance_temperature"), 17) if house.get("season") == "winter" and hp_state.state == "heat" else None, heat_pump_mode="off")
             if current is not None and room.get("radiator_entities") and decision["radiator_target"] is not None and house.get("season") == "winter":
                 if decision["source"] not in ("window_open_or_unknown", "profile_to_confirm"):
                     gas_sensors_valid = True
@@ -475,6 +476,18 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
                 await self._house_command(house["gas_entity"], "off", None, now, compressor=True, safety_stop=True)
 
 
+    def _house_power_w(self, room, hp):
+        entity = room.get("power_entity", "")
+        state = self.hass.states.get(entity)
+        if state and state.state not in ("unknown", "unavailable"):
+            value = finite(state.state)
+            unit = state.attributes.get("unit_of_measurement")
+            if value is not None and unit in ("W", "kW"):
+                return max(value * (1000 if unit == "kW" else 1), 0)
+        # Unlabelled device attributes are not a power measurement. Compressor
+        # action/frequency can identify activity, not watts or COP.
+        return None
+
     def _room_sensor_values(self, room):
         result = {}
         for entity in [room.get("temperature_entity", ""), *(room.get("radiator_entities") or []), room.get("heat_pump_entity", "")]:
@@ -540,7 +553,7 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         entity_ids = {house.get("gas_entity", ""), house.get("outdoor_entity", ""), house.get("pv_entity", "")}
         configs = {r.subentry_id: dict(r.data) for r in rooms}
         for room in configs.values():
-            entity_ids.update([room.get("heat_pump_entity", ""), room.get("temperature_entity", ""), *(room.get("radiator_entities") or []), *(room.get("window_entities") or []), *(room.get("contamination_entities") or []), *(room.get("neighbor_temperature_entities") or [])])
+            entity_ids.update([room.get("heat_pump_entity", ""), room.get("temperature_entity", ""), *(room.get("radiator_entities") or []), *(room.get("window_entities") or []), *(room.get("contamination_entities") or []), *(room.get("neighbor_temperature_entities") or []), room.get("power_entity", "")])
         entity_ids.discard("")
         self._house_history_status = "importing"
         try:

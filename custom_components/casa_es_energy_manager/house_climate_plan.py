@@ -32,6 +32,12 @@ def auxiliary_active(state, attributes):
     return state not in ("off", "idle", "standby", "ready", "0")
 
 
+def start_time(room, prefix, suffix, day):
+    if prefix == "weekday" and not suffix and str(day.weekday()) in room.get("weekday_early_days", []):
+        return room.get("weekday_early_start", room[prefix + "_start"])
+    return room.get(prefix + suffix + "_start", "00:00:00")
+
+
 
 def occupancy(room, now):
     """A cross-midnight period belongs to the day on which it STARTED."""
@@ -44,9 +50,9 @@ def occupancy(room, now):
         for suffix in ("", "_second"):
             if not room.get(prefix + suffix + "_enabled", False):
                 continue
-            start_time = room.get(prefix + suffix + "_start", "00:00:00")
+            period_start = start_time(room, prefix, suffix, day)
             end_time = room.get(prefix + suffix + "_end", "00:00:00")
-            start = datetime.combine(day, datetime.fromisoformat("2000-01-01T" + start_time).time(), now.tzinfo)
+            start = datetime.combine(day, datetime.fromisoformat("2000-01-01T" + period_start).time(), now.tzinfo)
             end = datetime.combine(day, datetime.fromisoformat("2000-01-01T" + end_time).time(), now.tzinfo)
             if end <= start:
                 end += timedelta(days=1)
@@ -79,7 +85,7 @@ def next_deadline(room, now):
         prefix = "weekend" if day.weekday() >= 5 else "weekday"
         for suffix in ("", "_second"):
             if room.get(prefix + suffix + "_enabled"):
-                start = datetime.combine(day, datetime.fromisoformat("2000-01-01T" + room[prefix + suffix + "_start"]).time(), now.tzinfo)
+                start = datetime.combine(day, datetime.fromisoformat("2000-01-01T" + start_time(room, prefix, suffix, day)).time(), now.tzinfo)
                 if start.timestamp() > now.timestamp():
                     starts.append(start)
     return min(starts, key=lambda d: d.timestamp()) if starts else None
