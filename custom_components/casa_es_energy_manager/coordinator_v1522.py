@@ -356,6 +356,12 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
             learned = self._house_engine_result.get("zones", {}).get(subentry.subentry_id, {})
             if learned.get("learning_status") in ("thermal_rate_available", "conservative_fallback"):
                 room["preheat_minutes"] = max(15, min(finite(learned.get("preheat_minutes"), 90), 480))
+            elif not learned:
+                # An unavailable Engine must not move an already planned
+                # recovery back to a short uncalibrated default. Local control
+                # anticipates conservatively; targets, surplus/battery budget,
+                # phase guards and manual ownership still gate every command.
+                room["preheat_minutes"] = 480
             current = self._room_temperature(room)
             estimate = learned.get("estimated_temperature")
             if learned.get("estimate_quality") == "calibrated_fusion" and finite(estimate) is not None and current is not None and abs(estimate - current) <= 3:

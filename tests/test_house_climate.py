@@ -117,6 +117,13 @@ class ControlTests(unittest.IsolatedAsyncioTestCase):
         c.hass.services.async_call.assert_not_awaited()
         self.assertEqual(data["house_climate_status"], "observation")
 
+    async def test_engine_outage_keeps_conservative_local_preparation(self):
+        c, house, _, data, _ = self.setup_control()
+        house.update(enabled=True, hydraulics_confirmed=False)
+        await c._async_house_plan(data, NOW)
+        self.assertEqual(data["house_climate_rooms"][0]["preheat_minutes"], 480)
+        self.assertEqual(data["engine_state"], "DEGRADED")
+
     async def test_unverified_hydraulics_never_changes_valves_even_enabled(self):
         c, house, _, data, _ = self.setup_control()
         house.update(enabled=True, hydraulics_confirmed=False)

@@ -79,6 +79,21 @@ class PredictiveTests(unittest.TestCase):
             rows = result["horizon"]["steps"]
             self.assertEqual(datetime.fromisoformat(rows[1]["timestamp"]).timestamp() - now.timestamp(), 3600)
 
+    def test_summer_lead_uses_cooling_target_instead_of_heating_comfort(self):
+        with tempfile.TemporaryDirectory() as folder:
+            engine = Engine(Path(folder) / "model.json")
+            zone = {"id": "r", "config": {**self.room(), "cooling_temperature": 26}, "temperature": 29, "thermal_source": "off", "contamination": []}
+            result = engine.plan({"schema": 1, "timestamp": NOW.isoformat(), "house": {"season": "summer", "reviewed": True}, "zones": [zone], "energy": {}})
+            self.assertGreater(result["zones"]["r"]["preheat_minutes"], 200)
+
+    def test_sunny_now_does_not_remove_evening_heat_loss_from_lead(self):
+        with tempfile.TemporaryDirectory() as folder:
+            engine = Engine(Path(folder) / "model.json")
+            engine.models["r"] = {"envelope": {"loss_per_hour": .1}, "solar_gain": {"c_h_per_pv_kw": .2}}
+            zone = {"id": "r", "config": self.room(), "temperature": 21, "outdoor_temperature": 15, "solar_power_w": 7000, "thermal_source": "off", "contamination": []}
+            result = engine.plan({"schema": 1, "timestamp": NOW.isoformat(), "house": {"season": "winter", "reviewed": True}, "zones": [zone], "energy": {}})
+            self.assertGreater(result["zones"]["r"]["preheat_minutes"], 60)
+
     def test_bias_requires_independent_reference_and_enough_samples(self):
         model = {}
         for i in range(15):

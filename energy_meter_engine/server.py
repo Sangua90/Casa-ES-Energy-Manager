@@ -29,7 +29,7 @@ def main():
 
         def do_GET(self):
             self.answer(200 if self.path == "/health" else 404,
-                        {"schema": 1, "status": "ready", "version": "0.2.3"})
+                        {"schema": 1, "status": "ready", "version": "0.2.4"})
 
         def do_POST(self):
             if self.path not in ("/v1/plan", "/v1/history"):
@@ -51,7 +51,7 @@ def main():
 
     server = HTTPServer(("0.0.0.0", int(os.environ.get("PORT", "8099"))), Handler)
     server.timeout = 10
-    print("Energy Meter Engine 0.2.3 ready; no device service access", flush=True)
+    print("Energy Meter Engine 0.2.4 ready; no device service access", flush=True)
     server.serve_forever()
 
 

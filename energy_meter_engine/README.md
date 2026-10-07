@@ -1,4 +1,4 @@
-# Energy Meter Engine 0.2.3
+# Energy Meter Engine 0.2.4
 
 Authenticated numerical thermal planner on the Home Assistant internal network.
 The add-on has no HA access token or device-service permissions. Integration

@@ -130,12 +130,28 @@ class Engine:
             current = finite(zone.get("temperature"))
             deadline = next_deadline(room, now)
             if current is not None:
-                eligible = [m["rate_c_h"] for source, m in model.items() if source in (("heat_pump",) if not house.get("hydraulics_confirmed") else ("gas", "heat_pump", "combined")) and m.get("samples", 0) >= 10 and m.get("rate_c_h", 0) > .1]
+                cooling = house.get("season") == "summer"
+                sources = ("cooling",) if cooling else (("heat_pump",) if not house.get("hydraulics_confirmed") else ("gas", "heat_pump", "combined"))
+                eligible = [abs(m["rate_c_h"]) for source, m in model.items() if source in sources and m.get("samples", 0) >= 10 and (m.get("rate_c_h", 0) < -.1 if cooling else m.get("rate_c_h", 0) > .1)]
                 conservative = min(eligible) if eligible else .7
-                cooling_rate = predicted_rate(model, "off", current, finite(zone.get("outdoor_temperature")), zone.get("neighbor_gradients"), zone.get("solar_power_w"))
+                outdoor = finite(zone.get("outdoor_temperature"))
+                future_outdoors = []
+                for point in payload.get("energy", {}).get("outdoor_forecast", []):
+                    try:
+                        when = datetime.fromisoformat(point["datetime"].replace("Z", "+00:00"))
+                        value = finite(point.get("temperature"))
+                        if when.tzinfo and value is not None and now.timestamp() <= when.timestamp() <= (deadline.timestamp() if deadline else now.timestamp()):
+                            future_outdoors.append(value)
+                    except (ValueError, KeyError, TypeError):
+                        continue
+                if future_outdoors:
+                    outdoor = max(future_outdoors + ([outdoor] if outdoor is not None else [])) if cooling else min(future_outdoors + ([outdoor] if outdoor is not None else []))
+                # A sunny current sample is not free heat at tonight's deadline.
+                drift = predicted_rate(model, "off", current, outdoor)
                 hours_to_use = max((deadline.timestamp() - now.timestamp()) / 3600, 0) if deadline else 0
-                predicted = current + min(cooling_rate, 0) * min(hours_to_use, 12)
-                deficit = max(finite(room.get("comfort_temperature"), 21) - predicted, 0)
+                projected = current + (max(drift, 0) if cooling else min(drift, 0)) * min(hours_to_use, 12)
+                target = finite(room.get("cooling_temperature"), 26) if cooling else finite(room.get("comfort_temperature"), 21)
+                deficit = max(projected - target if cooling else target - projected, 0)
                 minutes = deficit / conservative * 60
                 room["preheat_minutes"] = min(max(minutes * 1.25 + 15, 15), 480)
             decision = room_plan(house, room, now, current, bool(zone.get("solar_available")), bool(zone.get("electrical_ok")))
