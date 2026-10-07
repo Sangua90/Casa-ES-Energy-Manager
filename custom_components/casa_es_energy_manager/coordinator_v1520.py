@@ -124,12 +124,22 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
             stamp = (record.get("episode"), status)
             if notices.get(sid) == stamp:
                 continue
+            if status in ("completed", "declined", "expired"):
+                # A restart must not resurrect a finished request. Keep its
+                # history in the dashboard, remove only the obsolete notice.
+                if self.hass.services.has_service("persistent_notification", "dismiss"):
+                    await self.hass.services.async_call("persistent_notification", "dismiss", {
+                        "notification_id": f"casa_es_dhw_{sid}"}, blocking=True)
+                    notices[sid] = stamp
+                continue
             if self.hass.services.has_service("persistent_notification", "create"):
+                action = ("[Apri Energy Manager per rispondere Sì o No](/energy-manager/acqua-calda). "
+                          if status == "pending" else "[Apri Energy Manager per vedere lo stato](/energy-manager/acqua-calda). ")
                 labels = {"pending": "In attesa della tua risposta", "approved": "Resistenza autorizzata", "declined": "Resistenza non autorizzata", "expired": "Richiesta scaduta: nessuna autorizzazione", "completed": "Recupero completato", "notification_failed": "Avviso telefono non consegnato"}
                 await self.hass.services.async_call("persistent_notification", "create", {
                     "notification_id": f"casa_es_dhw_{sid}", "title": "Energy Manager · acqua calda",
                     "message": f"{labels.get(status, status)}. Obiettivo: {record.get('target_c')} °C. "
-                               "[Apri Energy Manager per rispondere Sì o No](/energy-manager/acqua-calda). "
+                               + action +
                                "Il consenso è valido solo per questa richiesta e non si rinnova automaticamente."}, blocking=True)
                 notices[sid] = stamp
 

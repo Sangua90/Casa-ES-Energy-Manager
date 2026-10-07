@@ -235,13 +235,31 @@ class PersistentConsentTests(unittest.IsolatedAsyncioTestCase):
         await c._async_sync_dhw_notices()
         self.assertEqual(c.hass.services.async_call.await_count, 2)
 
+    async def test_finished_request_is_not_recreated_after_restart(self):
+        for status in ("completed", "declined", "expired"):
+            c = self.consent_control()
+            c._dhw_consent.records["boiler"]["status"] = status
+            await c._async_sync_dhw_notices()
+            self.assertEqual(c.hass.services.async_call.call_args.args[1], "dismiss")
+            del c._dhw_notice_states
+            await c._async_sync_dhw_notices()
+            self.assertTrue(all(call.args[1] == "dismiss" for call in c.hass.services.async_call.call_args_list))
+
+    async def test_approved_notice_does_not_ask_for_another_answer(self):
+        c = self.consent_control()
+        c._dhw_consent.records["boiler"]["status"] = "approved"
+        await c._async_sync_dhw_notices()
+        message = c.hass.services.async_call.call_args.args[2]["message"]
+        self.assertNotIn("rispondere", message)
+        self.assertIn("autorizzata", message)
+
     async def test_notice_marks_expiry_and_updates_message(self):
         c = self.consent_control()
         await c._async_sync_dhw_notices()
         c._dhw_consent.records["boiler"]["expires"] = (NOW-timedelta(seconds=1)).isoformat()
         await c._async_sync_dhw_notices()
         self.assertEqual(c._dhw_consent.records["boiler"]["status"], "expired")
-        self.assertIn("scaduta", c.hass.services.async_call.call_args.args[2]["message"])
+        self.assertEqual(c.hass.services.async_call.call_args.args[1], "dismiss")
 
 
 class ResendConsentTests(unittest.IsolatedAsyncioTestCase):
