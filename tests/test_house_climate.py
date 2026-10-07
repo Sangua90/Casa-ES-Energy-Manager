@@ -154,6 +154,35 @@ class ControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(data["house_climate_rooms"][0]["source"], "window_open_or_unknown")
         c.hass.services.async_call.assert_not_awaited()
 
+    async def test_native_setpoint_step_is_respected(self):
+        c, _, _, _, states = self.setup_control()
+        states["climate.hp"].attributes["target_temp_step"] = .5
+        await c._house_command("climate.hp", "heat", 20.7, NOW, compressor=True)
+        self.assertEqual(c.hass.services.async_call.call_args.args[2]["temperature"], 20.5)
+
+    async def test_manual_half_degree_change_releases_ownership(self):
+        c, _, _, _, states = self.setup_control()
+        states["climate.hp"].state = "heat"
+        states["climate.hp"].attributes.update(temperature=21.5, target_temp_step=.5)
+        c._house_owned["climate.hp"] = {"mode": "heat", "target": 21, "at": (NOW - timedelta(minutes=30)).timestamp()}
+        await c._house_command("climate.hp", "heat", 21, NOW, compressor=True)
+        c.hass.services.async_call.assert_not_awaited()
+        self.assertNotIn("climate.hp", c._house_owned)
+
+    async def test_recent_setpoint_change_does_not_reset_compressor_dwell(self):
+        c, _, _, _, states = self.setup_control()
+        states["climate.hp"].state = "heat"
+        states["climate.hp"].attributes["temperature"] = 21
+        c._house_owned["climate.hp"] = {"mode": "heat", "target": 21, "at": (NOW - timedelta(minutes=2)).timestamp(), "mode_at": (NOW - timedelta(minutes=30)).timestamp()}
+        await c._house_command("climate.hp", "off", None, NOW, compressor=True)
+        self.assertEqual(c.hass.services.async_call.call_args.args[2]["hvac_mode"], "off")
+
+    async def test_bias_uses_only_qualified_context_and_heat_ceiling(self):
+        c, _, _, _, _ = self.setup_control()
+        learned = {"model": {"sensor_bias": {"climate.hp:heat_pump": {"samples": 20, "confidence": .5, "offset_c": 3}}}}
+        self.assertEqual(c._house_calibrated_setpoint("climate.hp", 21, "heat_pump", learned, "heat"), 22)
+        self.assertEqual(c._house_calibrated_setpoint("climate.hp", 21, "cooling", learned, "cool"), 21)
+
     async def test_unavailable_independent_sensor_falls_back_to_valve_then_split(self):
         c, _, room, _, states = self.setup_control()
         room["temperature_entity"] = "sensor.room"

@@ -14,12 +14,12 @@ def finite(value, default=None):
         return default
 
 
-def celsius(value, unit):
+def celsius(value, unit, minimum=-10):
     value = finite(value)
     if value is None or unit not in ("°C", "C", "°F", "F"):
         return None
     value = (value - 32) * 5 / 9 if unit in ("°F", "F") else value
-    return value if -10 <= value <= 50 else None
+    return value if minimum <= value <= 50 else None
 
 
 def auxiliary_active(state, attributes):
@@ -133,7 +133,7 @@ def room_plan(house, room, now, current, solar_available, electrical_ok):
     if not room.get("reviewed", False):
         result["source"] = "profile_to_confirm"
         return result
-    if not occupied and level != "base":
+    if not occupied and level != "base" and current >= target - .6:
         return result
     has_hp = bool(room.get("heat_pump_entity"))
     affordable = (cost["economics_verified"] and cost["heat_pump_eur_kwh_heat"] < cost["gas_eur_kwh_heat"] * 0.95)

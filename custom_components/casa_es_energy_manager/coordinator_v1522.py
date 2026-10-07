@@ -156,6 +156,10 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         if mode not in state.attributes.get("hvac_modes", []):
             return False
         owned = self._house_owned.get(entity)
+        step = finite(state.attributes.get("target_temp_step"), .5)
+        if self.hass.config.units.temperature_unit == "°F":
+            step *= 5 / 9
+        tolerance = max(step * .45, .05)
         if self._house_hold.get(entity, 0) > now.timestamp():
             return False
         actual = finite(state.attributes.get("temperature"))
@@ -166,7 +170,7 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
             return False
         if owned and now.timestamp() - owned["at"] > 120 and (
             state.state != owned["mode"] or
-            (owned.get("target") is not None and actual is not None and abs(actual - owned["target"]) > .6) or
+            (owned.get("target") is not None and actual is not None and abs(actual - owned["target"]) > tolerance) or
             (owned.get("fan") is not None and state.attributes.get("fan_mode") != owned["fan"])
         ):
             self._house_owned.pop(entity, None)
@@ -195,6 +199,8 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
             if self.hass.config.units.temperature_unit == "°F":
                 lower, upper = (lower - 32) * 5 / 9, (upper - 32) * 5 / 9
             target = max(min(target, upper), lower)
+            if step > 0:
+                target = max(lower, min(lower + round((target - lower) / step) * step, upper))
             payload.update(hvac_mode=mode, temperature=target * 9 / 5 + 32 if self.hass.config.units.temperature_unit == "°F" else target)
             service = "set_temperature"
         await self.hass.services.async_call("climate", service, payload, blocking=True)
@@ -208,6 +214,11 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         if not house:
             data.update(house_climate_status="unconfigured", house_climate_rooms=[])
             return
+        task = getattr(self, "_house_history_task", None)
+        history_state = getattr(self, "_house_history_status", "pending")
+        if house.get("engine_url") and house.get("outdoor_entity") and (not task or task.done()) and (history_state == "pending" or history_state.startswith("retry_needed")) and now.timestamp() >= getattr(self, "_house_history_retry_at", 0):
+            self._house_history_retry_at = now.timestamp() + 900
+            self._house_history_task = self.hass.async_create_background_task(self._import_climate_history(), "Energy Meter climate history retry")
         house["pv_entity"] = self._config("pv_power_sensor")
         house["exception"] = getattr(self, "_house_exception", {})
         if situation(house, now) == "normal" and house["exception"]:
@@ -223,7 +234,9 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
             self._house_weather_last_at = now.timestamp()
             try:
                 result = await self.hass.services.async_call("weather", "get_forecasts", {"entity_id": house["weather_entity"], "type": "hourly"}, blocking=True, return_response=True)
-                self._house_weather_forecast = (result or {}).get(house["weather_entity"], {}).get("forecast", [])[:48]
+                weather = self.hass.states.get(house["weather_entity"])
+                unit = weather.attributes.get("temperature_unit", self.hass.config.units.temperature_unit) if weather else self.hass.config.units.temperature_unit
+                self._house_weather_forecast = [{**point, "temperature": celsius(point.get("temperature"), unit, -40)} for point in (result or {}).get(house["weather_entity"], {}).get("forecast", [])[:48]]
             except Exception:
                 self._house_weather_forecast = []
         ready = bool(house.get("reviewed") and rooms and any(s.data.get("reviewed") for s in rooms))
@@ -272,7 +285,7 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
             zones.append({"id": s.subentry_id, "config": r, "temperature": self._room_temperature(r),
                           "thermal_source": thermal_source, "contamination": contamination,
                           "sensors": sensors, "independent_temperature": sensors.get(r.get("temperature_entity")),
-                          "outdoor_temperature": celsius(outdoor.state, outdoor.attributes.get("unit_of_measurement")) if outdoor else None,
+                          "outdoor_temperature": celsius(outdoor.state, outdoor.attributes.get("unit_of_measurement"), -40) if outdoor else None,
                           "power_w": finite(hp.attributes.get("realtime_power")) if hp else None,
                           "solar_power_w": finite(data.get("pv_power_w")),
                           "neighbor_gradients": {e: temp - self._room_temperature(r) for e in r.get("neighbor_temperature_entities", []) if self._room_temperature(r) is not None and (temp := self._room_sensor_values({"temperature_entity": e} if e.startswith("sensor.") else {"heat_pump_entity": e}).get(e)) is not None},
@@ -374,7 +387,9 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
             if decision["heat_pump_mode"] != "off":
                 mode = decision["heat_pump_mode"]
                 if hp_state and mode in hp_state.attributes.get("hvac_modes", []):
-                    started = await self._house_command(hp, mode, decision["heat_pump_target"], now, compressor=True)
+                    target = self._house_calibrated_setpoint(hp, decision["heat_pump_target"], "cooling" if mode == "cool" else "heat_pump", learned, mode)
+                    decision["device_setpoint"] = target
+                    started = await self._house_command(hp, mode, target, now, compressor=True)
                     if started and "auto" in hp_state.attributes.get("fan_modes", []):
                         await self.hass.services.async_call("climate", "set_fan_mode", {"entity_id": hp, "fan_mode": "auto"}, blocking=True)
                         self._house_owned[hp]["fan"] = "auto"
@@ -402,7 +417,8 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
                         await self._house_save()
                     continue
                 for valve in room.get("radiator_entities") or []:
-                    await self._house_command(valve, "heat", decision["radiator_target"], now)
+                    target = self._house_calibrated_setpoint(valve, decision["radiator_target"], "gas", learned, "heat")
+                    await self._house_command(valve, "heat", target, now)
         data["house_climate_rooms"] = decisions
         self._house_last_decisions = decisions
         demanding_rooms = set()
@@ -469,6 +485,12 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
             if value is not None:
                 result[entity] = value
         return result
+
+    def _house_calibrated_setpoint(self, entity, target, source, learned, mode):
+        bias = learned.get("model", {}).get("sensor_bias", {}).get(entity + ":" + source, {})
+        if bias.get("samples", 0) >= 12 and finite(bias.get("confidence"), 0) >= .3:
+            target += max(-2, min(finite(bias.get("offset_c"), 0), 2))
+        return min(target, 22) if mode == "heat" else max(20, min(target, 30))
 
     async def _house_power_guard(self, house, rooms, data, now):
         """Hardware emergency also applies to manual loads, never to the Ariston main switch."""

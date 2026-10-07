@@ -28,12 +28,12 @@ class Replay:
         index = bisect_right(self.times.get(entity, []), at) - 1
         return self.rows[entity][index] if index >= 0 else None
 
-    def temperature(self, entity, at, unit):
+    def temperature(self, entity, at, unit, minimum=-10):
         row = self.state(entity, at)
         if not row or row.get("state") in ("unknown", "unavailable"):
             return None
         attrs = row.get("attributes", {})
-        return celsius(attrs.get("current_temperature"), unit) if entity.startswith("climate.") else celsius(row.get("state"), attrs.get("unit_of_measurement"))
+        return celsius(attrs.get("current_temperature"), unit) if entity.startswith("climate.") else celsius(row.get("state"), attrs.get("unit_of_measurement"), minimum)
 
 
 def replay(rows, rooms, house, start, end, unit="°C"):
@@ -83,6 +83,6 @@ def replay(rows, rooms, house, start, end, unit="°C"):
             zones.append({"id": key, "config": room, "temperature": temperature, "sensors": sensors,
                           "independent_temperature": independent, "thermal_source": source,
                           "contamination": flags, "power_w": finite((hp or {}).get("attributes", {}).get("realtime_power")),
-                          "solar_power_w": solar_power, "neighbor_gradients": neighbors, "outdoor_temperature": history.temperature(house.get("outdoor_entity", ""), at, unit)})
+                          "solar_power_w": solar_power, "neighbor_gradients": neighbors, "outdoor_temperature": history.temperature(house.get("outdoor_entity", ""), at, unit, -40)})
         points.append({"at": at, "zones": zones})
     return points

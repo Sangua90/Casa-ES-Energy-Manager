@@ -23,3 +23,6 @@ read-ha-*.ps1
 baseline-review/
 test-output.txt
 .test-deps/
+
+ha-*-review.txt
+install-ha.ps1
