@@ -200,7 +200,11 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         if state.state == mode and (mode == "off" or (actual is not None and abs(actual - target) < .3)):
             return False
         last_at = owned["at"] if owned else state.last_changed.timestamp()
-        minimum = 1200 if compressor and state.state != mode else 180
+        # Persisted mode_at is an absolute timestamp: downtime counts too.
+        # Keep a running compressor on for 20 minutes, but only require
+        # five minutes off before restarting. Heat/cool reversal retains
+        # the longer running protection.
+        minimum = (300 if state.state == "off" else 1200) if compressor and state.state != mode else 180
         if compressor and state.state != mode and owned:
             last_at = owned.get("mode_at", owned["at"])
         if safety_stop and mode == "off" and owned:

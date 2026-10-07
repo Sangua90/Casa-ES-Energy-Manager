@@ -193,6 +193,38 @@ class ControlTests(unittest.IsolatedAsyncioTestCase):
         await c._house_command("climate.hp", "off", None, NOW, compressor=True)
         self.assertEqual(c.hass.services.async_call.call_args.args[2]["hvac_mode"], "off")
 
+    async def test_restart_downtime_counts_toward_minimum_on(self):
+        c, _, _, _, states = self.setup_control()
+        states["climate.hp"].state = "heat"
+        # HA restarts after ten minutes and returns five minutes later.
+        states["climate.hp"].last_changed = NOW
+        c._house_owned["climate.hp"] = {"mode": "heat", "target": 21,
+            "at": (NOW - timedelta(minutes=15)).timestamp(),
+            "mode_at": (NOW - timedelta(minutes=15)).timestamp()}
+        self.assertFalse(await c._house_command("climate.hp", "off", None, NOW, compressor=True))
+        self.assertTrue(await c._house_command("climate.hp", "off", None, NOW + timedelta(minutes=5), compressor=True))
+
+    async def test_restart_downtime_counts_toward_five_minute_off(self):
+        c, _, _, _, states = self.setup_control()
+        states["climate.hp"].last_changed = NOW
+        # Restored ownership survives a five-minute HA outage.
+        c._house_owned["climate.hp"] = {"mode": "off", "target": None,
+            "at": (NOW - timedelta(minutes=5)).timestamp(),
+            "mode_at": (NOW - timedelta(minutes=5)).timestamp()}
+        self.assertTrue(await c._house_command("climate.hp", "heat", 21, NOW, compressor=True))
+
+    async def test_four_minutes_off_cannot_restart(self):
+        c, _, _, _, states = self.setup_control()
+        states["climate.hp"].last_changed = NOW - timedelta(minutes=4)
+        self.assertFalse(await c._house_command("climate.hp", "heat", 21, NOW, compressor=True))
+        self.assertTrue(await c._house_command("climate.hp", "heat", 21, NOW + timedelta(minutes=1), compressor=True))
+
+    async def test_electrical_safety_can_stop_before_twenty_minutes(self):
+        c, _, _, _, states = self.setup_control()
+        states["climate.hp"].state = "heat"
+        c._house_owned["climate.hp"] = {"mode": "heat", "target": 21, "at": NOW.timestamp(), "mode_at": NOW.timestamp()}
+        self.assertTrue(await c._house_command("climate.hp", "off", None, NOW, compressor=True, safety_stop=True))
+
     async def test_bias_uses_only_qualified_context_and_heat_ceiling(self):
         c, _, _, _, _ = self.setup_control()
         learned = {"model": {"sensor_bias": {"climate.hp:heat_pump": {"samples": 20, "confidence": .5, "offset_c": 3}}}}
