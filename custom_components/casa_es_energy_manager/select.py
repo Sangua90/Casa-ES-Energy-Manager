@@ -236,6 +236,10 @@ class CasaESHouseSituationSelect(_CasaESSelectBase):
         self._attr_unique_id = f"{entry.entry_id}_house_situation"
         self._set_device_info(entry)
 
+    async def async_added_to_hass(self):
+        await super().async_added_to_hass()
+        self.async_on_remove(self.coordinator.async_add_listener(self.async_write_ha_state))
+
     @property
     def current_option(self):
         from .house_climate_plan import situation

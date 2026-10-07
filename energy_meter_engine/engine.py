@@ -1,6 +1,7 @@
 """Versioned numerical planning API. It has no access to device services."""
 from datetime import datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 from statistics import median
 import json
 import os
@@ -98,6 +99,8 @@ class Engine:
         if now.tzinfo is None:
             raise ValueError("Timestamp must include timezone")
         house = payload["house"]
+        if house.get("timezone"):
+            now = now.astimezone(ZoneInfo(house["timezone"]))
         zones = payload.get("zones", [])
         if not isinstance(zones, list) or len(zones) > 100:
             raise ValueError("Invalid zone list")
@@ -193,7 +196,7 @@ class Engine:
         self.decisions = self.decisions[-100:]
         self.save(now.timestamp())
         return {"schema": SCHEMA, "timestamp": now.isoformat(),
-                "expires_at": (now + timedelta(seconds=120)).isoformat(),
+                "expires_at": datetime.fromtimestamp(now.timestamp() + 120, now.tzinfo).isoformat(),
                 "state": "DEGRADED" if reasons else "NORMAL", "reasons": reasons, "zones": results,
                 "energy_budget": {"battery_need_kwh": battery_need, "pv_remaining_kwh": remaining,
                                   "unallocated_kwh": max(remaining - battery_need - finite(energy.get("house_remaining_kwh"), 0), 0)

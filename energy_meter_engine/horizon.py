@@ -23,7 +23,7 @@ def optimize(house, zones, models, now, energy):
         available = [temp for stamp, temp in weather if stamp <= at.timestamp()]
         return available[-1] if available else finite(zone.get("outdoor_temperature"))
     for step in range(96):
-        at = now + timedelta(minutes=15 * step)
+        at = datetime.fromtimestamp(now.timestamp() + 900 * step, now.tzinfo)
         candidates, targets = [], {}
         for zone in zones:
             key, room = zone["id"], zone["config"]

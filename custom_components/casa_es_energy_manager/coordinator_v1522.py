@@ -119,6 +119,24 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
     async def async_set_house_machine_mode(self, machine, mode):
         if machine not in self.house_machine_modes or mode not in ("auto", "manual", "off"):
             raise ValueError("Modalità climatizzatore non valida")
+        if mode == "auto" and self.house_machine_modes.get(machine) != "auto":
+            # Explicitly selecting Automatico authorizes ownership transfer.
+            # A manual device change during automatic operation still releases
+            # ownership and is never silently adopted.
+            _, rooms = self._house_config()
+            for room in rooms:
+                if room.data.get("machine") != machine:
+                    continue
+                entity = room.data.get("heat_pump_entity", "")
+                self._house_hold.pop(entity, None)
+                state = self.hass.states.get(entity)
+                target = finite(state.attributes.get("temperature")) if state else None
+                if target is not None and self.hass.config.units.temperature_unit == "°F":
+                    target = (target - 32) * 5 / 9
+                if state and state.state in ("heat", "cool") and target is not None:
+                    self._house_owned[entity] = {"mode": state.state, "target": target,
+                        "fan": state.attributes.get("fan_mode"), "at": dt_util.now().timestamp(),
+                        "mode_at": state.last_changed.timestamp()}
         if mode == "off":
             _, rooms = self._house_config()
             for room in rooms:
@@ -220,6 +238,7 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
             self._house_history_retry_at = now.timestamp() + 900
             self._house_history_task = self.hass.async_create_background_task(self._import_climate_history(), "Energy Meter climate history retry")
         house["pv_entity"] = self._config("pv_power_sensor")
+        house["timezone"] = getattr(self.hass.config, "time_zone", "UTC")
         house["exception"] = getattr(self, "_house_exception", {})
         if situation(house, now) == "normal" and house["exception"]:
             self._house_exception = {}
@@ -309,6 +328,10 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         data["engine_recent_decisions"] = self._house_engine_result.get("recent_decisions", [])
         data["engine_energy_budget"] = self._house_engine_result.get("energy_budget", {})
         data["engine_horizon"] = self._house_engine_result.get("horizon", {})
+        def compact(value):
+            return {key: compact(item) if isinstance(item, dict) else item for key, item in value.items() if not isinstance(item, list)}
+        data["engine_zone_models"] = {key: compact(zone.get("model", {})) for key, zone in self._house_engine_result.get("zones", {}).items()}
+        data["engine_history_imported_until"] = self._house_engine_result.get("history_imported_until")
         data["engine_machine_models"] = self._house_engine_result.get("machine_models", {})
         data["engine_gas_campaign"] = self._house_engine_result.get("gas_campaign", {})
         decisions = []
@@ -539,7 +562,7 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
     async def async_set_house_exception(self, mode, hours=12):
         if mode not in ("normal", "home", "away", "weekend_away", "holiday"):
             raise ValueError("Invalid house situation")
-        self._house_exception = {} if mode == "normal" else {"mode": mode, "expires_at": (dt_util.now() + timedelta(hours=max(1, min(float(hours), 720)))).isoformat()}
+        self._house_exception = {} if mode == "normal" else {"mode": mode, "expires_at": dt_util.utc_from_timestamp(dt_util.now().timestamp() + max(1, min(float(hours), 720)) * 3600).astimezone(dt_util.now().tzinfo).isoformat()}
         await self._house_save()
         await self.async_request_refresh()
 

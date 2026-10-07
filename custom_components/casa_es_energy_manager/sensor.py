@@ -108,6 +108,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 
 class CasaESEnergySensor(CoordinatorEntity[CasaESEnergyCoordinator], SensorEntity):
     _attr_has_entity_name = True
+    # Forecasts and current diagnostics are available live. Persistent derived
+    # models/decisions live in the Engine store, not minute-by-minute Recorder
+    # copies of large attribute blobs. Numeric/status history remains recorded.
+    _unrecorded_attributes = frozenset({"horizon", "zone_models", "machine_models", "recent_decisions", "rooms"})
 
     def __init__(self, coordinator: CasaESEnergyCoordinator, entry: ConfigEntry, description: CasaESSensorDescription) -> None:
         super().__init__(coordinator)
@@ -136,6 +140,8 @@ class CasaESEnergySensor(CoordinatorEntity[CasaESEnergyCoordinator], SensorEntit
                     "energy_budget": self.coordinator.data.get("engine_energy_budget", {}),
                     "recent_decisions": self.coordinator.data.get("engine_recent_decisions", []),
                     "horizon": self.coordinator.data.get("engine_horizon", {}),
+                    "zone_models": self.coordinator.data.get("engine_zone_models", {}),
+                    "history_imported_until": self.coordinator.data.get("engine_history_imported_until"),
                     "machine_models": self.coordinator.data.get("engine_machine_models", {}),
                     "gas_campaign": self.coordinator.data.get("engine_gas_campaign", {})}
         if self.description.key == "house_climate_status":

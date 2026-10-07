@@ -183,6 +183,22 @@ class ControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(c._house_calibrated_setpoint("climate.hp", 21, "heat_pump", learned, "heat"), 22)
         self.assertEqual(c._house_calibrated_setpoint("climate.hp", 21, "cooling", learned, "cool"), 21)
 
+    async def test_explicit_auto_clears_hold_and_adopts_manual_running_split(self):
+        c, _, _, _, states = self.setup_control()
+        c.house_machine_modes["salotto"] = "manual"
+        states["climate.hp"].state = "heat"
+        c._house_hold["climate.hp"] = (NOW + timedelta(hours=2)).timestamp()
+        c.async_request_refresh = AsyncMock()
+        old = namespace["dt_util"]
+        namespace["dt_util"] = SimpleNamespace(parse_datetime=datetime.fromisoformat, now=lambda: NOW)
+        try:
+            await c.async_set_house_machine_mode("salotto", "auto")
+        finally:
+            namespace["dt_util"] = old
+        self.assertNotIn("climate.hp", c._house_hold)
+        self.assertEqual(c._house_owned["climate.hp"]["mode"], "heat")
+        c.hass.services.async_call.assert_not_awaited()
+
     async def test_unavailable_independent_sensor_falls_back_to_valve_then_split(self):
         c, _, room, _, states = self.setup_control()
         room["temperature_entity"] = "sensor.room"

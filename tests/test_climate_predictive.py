@@ -68,6 +68,17 @@ class PredictiveTests(unittest.TestCase):
         self.assertFalse(auxiliary_active("1.3", {"unit_of_measurement": "W"}))
         self.assertTrue(auxiliary_active(".2", {"unit_of_measurement": "kW"}))
 
+    def test_engine_expiry_and_horizon_use_real_seconds_at_dst_fallback(self):
+        with tempfile.TemporaryDirectory() as folder:
+            engine = Engine(Path(folder) / "model.json")
+            result = engine.plan({"schema": 1, "timestamp": "2026-10-25T02:59:00+02:00",
+                                  "house": {"timezone": "Europe/Rome", "reviewed": True}, "zones": [], "energy": {}})
+            now = datetime.fromisoformat(result["timestamp"])
+            expiry = datetime.fromisoformat(result["expires_at"])
+            self.assertEqual(expiry.timestamp() - now.timestamp(), 120)
+            rows = result["horizon"]["steps"]
+            self.assertEqual(datetime.fromisoformat(rows[1]["timestamp"]).timestamp() - now.timestamp(), 3600)
+
     def test_bias_requires_independent_reference_and_enough_samples(self):
         model = {}
         for i in range(15):
