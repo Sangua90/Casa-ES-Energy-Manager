@@ -22,6 +22,8 @@ async def async_setup_entry(
     async_add_entities(
         [
             CasaESRefreshAIButton(coordinator, entry),
+            CasaESDHWAnswerButton(coordinator, entry, True),
+            CasaESDHWAnswerButton(coordinator, entry, False),
             CasaESEmergencyChargeStartButton(coordinator, entry),
             CasaESEmergencyChargeStopButton(coordinator, entry),
         ]
@@ -85,3 +87,19 @@ class CasaESEmergencyChargeStopButton(_BaseButton):
 
     async def async_press(self) -> None:
         await self.coordinator.async_stop_emergency_charge("manual")
+
+
+class CasaESDHWAnswerButton(_BaseButton):
+    def __init__(self, coordinator, entry, yes):
+        super().__init__(coordinator, entry)
+        self.yes = yes
+        self._attr_name = "Autorizza resistenza acqua calda" if yes else "Rifiuta resistenza acqua calda"
+        self._attr_icon = "mdi:check-circle" if yes else "mdi:close-circle"
+        self._attr_unique_id = f"{entry.entry_id}_dhw_answer_{'yes' if yes else 'no'}"
+
+    @property
+    def available(self):
+        return super().available and len(self.coordinator.pending_dhw_recoveries()) == 1
+
+    async def async_press(self):
+        await self.coordinator.async_answer_dhw_recovery(self.yes)

@@ -192,3 +192,53 @@ class ControlTests(unittest.IsolatedAsyncioTestCase):
         await c._async_dhw_notification_action(SimpleNamespace(data={"action": "CASA_ES_DHW_YES_" + record["token"]}))
         c.async_request_refresh.assert_awaited_once()
         self.assertEqual(c._dhw_consent.records["boiler"]["status"], "approved")
+
+
+class PersistentConsentTests(unittest.IsolatedAsyncioTestCase):
+    setup_control = ControlTests.setup_control
+    def consent_control(self):
+        c, _, _, _ = self.setup_control()
+        c.async_request_refresh = AsyncMock()
+        c.hass.services.has_service = lambda *args: True
+        c._dhw_consent.request("boiler", dhw.plan({}, NOW, 40, 53, 73), NOW)
+        return c
+
+    async def test_dashboard_yes_saves_single_request(self):
+        c = self.consent_control()
+        await c.async_answer_dhw_recovery(True)
+        self.assertEqual(c._dhw_consent.records["boiler"]["status"], "approved")
+        c._dhw_consent_store.async_save.assert_awaited_once()
+        c.async_request_refresh.assert_awaited_once()
+
+    async def test_dashboard_no_does_not_heat(self):
+        c = self.consent_control()
+        await c.async_answer_dhw_recovery(False)
+        self.assertEqual(c._dhw_consent.records["boiler"]["status"], "declined")
+        c._set_boost.assert_not_awaited()
+
+    async def test_dashboard_expired_and_ambiguous_are_not_approved(self):
+        c = self.consent_control()
+        c._dhw_consent.records["boiler"]["expires"] = (NOW-timedelta(seconds=1)).isoformat()
+        await c.async_answer_dhw_recovery(True)
+        c.async_request_refresh.assert_not_awaited()
+        c = self.consent_control()
+        c._dhw_consent.records["other"] = dict(c._dhw_consent.records["boiler"])
+        await c.async_answer_dhw_recovery(True)
+        c.async_request_refresh.assert_not_awaited()
+
+    async def test_notice_survives_restart_without_refresh_spam(self):
+        c = self.consent_control()
+        await c._async_sync_dhw_notices()
+        await c._async_sync_dhw_notices()
+        c.hass.services.async_call.assert_awaited_once()
+        del c._dhw_notice_states
+        await c._async_sync_dhw_notices()
+        self.assertEqual(c.hass.services.async_call.await_count, 2)
+
+    async def test_notice_marks_expiry_and_updates_message(self):
+        c = self.consent_control()
+        await c._async_sync_dhw_notices()
+        c._dhw_consent.records["boiler"]["expires"] = (NOW-timedelta(seconds=1)).isoformat()
+        await c._async_sync_dhw_notices()
+        self.assertEqual(c._dhw_consent.records["boiler"]["status"], "expired")
+        self.assertIn("scaduta", c.hass.services.async_call.call_args.args[2]["message"])

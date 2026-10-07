@@ -144,6 +144,9 @@ class CasaESEnergySensor(CoordinatorEntity[CasaESEnergyCoordinator], SensorEntit
                     "history_imported_until": self.coordinator.data.get("engine_history_imported_until"),
                     "machine_models": self.coordinator.data.get("engine_machine_models", {}),
                     "gas_campaign": self.coordinator.data.get("engine_gas_campaign", {})}
+        if self.description.key == "dhw_plan_status":
+            return {"devices": self.coordinator.data.get("dhw_plan_devices", []),
+                    "requests": self.coordinator.data.get("dhw_recovery_decisions", {})}
         if self.description.key == "house_climate_status":
             return {"profile_ready": self.coordinator.data.get("house_climate_profile_ready", False),
                     "error": self.coordinator.data.get("house_climate_error"),

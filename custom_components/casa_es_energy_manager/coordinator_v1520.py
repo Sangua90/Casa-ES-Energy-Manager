@@ -88,6 +88,41 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
             "mobile_app_notification_action", self._async_dhw_notification_action))
         await self._refresh_dhw_history()
 
+    def pending_dhw_recoveries(self):
+        now = dt_util.now()
+        return [(sid, r) for sid, r in self._dhw_consent.records.items()
+                if r.get("status") == "pending" and dt_util.parse_datetime(r["expires"]).timestamp() > now.timestamp()]
+
+    async def async_answer_dhw_recovery(self, yes):
+        pending = self.pending_dhw_recoveries()
+        if len(pending) != 1:
+            return
+        _, record = pending[0]
+        sid = self._dhw_consent.answer(f"CASA_ES_DHW_{'YES' if yes else 'NO'}_{record['token']}", dt_util.now())
+        if sid:
+            await self._dhw_consent_store.async_save(self._dhw_consent.records)
+            await self.async_request_refresh()
+
+    async def _async_sync_dhw_notices(self):
+        notices = getattr(self, "_dhw_notice_states", {})
+        self._dhw_notice_states = notices
+        for sid, record in self._dhw_consent.records.items():
+            status = record.get("status")
+            if status == "pending" and dt_util.parse_datetime(record["expires"]).timestamp() <= dt_util.now().timestamp():
+                record["status"] = status = "expired"
+                await self._dhw_consent_store.async_save(self._dhw_consent.records)
+            stamp = (record.get("episode"), status)
+            if notices.get(sid) == stamp:
+                continue
+            if self.hass.services.has_service("persistent_notification", "create"):
+                labels = {"pending": "In attesa della tua risposta", "approved": "Resistenza autorizzata", "declined": "Resistenza non autorizzata", "expired": "Richiesta scaduta: nessuna autorizzazione", "completed": "Recupero completato", "notification_failed": "Avviso telefono non consegnato"}
+                await self.hass.services.async_call("persistent_notification", "create", {
+                    "notification_id": f"casa_es_dhw_{sid}", "title": "Energy Manager · acqua calda",
+                    "message": f"{labels.get(status, status)}. Obiettivo: {record.get('target_c')} °C. "
+                               "[Apri Energy Manager per rispondere Sì o No](/energy-manager/acqua-calda). "
+                               "Il consenso è valido solo per questa richiesta e non si rinnova automaticamente."}, blocking=True)
+                notices[sid] = stamp
+
     async def _async_dhw_notification_action(self, event) -> None:
         sid = self._dhw_consent.answer(event.data.get("action"), dt_util.now())
         if sid is None:
@@ -380,6 +415,7 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         data = await super()._async_update_data()
         data["dhw_history_error"] = self._dhw_history_error
         data["dhw_notification_error"] = self._dhw_notify_error
+        await self._async_sync_dhw_notices()
         data["dhw_recovery_decisions"] = {sid: {k: v for k, v in record.items() if k != "token"}
                                           for sid, record in self._dhw_consent.records.items()}
         data["dhw_plans"] = self._dhw_plans
