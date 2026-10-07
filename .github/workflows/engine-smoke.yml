@@ -13,5 +13,6 @@ jobs:
           python-version: "3.13"
       - run: python -m unittest discover -s tests -p test_energy_engine.py
       - run: python -m unittest discover -s tests -p test_house_climate.py
+      - run: python -m unittest discover -s tests -p test_engine_bridge.py
       - run: docker build -t energy-meter-engine:test energy_meter_engine
 

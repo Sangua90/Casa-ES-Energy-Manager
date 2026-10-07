@@ -74,7 +74,7 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(result["heat_pump_mode"], "off")
 
 
-source = (ROOT / "custom_components/casa_es_energy_manager/coordinator_v1522.py").read_text()
+source = (ROOT / "custom_components/casa_es_energy_manager/coordinator_v1522.py").read_text(encoding="utf-8")
 classes = ast.Module(body=[n for n in ast.parse(source).body if isinstance(n, ast.ClassDef)], type_ignores=[])
 namespace = {"PreviousCoordinator": object, "HOUSE_TYPE": plan.HOUSE_TYPE, "ROOM_TYPE": plan.ROOM_TYPE,
              "finite": plan.finite, "room_plan": plan.room_plan,
@@ -116,6 +116,25 @@ class ControlTests(unittest.IsolatedAsyncioTestCase):
         await c._async_house_plan(data, NOW)
         c.hass.services.async_call.assert_not_awaited()
         self.assertEqual(data["house_climate_status"], "observation")
+
+    async def test_unavailable_independent_sensor_falls_back_to_valve_then_split(self):
+        c, _, room, _, states = self.setup_control()
+        room["temperature_entity"] = "sensor.room"
+        states["sensor.room"] = SimpleNamespace(state="unavailable", attributes={})
+        self.assertEqual(c._room_temperature(room), 18)
+        states["climate.valve"].state = "unavailable"
+        states["climate.hp"].attributes["current_temperature"] = 19
+        self.assertEqual(c._room_temperature(room), 19)
+        states["climate.hp"].state = "unavailable"
+        self.assertIsNone(c._room_temperature(room))
+
+    async def test_independent_sensor_unit_and_glitch_checked(self):
+        c, _, room, _, states = self.setup_control()
+        room["temperature_entity"] = "sensor.room"
+        states["sensor.room"] = SimpleNamespace(state="68", attributes={"unit_of_measurement": "°F"})
+        self.assertEqual(c._room_temperature(room), 20)
+        states["sensor.room"].attributes["unit_of_measurement"] = "°C"
+        self.assertEqual(c._room_temperature(room), 18)
 
     async def test_unreviewed_room_prevents_all_automatic_commands(self):
         c, house, room, data, _ = self.setup_control()

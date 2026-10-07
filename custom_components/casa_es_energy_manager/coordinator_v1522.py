@@ -65,14 +65,14 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         sensor = room.get("temperature_entity")
         if sensor:
             state = self.hass.states.get(sensor)
-            if not state or state.state in ("unknown", "unavailable"):
-                return None
-            value = finite(state.state)
-            if state.attributes.get("unit_of_measurement") == "°F" and value is not None:
-                value = (value - 32) * 5 / 9
-            elif state.attributes.get("unit_of_measurement") not in ("°C", "C"):
-                return None
-            return value
+            if state and state.state not in ("unknown", "unavailable"):
+                value = finite(state.state)
+                if state.attributes.get("unit_of_measurement") == "°F" and value is not None:
+                    value = (value - 32) * 5 / 9
+                elif state.attributes.get("unit_of_measurement") not in ("°C", "C"):
+                    value = None
+                if value is not None and -10 <= value <= 50:
+                    return value
         values = []
         for entity in room.get("radiator_entities") or [room.get("heat_pump_entity", "")]:
             state = self.hass.states.get(entity)
@@ -81,6 +81,15 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
                 if value is not None:
                     if self.hass.config.units.temperature_unit == "°F":
                         value = (value - 32) * 5 / 9
+                    if -10 <= value <= 50:
+                        values.append(value)
+        if not values and room.get("radiator_entities") and room.get("heat_pump_entity"):
+            fallback = self.hass.states.get(room["heat_pump_entity"])
+            if fallback and fallback.state not in ("unknown", "unavailable"):
+                value = finite(fallback.attributes.get("current_temperature"))
+                if value is not None and self.hass.config.units.temperature_unit == "°F":
+                    value = (value - 32) * 5 / 9
+                if value is not None and -10 <= value <= 50:
                     values.append(value)
         return sum(values) / len(values) if values else None
 
