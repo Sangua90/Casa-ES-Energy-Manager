@@ -14,6 +14,25 @@ def finite(value, default=None):
         return default
 
 
+def celsius(value, unit):
+    value = finite(value)
+    if value is None or unit not in ("°C", "C", "°F", "F"):
+        return None
+    value = (value - 32) * 5 / 9 if unit in ("°F", "F") else value
+    return value if -10 <= value <= 50 else None
+
+
+def auxiliary_active(state, attributes):
+    if state in ("unknown", "unavailable"):
+        return True
+    value = finite(state)
+    unit = attributes.get("unit_of_measurement")
+    if value is not None and unit in ("W", "kW"):
+        return value * (1000 if unit == "kW" else 1) > 100
+    return state not in ("off", "idle", "standby", "ready", "0")
+
+
+
 def occupancy(room, now):
     """A cross-midnight period belongs to the day on which it STARTED."""
     if room.get("manual_only", False):
@@ -39,6 +58,49 @@ def occupancy(room, now):
     return False, False
 
 
+def situation(house, now):
+    """Expired overrides return to routines; never change learned habits."""
+    exception = house.get("exception", {})
+    try:
+        expiry = datetime.fromisoformat(exception.get("expires_at", ""))
+        if expiry.tzinfo and expiry.timestamp() > now.timestamp():
+            return exception.get("mode", "normal")
+    except (ValueError, TypeError):
+        pass
+    return "normal"
+
+
+def next_deadline(room, now):
+    if room.get("manual_only"):
+        return None
+    starts = []
+    for offset in (0, 1, 2):
+        day = now.date() + timedelta(days=offset)
+        prefix = "weekend" if day.weekday() >= 5 else "weekday"
+        for suffix in ("", "_second"):
+            if room.get(prefix + suffix + "_enabled"):
+                start = datetime.combine(day, datetime.fromisoformat("2000-01-01T" + room[prefix + suffix + "_start"]).time(), now.tzinfo)
+                if start.timestamp() > now.timestamp():
+                    starts.append(start)
+    return min(starts, key=lambda d: d.timestamp()) if starts else None
+
+
+def target_level(house, room, now):
+    occupied, preparing = occupancy(room, now)
+    mode = situation(house, now)
+    maintenance = finite(room.get("maintenance_temperature"), finite(room.get("base_temperature"), 17))
+    base = finite(room.get("day_base_temperature"), 19)
+    if mode in ("away", "weekend_away", "holiday"):
+        return maintenance, "maintenance", False, False
+    if mode == "home" and not room.get("manual_only"):
+        occupied = True
+    if occupied:
+        return min(finite(room.get("comfort_temperature"), 21), 22), "comfort", occupied, preparing
+    if room.get("base_enabled") and not room.get("manual_only"):
+        return min(base, 22), "base", False, False
+    return maintenance, "maintenance", False, False
+
+
 def heat_costs(house, room):
     electricity = finite(house.get("electricity_price"), 0.30)
     gas_price = finite(house.get("gas_price"), 1.0)
@@ -54,23 +116,24 @@ def heat_costs(house, room):
 
 
 def room_plan(house, room, now, current, solar_available, electrical_ok):
-    occupied, preparing = occupancy(room, now)
+    target, level, occupied, preparing = target_level(house, room, now)
     base = finite(room.get("base_temperature"), 17)
-    comfort = finite(room.get("comfort_temperature"), 21)
+    comfort = target
     cooling = finite(room.get("cooling_temperature"), 26)
     cost = heat_costs(house, room)
     season = house.get("season", "shoulder")
     result = {"room": room.get("name", "Stanza"), "occupied": occupied,
               "preparing": preparing, "current_temperature": current,
               "radiator_target": base if season == "winter" else None, "heat_pump_mode": "off", "heat_pump_target": None,
-              "source": "base_gas" if season == "winter" else "none", **cost}
+              "source": "base_gas" if season == "winter" else "none", "target_level": level,
+              "room_target": target, **cost}
     if current is None:
         result.update(source="temperature_unavailable", radiator_target=None)
         return result
     if not room.get("reviewed", False):
         result["source"] = "profile_to_confirm"
         return result
-    if not occupied:
+    if not occupied and level != "base":
         return result
     has_hp = bool(room.get("heat_pump_entity"))
     affordable = (cost["economics_verified"] and cost["heat_pump_eur_kwh_heat"] < cost["gas_eur_kwh_heat"] * 0.95)
@@ -90,4 +153,3 @@ def room_plan(house, room, now, current, solar_available, electrical_ok):
         elif room.get("radiator_entities"):
             result.update(source="gas_comfort", radiator_target=comfort)
     return result
-

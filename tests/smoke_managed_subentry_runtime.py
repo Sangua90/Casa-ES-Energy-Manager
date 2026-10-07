@@ -49,6 +49,11 @@ async def _run() -> None:
         profile.init_step = SOURCE_USER
         fields = _serialize(await profile.async_step_user(None))
         assert fields
+        from types import SimpleNamespace
+        profile._get_reconfigure_subentry = lambda: SimpleNamespace(data={}, subentry_id="existing")
+        reconfigured = await profile.async_step_reconfigure(None)
+        assert reconfigured["step_id"] == "reconfigure", "Reconfigure must not return the create step"
+        assert _serialize(reconfigured)
 
     managed_type = supported[SUBENTRY_TYPE_MANAGED_DEVICE]
     assert issubclass(managed_type, ManagedDeviceSubentryFlow)
@@ -148,4 +153,3 @@ async def _run() -> None:
 
 if __name__ == "__main__":
     asyncio.run(_run())
-

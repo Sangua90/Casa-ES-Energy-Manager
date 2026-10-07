@@ -72,7 +72,7 @@ SENSORS = (
     CasaESSensorDescription(key="ai_guardrail_reason", name="Motivo correzione di sicurezza AI"),
     CasaESSensorDescription(key="ai_last_update", name="Ultimo aggiornamento AI"),
     CasaESSensorDescription(key="ai_battery_reserve_w", name="Riserva batteria consigliata AI", **_POWER),
-    CasaESSensorDescription(key="ai_confidence", name="Affidabilità AI", unit=PERCENTAGE, state_class=SensorStateClass.MEASUREMENT),
+    CasaESSensorDescription(key="ai_confidence", name="AffidabilitÃ  AI", unit=PERCENTAGE, state_class=SensorStateClass.MEASUREMENT),
     CasaESSensorDescription(key="battery_energy_needed_kwh", name="Energia netta necessaria batteria all'obiettivo", **_ENERGY),
     CasaESSensorDescription(key="battery_input_energy_needed_kwh", name="Energia FV richiesta per caricare la batteria", **_ENERGY),
     CasaESSensorDescription(key="base_load_energy_to_target_kwh", name="Consumo base previsto fino all'obiettivo", **_ENERGY),
@@ -80,19 +80,19 @@ SENSORS = (
     CasaESSensorDescription(key="forecast_margin_before_base_load_kwh", name="Margine FV all'obiettivo prima dei carichi base", **_ENERGY),
     CasaESSensorDescription(key="forecast_margin_after_base_load_kwh", name="Margine FV all'obiettivo dopo i carichi base", **_ENERGY),
     CasaESSensorDescription(key="flexible_energy_budget_kwh", name="Budget energia carichi flessibili", **_ENERGY),
-    CasaESSensorDescription(key="planner_target_reachability", name="Raggiungibilità obiettivo batteria"),
+    CasaESSensorDescription(key="planner_target_reachability", name="RaggiungibilitÃ  obiettivo batteria"),
     CasaESSensorDescription(key="planner_grid_pressure", name="Pressione elettrica pianificatore"),
     CasaESSensorDescription(key="planner_solar_state", name="Stato FV pianificatore"),
     CasaESSensorDescription(key="dry_run_status", name="Stato simulazione dispositivi", attributes_key="dry_run_decisions"),
     CasaESSensorDescription(key="managed_device_count", name="Dispositivi gestiti in simulazione"),
-    CasaESSensorDescription(key="managed_devices_running", name="Dispositivi gestiti già attivi"),
+    CasaESSensorDescription(key="managed_devices_running", name="Dispositivi gestiti giÃ  attivi"),
     CasaESSensorDescription(key="managed_devices_admissible_now", name="Dispositivi ammessi ora in simulazione"),
     CasaESSensorDescription(key="managed_devices_waiting", name="Dispositivi in attesa in simulazione"),
-    CasaESSensorDescription(key="managed_devices_override", name="Dispositivi in modalità Manuale"),
-    CasaESSensorDescription(key="managed_devices_forced_off", name="Dispositivi in modalità Spento"),
+    CasaESSensorDescription(key="managed_devices_override", name="Dispositivi in modalitÃ  Manuale"),
+    CasaESSensorDescription(key="managed_devices_forced_off", name="Dispositivi in modalitÃ  Spento"),
     CasaESSensorDescription(key="dry_run_solar_opportunity_w", name="Potenza FV disponibile per nuovi carichi in simulazione", **_POWER),
-    CasaESSensorDescription(key="dry_run_running_energy_commitment_kwh", name="Impegno energia dispositivi già attivi", **_ENERGY),
-    CasaESSensorDescription(key="manual_override_running_energy_commitment_kwh", name="Impegno energia carichi in modalità Manuale", **_ENERGY),
+    CasaESSensorDescription(key="dry_run_running_energy_commitment_kwh", name="Impegno energia dispositivi giÃ  attivi", **_ENERGY),
+    CasaESSensorDescription(key="manual_override_running_energy_commitment_kwh", name="Impegno energia carichi in modalitÃ  Manuale", **_ENERGY),
     CasaESSensorDescription(key="dry_run_remaining_flexible_budget_kwh", name="Budget flessibile residuo in simulazione", **_ENERGY),
     CasaESSensorDescription(key="emergency_charge_power_w", name="Potenza ricarica emergenza impostata", **_POWER),
     CasaESSensorDescription(key="emergency_charge_target_soc", name="SOC obiettivo ricarica emergenza", unit=PERCENTAGE, state_class=SensorStateClass.MEASUREMENT),
@@ -134,13 +134,17 @@ class CasaESEnergySensor(CoordinatorEntity[CasaESEnergyCoordinator], SensorEntit
         if self.description.key == "engine_state":
             return {"reasons": self.coordinator.data.get("engine_reasons", []),
                     "energy_budget": self.coordinator.data.get("engine_energy_budget", {}),
-                    "recent_decisions": self.coordinator.data.get("engine_recent_decisions", [])}
+                    "recent_decisions": self.coordinator.data.get("engine_recent_decisions", []),
+                    "horizon": self.coordinator.data.get("engine_horizon", {}),
+                    "machine_models": self.coordinator.data.get("engine_machine_models", {}),
+                    "gas_campaign": self.coordinator.data.get("engine_gas_campaign", {})}
         if self.description.key == "house_climate_status":
             return {"profile_ready": self.coordinator.data.get("house_climate_profile_ready", False),
                     "error": self.coordinator.data.get("house_climate_error"),
+                    "history_status": self.coordinator.data.get("house_climate_history_status"),
+                    "exception": self.coordinator.data.get("house_climate_exception", {}),
                     "rooms": self.coordinator.data.get("house_climate_rooms", [])}
         if not self.description.attributes_key:
             return None
         value = self.coordinator.data.get(self.description.attributes_key)
         return {"devices": value if isinstance(value, list) else []}
-

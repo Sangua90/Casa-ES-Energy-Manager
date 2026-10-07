@@ -1,5 +1,5 @@
 name: Energy Meter Engine
-version: "0.1.1"
+version: "0.2.0"
 slug: energy_meter_engine
 description: Pianificazione termica, apprendimento e diagnostica per Energy Meter
 arch:
@@ -16,4 +16,3 @@ schema:
   api_token: password
 watchdog: http://[HOST]:8099/health
 url: https://github.com/Sangua90/Casa-ES-Energy-Manager
-

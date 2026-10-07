@@ -75,6 +75,7 @@ async def async_setup_entry(
         )
     if hasattr(coordinator, "house_gas_mode"):
         entities.append(CasaESHouseGasModeSelect(coordinator, entry))
+        entities.append(CasaESHouseSituationSelect(coordinator, entry))
         for machine, name in (("salotto", "Clima Salotto"), ("ester", "Clima Ester"), ("p1", "Clima P1")):
             entities.append(CasaESHouseMachineModeSelect(coordinator, entry, machine, name))
     async_add_entities(entities)
@@ -223,3 +224,28 @@ class CasaESManagedDeviceModeSelect(RestoreEntity, _CasaESSelectBase):
         self.async_write_ha_state()
         await self.coordinator.async_request_refresh()
 
+
+class CasaESHouseSituationSelect(_CasaESSelectBase):
+    """Time-limited house overrides; routines resume at explicit expiry."""
+    _attr_name = "Situazione casa"
+    _attr_icon = "mdi:home-clock"
+    _attr_options = ["Normale", "Qualcuno a casa (12 ore)", "Assenza breve (4 ore)", "Weekend fuori (48 ore)", "Vacanza (7 giorni)"]
+
+    def __init__(self, coordinator, entry):
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{entry.entry_id}_house_situation"
+        self._set_device_info(entry)
+
+    @property
+    def current_option(self):
+        from .house_climate_plan import situation
+        from homeassistant.util import dt as dt_util
+        mode = situation({"exception": self.coordinator._house_exception}, dt_util.now())
+        return {"normal": self.options[0], "home": self.options[1], "away": self.options[2], "weekend_away": self.options[3], "holiday": self.options[4]}.get(mode, self.options[0])
+
+    async def async_select_option(self, option):
+        if option not in self.options:
+            raise ValueError("Situazione casa non valida")
+        index = self.options.index(option)
+        await self.coordinator.async_set_house_exception(["normal", "home", "away", "weekend_away", "holiday"][index], [1, 12, 4, 48, 168][index])
+        self.async_write_ha_state()

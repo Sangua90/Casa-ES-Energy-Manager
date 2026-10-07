@@ -15,7 +15,7 @@ async def async_plan(hass, house, zones, energy, now):
                 headers={"Authorization": "Bearer " + token},
                 json={"schema": 1, "timestamp": now.isoformat(),
                       "house": {k: v for k, v in house.items() if k not in ("engine_token", "engine_url")},
-                      "zones": zones, "energy": energy}) as response:
+                      "zones": zones, "energy": energy, "gas_meter": house.get("gas_meter_reading")}) as response:
                 response.raise_for_status()
                 if response.content_length and response.content_length > 1048576:
                     raise ValueError("oversize")
@@ -29,3 +29,18 @@ async def async_plan(hass, house, zones, energy, now):
     except Exception:
         return {"state": "DEGRADED", "reasons": ["engine_unavailable_local_fallback"], "zones": {}}
 
+
+async def async_import_history(hass, house, points):
+    """One bounded batch; failed uploads are retried by the history job."""
+    url, token = house.get("engine_url", "").rstrip("/"), house.get("engine_token", "")
+    if not url or not token:
+        return False
+    try:
+        async with asyncio.timeout(30):
+            async with async_get_clientsession(hass).post(url + "/v1/history",
+                headers={"Authorization": "Bearer " + token},
+                json={"schema": 1, "points": points}) as response:
+                response.raise_for_status()
+                return (await response.json()).get("accepted", False)
+    except Exception:
+        return False

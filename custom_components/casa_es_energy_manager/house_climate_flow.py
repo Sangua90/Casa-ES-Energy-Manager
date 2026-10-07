@@ -39,6 +39,9 @@ class HouseClimateFlow(ConfigSubentryFlow):
             fields[vol.Required(key, default=current.get(key, defaults[key]))] = num(*bounds)
         marker = vol.Optional("gas_entity", default=current["gas_entity"]) if current.get("gas_entity") else vol.Optional("gas_entity")
         fields[marker] = selector.EntitySelector(selector.EntitySelectorConfig(domain="climate"))
+        for key, domains in (("weather_entity", ["weather"]), ("outdoor_entity", ["sensor"]), ("gas_meter_entity", ["sensor", "input_number"]), ("presence_entity", ["person", "device_tracker"])):
+            marker = vol.Optional(key, default=current[key]) if current.get(key) else vol.Optional(key)
+            fields[marker] = selector.EntitySelector(selector.EntitySelectorConfig(domain=domains))
         for key in ("engine_url", "engine_token"):
             marker = vol.Optional(key, default=current[key]) if current.get(key) else vol.Optional(key)
             fields[marker] = selector.TextSelector(selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD if key == "engine_token" else selector.TextSelectorType.TEXT))
@@ -64,7 +67,7 @@ class HouseClimateFlow(ConfigSubentryFlow):
                 hp = self.hass.states.get(values.get("heat_pump_entity", ""))
                 if values.get("heat_pump_entity") and (hp is None or "heat" not in hp.attributes.get("hvac_modes", [])):
                     errors["heat_pump_entity"] = "heating_entity_required"
-                if values["base_temperature"] > values["comfort_temperature"]:
+                if values["base_temperature"] > values["comfort_temperature"] or values.get("maintenance_temperature", 17) > values["comfort_temperature"]:
                     errors["base_temperature"] = "temperature_range"
                 entities = set(values.get("radiator_entities") or []) | {values.get("heat_pump_entity", "")}
                 entities.discard("")
@@ -85,7 +88,7 @@ class HouseClimateFlow(ConfigSubentryFlow):
                     return self.async_update_and_abort(self._get_entry(), self._get_reconfigure_subentry(), data=values, title=title)
                 return self.async_create_entry(title=title, data=values)
             current.update(values)
-        return self.async_show_form(step_id="user", data_schema=vol.Schema(self.fields(current)), errors=errors)
+        return self.async_show_form(step_id="reconfigure" if reconfigure else "user", data_schema=vol.Schema(self.fields(current)), errors=errors)
 
 
 class ClimateRoomFlow(HouseClimateFlow):
@@ -94,14 +97,16 @@ class ClimateRoomFlow(HouseClimateFlow):
     def fields(self, current):
         fields = {vol.Required("name", default=current.get("name", "")): selector.TextSelector()}
         for key, domains, multiple in (("radiator_entities", ["climate"], True), ("heat_pump_entity", ["climate"], False),
-                                        ("temperature_entity", ["sensor"], False), ("window_entity", ["binary_sensor"], False)):
+                                        ("temperature_entity", ["sensor"], False), ("window_entity", ["binary_sensor"], False), ("window_entities", ["binary_sensor"], True),
+                                        ("contamination_entities", ["climate", "binary_sensor", "sensor"], True),
+                                        ("neighbor_temperature_entities", ["climate", "sensor"], True)):
             marker = vol.Optional(key, default=current[key]) if current.get(key) else vol.Optional(key)
             fields[marker] = selector.EntitySelector(selector.EntitySelectorConfig(domain=domains, multiple=multiple))
-        for key, default, bounds in (("base_temperature", 17, (10, 22, .5)), ("comfort_temperature", 21, (16, 22, .5)),
-                                     ("cooling_temperature", 26, (20, 30, .5)), ("preheat_minutes", 90, (0, 240, 5)),
+        for key, default, bounds in (("maintenance_temperature", 17, (10, 22, .5)), ("day_base_temperature", 19, (10, 22, .5)), ("priority", 2, (1, 5, 1)), ("base_temperature", 17, (10, 22, .5)), ("comfort_temperature", 21, (16, 22, .5)),
+                                     ("cooling_temperature", 26, (20, 30, .5)), ("preheat_minutes", 90, (0, 480, 5)),
                                      ("heat_pump_cop", 3, (1, 7, .1)), ("nominal_power_w", 1200, (100, 10000, 50))):
             fields[vol.Required(key, default=current.get(key, default))] = num(*bounds)
-        for key in ("reviewed", "manual_only", "cop_confirmed"):
+        for key in ("reviewed", "manual_only", "cop_confirmed", "base_enabled"):
             fields[vol.Required(key, default=current.get(key, False))] = selector.BooleanSelector()
         fields[vol.Required("machine", default=current.get("machine", "none"))] = selector.SelectSelector(
             selector.SelectSelectorConfig(options=["none", "salotto", "ester", "p1"], translation_key="house_machine"))
@@ -112,4 +117,3 @@ class ClimateRoomFlow(HouseClimateFlow):
             for key in ("start", "end"):
                 fields[vol.Required(prefix + "_" + key, default=current.get(prefix + "_" + key, "00:00:00"))] = selector.TimeSelector()
         return fields
-

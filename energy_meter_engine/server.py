@@ -29,10 +29,10 @@ def main():
 
         def do_GET(self):
             self.answer(200 if self.path == "/health" else 404,
-                        {"schema": 1, "status": "ready", "version": "0.1.1"})
+                        {"schema": 1, "status": "ready", "version": "0.2.0"})
 
         def do_POST(self):
-            if self.path != "/v1/plan":
+            if self.path not in ("/v1/plan", "/v1/history"):
                 return self.answer(404, {"error": "not_found"})
             if not hmac.compare_digest(self.headers.get("Authorization", ""), "Bearer " + token):
                 return self.answer(401, {"error": "unauthorized"})
@@ -41,17 +41,19 @@ def main():
                 if not 0 < size <= 1048576:
                     return self.answer(413, {"error": "request_size"})
                 payload = json.loads(self.rfile.read(size))
-                result = engine.plan(payload)
+                if self.path == "/v1/history":
+                    result = engine.import_history(payload)
+                else:
+                    result = engine.plan(payload)
             except (ValueError, KeyError, TypeError, OverflowError):
                 return self.answer(400, {"error": "invalid_snapshot"})
             self.answer(200, result)
 
     server = HTTPServer(("0.0.0.0", int(os.environ.get("PORT", "8099"))), Handler)
     server.timeout = 10
-    print("Energy Meter Engine 0.1.1 ready; no device service access", flush=True)
+    print("Energy Meter Engine 0.2.0 ready; no device service access", flush=True)
     server.serve_forever()
 
 
 if __name__ == "__main__":
     main()
-

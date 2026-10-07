@@ -77,7 +77,7 @@ class PlanTests(unittest.TestCase):
 source = (ROOT / "custom_components/casa_es_energy_manager/coordinator_v1522.py").read_text(encoding="utf-8")
 classes = ast.Module(body=[n for n in ast.parse(source).body if isinstance(n, ast.ClassDef)], type_ignores=[])
 namespace = {"PreviousCoordinator": object, "HOUSE_TYPE": plan.HOUSE_TYPE, "ROOM_TYPE": plan.ROOM_TYPE,
-             "finite": plan.finite, "room_plan": plan.room_plan,
+             "auxiliary_active": plan.auxiliary_active, "situation": plan.situation, "celsius": plan.celsius, "finite": plan.finite, "room_plan": plan.room_plan,
              "dt_util": SimpleNamespace(parse_datetime=datetime.fromisoformat), "timedelta": timedelta, "async_plan": AsyncMock(return_value={"state": "DEGRADED", "zones": {}})}
 exec(compile(classes, "coordinator_v1522.py", "exec"), namespace)
 Coordinator = namespace["CasaESEnergyCoordinator"]
@@ -116,6 +116,43 @@ class ControlTests(unittest.IsolatedAsyncioTestCase):
         await c._async_house_plan(data, NOW)
         c.hass.services.async_call.assert_not_awaited()
         self.assertEqual(data["house_climate_status"], "observation")
+
+    async def test_unverified_hydraulics_never_changes_valves_even_enabled(self):
+        c, house, _, data, _ = self.setup_control()
+        house.update(enabled=True, hydraulics_confirmed=False)
+        data["grid_export_w"] = 0
+        await c._async_house_plan(data, NOW)
+        self.assertFalse(any(call.args[2].get("entity_id") in ("climate.valve", "climate.gas") for call in c.hass.services.async_call.call_args_list))
+
+    async def test_grid_emergency_waits_15_seconds_then_sheds_manual_split(self):
+        c, house, _, data, states = self.setup_control()
+        house["enabled"] = True
+        c.house_machine_modes["salotto"] = "manual"
+        states["climate.hp"].state = "heat"
+        data.update(grid_import_w=6200, grid_power_limit_w=6000)
+        await c._async_house_plan(data, NOW)
+        c.hass.services.async_call.assert_not_awaited()
+        await c._async_house_plan(data, NOW + timedelta(seconds=16))
+        self.assertEqual(data["engine_state"], "SAFE")
+        self.assertTrue(any(call.args[2] == {"entity_id": "climate.hp", "hvac_mode": "off"} for call in c.hass.services.async_call.call_args_list))
+
+    async def test_one_pending_room_does_not_block_verified_room(self):
+        c, house, room, data, _ = self.setup_control()
+        house.update(enabled=True, hydraulics_confirmed=False)
+        pending = {**room, "reviewed": False, "heat_pump_entity": "", "radiator_entities": []}
+        c._house_config = lambda: (house, [SimpleNamespace(data=room, subentry_id="ready"), SimpleNamespace(data=pending, subentry_id="pending")])
+        await c._async_house_plan(data, NOW)
+        self.assertEqual(data["house_climate_status"], "automatic")
+        self.assertFalse(data["house_climate_rooms"][1]["commands_enabled"])
+
+    async def test_window_contact_blocks_solar_start(self):
+        c, house, room, data, states = self.setup_control()
+        house.update(enabled=True, hydraulics_confirmed=False, season="shoulder")
+        room["window_entities"] = ["binary_sensor.window"]
+        states["binary_sensor.window"] = SimpleNamespace(state="on", attributes={})
+        await c._async_house_plan(data, NOW)
+        self.assertEqual(data["house_climate_rooms"][0]["source"], "window_open_or_unknown")
+        c.hass.services.async_call.assert_not_awaited()
 
     async def test_unavailable_independent_sensor_falls_back_to_valve_then_split(self):
         c, _, room, _, states = self.setup_control()
@@ -287,4 +324,3 @@ class ControlTests(unittest.IsolatedAsyncioTestCase):
         c._house_owned["climate.hp"] = {"mode": "heat", "target": 21, "at": (NOW - timedelta(minutes=30)).timestamp()}
         await c._async_house_plan(data, NOW)
         self.assertFalse(any(call.args[2]["entity_id"] == "climate.hp" for call in c.hass.services.async_call.call_args_list))
-
