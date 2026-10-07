@@ -452,6 +452,7 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         data["house_climate_rooms"] = decisions
         self._house_last_decisions = decisions
         demanding_rooms = set()
+        demanding_valves = set()
         if execute:
             # Wait until a real valve acknowledges an open heat demand. A desired
             # setpoint alone must not fire the boiler against closed valves.
@@ -477,10 +478,12 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
                     self._house_open_since.setdefault(entity, now.timestamp())
                     if now.timestamp() - self._house_open_since[entity] >= finite(house.get("valve_open_seconds"), 180):
                         demanding_rooms.add(subentry.subentry_id)
-            # Require two distinct rooms even when one room has a large deficit.
-            gas_demand = bool(house.get("hydraulics_confirmed") and len(demanding_rooms) >= 2
+                        demanding_valves.add(entity)
+            # Require two distinct physical valves; they may be in the same room.
+            gas_demand = bool(house.get("hydraulics_confirmed") and len(demanding_valves) >= 2
                               and now.timestamp() - self._house_gas_stopped_at >= finite(house.get("dissipation_seconds"), 180))
         data["house_climate_gas_demand_room_count"] = len(demanding_rooms)
+        data["house_climate_gas_demand_valve_count"] = len(demanding_valves)
         data["house_climate_gas_demand"] = gas_demand
         if execute and house.get("hydraulics_confirmed") and self.house_gas_mode == "auto" and house.get("gas_entity"):
             gas = self.hass.states.get(house["gas_entity"])

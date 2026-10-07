@@ -270,7 +270,7 @@ class ControlTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(await c._house_command(entity, "off", None, NOW))
         c.hass.services.async_call.assert_not_awaited()
 
-    async def test_two_valves_in_one_room_small_demand_does_not_fire_boiler(self):
+    async def test_two_valves_in_one_room_small_demand_fires_boiler(self):
         c, house, room, data, states = self.setup_control()
         house["enabled"] = True
         data["grid_export_w"] = 0
@@ -283,9 +283,10 @@ class ControlTests(unittest.IsolatedAsyncioTestCase):
             c._house_open_since[entity] = (NOW - timedelta(minutes=10)).timestamp()
         await c._async_house_plan(data, NOW)
         self.assertEqual(data["house_climate_gas_demand_room_count"], 1)
-        self.assertFalse(data["house_climate_gas_demand"])
+        self.assertEqual(data["house_climate_gas_demand_valve_count"], 2)
+        self.assertTrue(data["house_climate_gas_demand"])
 
-    async def test_two_valves_in_one_room_large_demand_does_not_fire_boiler(self):
+    async def test_two_valves_in_one_room_large_demand_fires_boiler(self):
         c, house, room, data, states = self.setup_control()
         house["enabled"] = True
         data["grid_export_w"] = 0
@@ -298,7 +299,8 @@ class ControlTests(unittest.IsolatedAsyncioTestCase):
             c._house_open_since[entity] = (NOW - timedelta(minutes=10)).timestamp()
         await c._async_house_plan(data, NOW)
         self.assertEqual(data["house_climate_gas_demand_room_count"], 1)
-        self.assertFalse(data["house_climate_gas_demand"])
+        self.assertEqual(data["house_climate_gas_demand_valve_count"], 2)
+        self.assertTrue(data["house_climate_gas_demand"])
 
     async def test_two_rooms_fire_and_single_remaining_room_stops_boiler(self):
         c, house, room, data, states = self.setup_control()
