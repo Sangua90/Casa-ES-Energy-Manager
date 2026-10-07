@@ -477,10 +477,8 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
                     self._house_open_since.setdefault(entity, now.timestamp())
                     if now.timestamp() - self._house_open_since[entity] >= finite(house.get("valve_open_seconds"), 180):
                         demanding_rooms.add(subentry.subentry_id)
-            strong_demand = any(d["subentry_id"] in demanding_rooms and d["current_temperature"] is not None
-                                and d["radiator_target"] is not None and d["radiator_target"] - d["current_temperature"] >= 1
-                                for d in decisions)
-            gas_demand = bool(house.get("hydraulics_confirmed") and (len(demanding_rooms) >= 2 or strong_demand)
+            # Require two distinct rooms even when one room has a large deficit.
+            gas_demand = bool(house.get("hydraulics_confirmed") and len(demanding_rooms) >= 2
                               and now.timestamp() - self._house_gas_stopped_at >= finite(house.get("dissipation_seconds"), 180))
         data["house_climate_gas_demand_room_count"] = len(demanding_rooms)
         data["house_climate_gas_demand"] = gas_demand

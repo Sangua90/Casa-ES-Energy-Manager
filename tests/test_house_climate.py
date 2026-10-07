@@ -285,6 +285,21 @@ class ControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(data["house_climate_gas_demand_room_count"], 1)
         self.assertFalse(data["house_climate_gas_demand"])
 
+    async def test_two_valves_in_one_room_large_demand_does_not_fire_boiler(self):
+        c, house, room, data, states = self.setup_control()
+        house["enabled"] = True
+        data["grid_export_w"] = 0
+        states["climate.valve"].attributes["temperature"] = 21
+        states["climate.valve2"] = SimpleNamespace(state="heat", last_changed=NOW - timedelta(hours=2),
+            attributes={"hvac_modes": ["heat", "off"], "temperature": 21, "current_temperature": 18})
+        room["radiator_entities"].append("climate.valve2")
+        for entity in ("climate.valve", "climate.valve2"):
+            states[entity].attributes.update(current_temperature=18, hvac_action="heating")
+            c._house_open_since[entity] = (NOW - timedelta(minutes=10)).timestamp()
+        await c._async_house_plan(data, NOW)
+        self.assertEqual(data["house_climate_gas_demand_room_count"], 1)
+        self.assertFalse(data["house_climate_gas_demand"])
+
     async def test_two_rooms_fire_and_single_remaining_room_stops_boiler(self):
         c, house, room, data, states = self.setup_control()
         house["enabled"] = True
@@ -342,7 +357,7 @@ class ControlTests(unittest.IsolatedAsyncioTestCase):
         await c._async_house_plan(data, NOW)
         self.assertFalse(data["house_climate_gas_demand"])
 
-    async def test_strong_single_zone_requires_hydraulic_confirmation_and_open_delay(self):
+    async def test_strong_single_zone_stays_off_even_after_hydraulic_confirmation_and_open_delay(self):
         c, house, _, data, states = self.setup_control()
         house["enabled"] = True
         data["grid_export_w"] = 0
@@ -354,7 +369,7 @@ class ControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(data["house_climate_gas_demand"])
         house["hydraulics_confirmed"] = True
         await c._async_house_plan(data, NOW + timedelta(minutes=6))
-        self.assertTrue(data["house_climate_gas_demand"])
+        self.assertFalse(data["house_climate_gas_demand"])
 
     async def test_multisplit_incompatible_manual_head_blocks_start(self):
         c, house, room, data, states = self.setup_control()
