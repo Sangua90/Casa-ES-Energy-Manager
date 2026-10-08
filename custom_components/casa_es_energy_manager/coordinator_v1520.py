@@ -409,6 +409,17 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
                              and number(data.get("inverter_headroom_w"), 0) >= (0 if owned else nominal))
             pv_ok = available >= nominal * (0.8 if owned else 0.95) and soc_ok and electrical_ok
             approved_ok = approved_target is not None and electrical_ok
+            quiet_hours = not 7 <= now.hour < 22
+            deadline = dt_util.parse_datetime(result["deadline"])
+            morning_recovery = (approved_ok and deadline is not None and 6 <= deadline.hour < 12
+                                and 0 < deadline.timestamp() - now.timestamp() <= result["boost_heating_hours"] * 3600)
+            if quiet_hours and not morning_recovery:
+                # No additional overnight heat merely to maintain a setpoint.
+                # Native GREEN and anti-legionella remain appliance-controlled.
+                if owned:
+                    await self._stop_owned_thermal_boost(item, "Riposo notturno: nessun recupero mattutino necessario", now)
+                    return True
+                continue
             entity_id = str(item.get("entity_id", ""))
             boost_id = str(item.get(CONF_THERMAL_BOOST_ENTITY, ""))
             if owned:

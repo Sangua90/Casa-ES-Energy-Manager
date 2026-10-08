@@ -304,3 +304,28 @@ class RestartControlTests(unittest.IsolatedAsyncioTestCase):
         await c._async_apply_thermal_control(data, NOW)
         saved = c._dhw_control_store.async_save.call_args.args[0]
         self.assertIn("boiler", saved["owned_targets"])
+
+
+class NightControlTests(unittest.IsolatedAsyncioTestCase):
+    setup_control = ControlTests.setup_control
+
+    async def test_night_surplus_never_starts_maintenance_boost(self):
+        c, _, data, _ = self.setup_control()
+        self.assertFalse(await c._async_apply_thermal_control(data, NOW.replace(hour=23)))
+        c._set_boost.assert_not_awaited()
+
+    async def test_night_stops_only_owned_boost(self):
+        c, item, data, states = self.setup_control()
+        c._thermal_boost_owned.add("boiler")
+        c._thermal_target_c["boiler"] = 63
+        states["switch.boost"].state = "on"
+        item["thermal_boost_active"] = True
+        self.assertTrue(await c._async_apply_thermal_control(data, NOW.replace(hour=23)))
+        c._stop_owned_thermal_boost.assert_awaited_once()
+
+    async def test_native_legionella_is_untouched_at_night(self):
+        c, _, data, states = self.setup_control()
+        states["binary_sensor.legionella"].state = "on"
+        await c._async_apply_thermal_control(data, NOW.replace(hour=23))
+        c._stop_owned_thermal_boost.assert_not_awaited()
+        c._set_boost.assert_not_awaited()
