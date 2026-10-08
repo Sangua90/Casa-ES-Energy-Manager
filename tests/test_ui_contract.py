@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import re
 import unittest
+from release_contract import release_chain_source, assert_release_version
 
 ROOT = Path(__file__).resolve().parents[1]
 INTEGRATION = ROOT / "custom_components" / "casa_es_energy_manager"
@@ -151,7 +152,7 @@ class TestUIContract(unittest.TestCase):
 
     def test_real_control_master_and_v156_controller_retain_v144_guarantees(self) -> None:
         const_text = (INTEGRATION / "const.py").read_text(encoding="utf-8")
-        init_text = (INTEGRATION / "__init__.py").read_text(encoding="utf-8")
+        init_text = release_chain_source(INTEGRATION)
         switch_text = (INTEGRATION / "switch.py").read_text(encoding="utf-8")
         coordinator14 = (INTEGRATION / "coordinator_v14.py").read_text(encoding="utf-8")
         coordinator143 = (INTEGRATION / "coordinator_v143.py").read_text(encoding="utf-8")
@@ -211,8 +212,16 @@ class TestUIContract(unittest.TestCase):
         match = re.search(r'^VERSION = "([^"]+)"$', const_text, re.MULTILINE)
         self.assertIsNotNone(match)
         self.assertEqual(manifest["version"], match.group(1))
-        self.assertEqual("1.5.7", manifest["version"])
+        assert_release_version(self, INTEGRATION, "1.5.7")
 
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EnergySensorMetadataTests(unittest.TestCase):
+    def test_forecasts_and_budgets_are_not_statistics_counters(self):
+        import ast
+        tree = ast.parse((INTEGRATION / "sensor.py").read_text(encoding="utf-8"))
+        energy = next(n.value for n in tree.body if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "_ENERGY" for t in n.targets))
+        self.assertNotIn("state_class", [k.value for k in energy.keys])

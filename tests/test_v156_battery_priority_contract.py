@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import unittest
+from release_contract import release_chain_source, assert_release_version
 
 ROOT = Path(__file__).resolve().parents[1]
 COMPONENT = ROOT / "custom_components" / "casa_es_energy_manager"
@@ -13,7 +14,7 @@ class V156BatteryPriorityContractTests(unittest.TestCase):
     def setUp(self) -> None:
         self.source = (COMPONENT / "coordinator_v156.py").read_text(encoding="utf-8")
         self.source157 = (COMPONENT / "coordinator_v157.py").read_text(encoding="utf-8")
-        self.init = (COMPONENT / "__init__.py").read_text(encoding="utf-8")
+        self.init = release_chain_source(COMPONENT)
 
     def test_battery_charge_cap_is_explicit(self) -> None:
         self.assertIn("BATTERY_MAX_CHARGE_W = 3500.0", self.source)
@@ -41,19 +42,19 @@ class V156BatteryPriorityContractTests(unittest.TestCase):
         self.assertIn('data["phase_warning"] = raw_phase_warning', self.source)
         self.assertIn('"disabled_all_control_paths"', self.source)
 
-    def test_legacy_twenty_twenty_is_persisted_as_twenty_five(self) -> None:
+    def test_migration_retains_twenty_minute_compressor_off_protection(self) -> None:
         self.assertIn("_persist_climate_anti_cycle_migration", self.init)
         self.assertIn("async_update_subentry", self.init)
-        self.assertIn("CONF_DEVICE_MIN_OFF_MINUTES] = 5.0", self.init)
+        self.assertIn("CONF_DEVICE_MIN_OFF_MINUTES] = 20.0", self.init)
 
     def test_v156_remains_in_v157_release_chain(self) -> None:
         manifest = (COMPONENT / "manifest.json").read_text(encoding="utf-8")
         const = (COMPONENT / "const.py").read_text(encoding="utf-8")
         self.assertIn("V156Coordinator", self.source157)
         self.assertIn("coordinator_v157", self.init)
-        self.assertIn('"version": "1.5.7"', manifest)
-        self.assertIn('VERSION = "1.5.7"', const)
+        assert_release_version(self, COMPONENT, "1.5.7")
 
 
 if __name__ == "__main__":
     unittest.main()
+
