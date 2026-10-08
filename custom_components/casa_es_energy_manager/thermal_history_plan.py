@@ -192,7 +192,7 @@ def forecast(model: dict, day: datetime) -> tuple[list[float], float]:
 
 
 def plan(model: dict, now: datetime, current: float, base: float, maximum: float,
-         green_maximum: float = 53.0, reserve_in_base: bool = False) -> dict:
+         green_maximum: float = 53.0, reserve_in_base: bool = False, evening_minimum: float = 0.0) -> dict:
     hourly, margin = forecast(model, now)
     tomorrow, tomorrow_margin = forecast(model, now + timedelta(days=1))
     upcoming = [h for h in range(now.hour, 24) if hourly[h] >= 0.4]
@@ -222,6 +222,8 @@ def plan(model: dict, now: datetime, current: float, base: float, maximum: float
         minimum_after_use = base
     loss_allowance = min(loss * loss_hours, 5)
     required = minimum_after_use + remaining + margin + loss_allowance
+    evening_floor = max(number(evening_minimum, 0), 0) if deadline.hour >= 17 and remaining >= 0.4 else 0
+    required = max(required, evening_floor)
     target = min(required, maximum)
     green_target = min(target, green_maximum)
     rate = max(number(model.get("green_c_per_h"), 2), 0.5)
@@ -232,6 +234,7 @@ def plan(model: dict, now: datetime, current: float, base: float, maximum: float
     return {"target_c": round(target, 1), "required_uncapped_c": round(required, 1),
             "green_target_c": round(green_target, 1), "reserve_c": round(margin, 1),
             "reserve_in_base": reserve_in_base, "normal_target_c": base,
+            "evening_minimum_c": evening_floor,
             "minimum_after_use_c": round(minimum_after_use, 1),
             "loss_allowance_c": round(loss_allowance, 2),
             "expected_remaining_draw_c": round(remaining, 2),

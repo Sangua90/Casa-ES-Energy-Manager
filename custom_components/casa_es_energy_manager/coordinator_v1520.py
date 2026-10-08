@@ -281,7 +281,7 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         base = min(number(item.get(CONF_THERMAL_BASE_TEMP_C), 53), 53, maximum)
         current = number(item.get("thermal_current_temperature_c"), base)
         subentry_id = str(item.get("subentry_id", ""))
-        result = plan(self._dhw_models.get(subentry_id, {}), now, current, base, maximum, reserve_in_base=True)
+        result = plan(self._dhw_models.get(subentry_id, {}), now, current, base, maximum, reserve_in_base=True, evening_minimum=63.0)
         tomorrow_fv = number(data.get("forecast_tomorrow_kwh"))
         today_fv = number(data.get("forecast_today_kwh"))
         poor_tomorrow = tomorrow_fv is not None and (tomorrow_fv < 6 or (today_fv and tomorrow_fv < today_fv * 0.35))

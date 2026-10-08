@@ -169,3 +169,20 @@ class NormalTargetTests(unittest.TestCase):
         self.assertEqual(result["loss_allowance_c"], 1.25)
         self.assertEqual(result["target_c"], 60.2)
         self.assertEqual(result["target_c"], dhw.plan(model, now.replace(hour=12), 51, 53, 73, reserve_in_base=True)["target_c"])
+
+    def test_evening_floor_preserves_reserve_and_recalculates_earlier_notice(self):
+        model = {"draw_by_day": {"2026-10-01": {"19": 3, "20": 3}}, "standby_loss_c_per_h": .625}
+        now = NOW.replace(hour=8)
+        old = dhw.plan(model, now, 51, 53, 73, reserve_in_base=True)
+        new = dhw.plan(model, now, 51, 53, 73, reserve_in_base=True, evening_minimum=63)
+        self.assertEqual(new["target_c"], 63)
+        self.assertEqual(new["green_target_c"], 53)
+        self.assertEqual(new["reserve_c"], 4)
+        self.assertLess(new["recovery_request_at"], old["recovery_request_at"])
+        self.assertEqual(dhw.plan(model, now, 51, 53, 61, reserve_in_base=True, evening_minimum=63)["target_c"], 61)
+
+    def test_evening_floor_does_not_apply_to_morning_use(self):
+        model = {"draw_by_day": {"2026-10-01": {"7": 2}}, "standby_loss_c_per_h": .5}
+        result = dhw.plan(model, NOW.replace(hour=6), 51, 53, 73, reserve_in_base=True, evening_minimum=63)
+        self.assertEqual(result["evening_minimum_c"], 0)
+        self.assertLess(result["target_c"], 63)
