@@ -186,3 +186,9 @@ class NormalTargetTests(unittest.TestCase):
         result = dhw.plan(model, NOW.replace(hour=6), 51, 53, 73, reserve_in_base=True, evening_minimum=63)
         self.assertEqual(result["evening_minimum_c"], 0)
         self.assertLess(result["target_c"], 63)
+
+    def test_morning_preview_excludes_next_evening_consumption(self):
+        model = {"draw_by_day": {"2026-10-01": {"7": 2, "19": 20}}, "standby_loss_c_per_h": .5}
+        result = dhw.plan(model, NOW.replace(hour=0), 50, 53, 73, reserve_in_base=True, demand_end_hour=12)
+        self.assertEqual(result["expected_remaining_draw_c"], 2)
+        self.assertLess(result["target_c"], 60)

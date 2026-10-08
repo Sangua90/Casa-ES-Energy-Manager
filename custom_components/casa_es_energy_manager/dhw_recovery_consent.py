@@ -42,7 +42,11 @@ class DHWRecoveryConsent:
             yes = action == f"CASA_ES_DHW_YES_{token}"
             record["status"] = "approved" if yes else "declined"
             if yes:
-                record["expires"] = (now + timedelta(hours=record["runtime_hours"])).isoformat()
+                expires = now + timedelta(hours=record["runtime_hours"])
+                deadline = datetime.fromisoformat(record.get("deadline", now.isoformat()))
+                if deadline > now:
+                    expires = max(expires, deadline + timedelta(hours=1))
+                record["expires"] = min(expires, now + timedelta(hours=24)).isoformat()
             return sid
         return None
 

@@ -59,3 +59,13 @@ class ConsentTests(unittest.TestCase):
         self.assertIsNotNone(c.request("boiler", p, NOW.replace(hour=16)))
         c.records["boiler"]["status"] = "expired"
         self.assertIsNone(c.request("boiler", p, NOW.replace(hour=17)))
+
+    def test_previous_evening_approval_covers_morning_without_renewal(self):
+        c, p, _ = self.setup_consent()
+        c.records.clear()
+        now = NOW.replace(hour=21)
+        p["deadline"] = (now + timedelta(days=1)).replace(hour=7).isoformat()
+        r = c.request("boiler", p, now)
+        c.answer("CASA_ES_DHW_YES_" + r["token"], now)
+        self.assertIsNotNone(c.approved_target("boiler", (now + timedelta(days=1)).replace(hour=7)))
+        self.assertIsNone(c.approved_target("boiler", now + timedelta(hours=25)))

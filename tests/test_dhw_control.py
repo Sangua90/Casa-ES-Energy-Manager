@@ -39,6 +39,7 @@ class ControlTests(unittest.IsolatedAsyncioTestCase):
         c._dhw_models, c._dhw_plans = {}, {}
         c._thermal_boost_owned, c._thermal_target_c = set(), {}
         c._dhw_boost_last_stop = {}
+        c._dhw_control_store = SimpleNamespace(async_save=AsyncMock())
         c._dhw_consent = consent_module.DHWRecoveryConsent()
         c._dhw_consent_store = SimpleNamespace(async_save=AsyncMock())
         c._async_request_dhw_recovery = AsyncMock()
@@ -279,3 +280,27 @@ class ResendConsentTests(unittest.IsolatedAsyncioTestCase):
         c._dhw_consent.records['boiler'].update(status='completed',owned=True)
         await c.async_resend_dhw_recovery()
         self.assertIn('boiler',c._dhw_consent.records)
+
+
+class RestartControlTests(unittest.IsolatedAsyncioTestCase):
+    setup_control = ControlTests.setup_control
+
+    async def test_pv_ownership_and_stop_time_roundtrip(self):
+        c, _, _, _ = self.setup_control()
+        c._thermal_boost_owned.add("boiler")
+        c._thermal_target_c["boiler"] = 63
+        c._dhw_boost_last_stop["boiler"] = NOW - timedelta(minutes=5)
+        await c._save_dhw_control()
+        saved = c._dhw_control_store.async_save.call_args.args[0]
+        restored, _, _, _ = self.setup_control()
+        restored._restore_dhw_control(saved)
+        self.assertIn("boiler", restored._thermal_boost_owned)
+        self.assertEqual(restored._thermal_target_c["boiler"], 63)
+        self.assertEqual(NOW.timestamp() - restored._dhw_boost_last_stop["boiler"].timestamp(), 300)
+        self.assertNotIn("manual_boiler", restored._thermal_boost_owned)
+
+    async def test_pv_start_saves_ownership_before_return(self):
+        c, _, data, _ = self.setup_control()
+        await c._async_apply_thermal_control(data, NOW)
+        saved = c._dhw_control_store.async_save.call_args.args[0]
+        self.assertIn("boiler", saved["owned_targets"])

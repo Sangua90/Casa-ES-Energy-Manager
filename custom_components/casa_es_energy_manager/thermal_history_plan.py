@@ -192,9 +192,10 @@ def forecast(model: dict, day: datetime) -> tuple[list[float], float]:
 
 
 def plan(model: dict, now: datetime, current: float, base: float, maximum: float,
-         green_maximum: float = 53.0, reserve_in_base: bool = False, evening_minimum: float = 0.0) -> dict:
+         green_maximum: float = 53.0, reserve_in_base: bool = False, evening_minimum: float = 0.0, demand_end_hour: int = 24) -> dict:
     hourly, margin = forecast(model, now)
     tomorrow, tomorrow_margin = forecast(model, now + timedelta(days=1))
+    hourly = hourly[:demand_end_hour] + [0.0] * (24 - demand_end_hour)
     upcoming = [h for h in range(now.hour, 24) if hourly[h] >= 0.4]
     if upcoming:
         deadline = now.replace(hour=upcoming[0], minute=0, second=0, microsecond=0)

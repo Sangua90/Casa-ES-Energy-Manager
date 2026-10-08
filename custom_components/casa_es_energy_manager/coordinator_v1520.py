@@ -67,12 +67,14 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         self._dhw_history_error: str | None = None
         self.thermal_learner = RecorderThermalProfiles(self)
         self._dhw_boost_last_stop = {}
+        self._dhw_control_store = Store(hass, 1, f"casa_es_energy_manager.{entry.entry_id}.dhw_control")
         self._dhw_store = Store(hass, 1, f"casa_es_energy_manager.{entry.entry_id}.dhw_recorder_profiles")
         self._dhw_consent_store = Store(hass, 1, f"casa_es_energy_manager.{entry.entry_id}.dhw_recovery_consent")
         self._dhw_consent = DHWRecoveryConsent()
         self._dhw_notify_error = None
 
     async def async_initialize(self) -> None:
+        self._restore_dhw_control(await self._dhw_control_store.async_load())
         self._dhw_consent = DHWRecoveryConsent(await self._dhw_consent_store.async_load())
         # Recover ownership even after an expired approval so our Boost can be
         # stopped safely on the next update; do not adopt manual appliance Boost.
@@ -87,6 +89,24 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         self.entry.async_on_unload(self.hass.bus.async_listen(
             "mobile_app_notification_action", self._async_dhw_notification_action))
         await self._refresh_dhw_history()
+
+    def _restore_dhw_control(self, saved):
+        if not isinstance(saved, dict):
+            return
+        for sid, value in saved.get("owned_targets", {}).items():
+            target = number(value)
+            if target is not None and 40 <= target <= 73:
+                self._thermal_boost_owned.add(sid)
+                self._thermal_target_c[sid] = target
+        for sid, value in saved.get("last_stop", {}).items():
+            at = dt_util.parse_datetime(value)
+            if at is not None and at.tzinfo is not None:
+                self._dhw_boost_last_stop[sid] = at
+
+    async def _save_dhw_control(self):
+        await self._dhw_control_store.async_save({
+            "owned_targets": {sid: self._thermal_target_c[sid] for sid in self._thermal_boost_owned if sid in self._thermal_target_c},
+            "last_stop": {sid: at.isoformat() for sid, at in self._dhw_boost_last_stop.items()}})
 
     def pending_dhw_recoveries(self):
         now = dt_util.now()
@@ -163,7 +183,9 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
             return
         deadline = dt_util.parse_datetime(result["deadline"])
         hours = (deadline.timestamp() - now.timestamp()) / 3600
-        if not result["recovery_request_due"] or hours < -1:
+        early_morning_notice = (now.hour == 21 and deadline.date() > now.date() and deadline.hour < 12
+                                and not 7 <= dt_util.parse_datetime(result["recovery_request_at"]).hour < 22)
+        if (not result["recovery_request_due"] and not early_morning_notice) or hours < -1:
             return
         if result["green_shortfall_c"] <= 1 or result["target_c"] <= item["thermal_current_temperature_c"] + 1:
             return
@@ -195,6 +217,8 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
 
     async def _stop_owned_thermal_boost(self, item, reason, now) -> None:
         await super()._stop_owned_thermal_boost(item, reason, now)
+        self._dhw_boost_last_stop[str(item.get("subentry_id", ""))] = now
+        await self._save_dhw_control()
         self._dhw_consent.finish(str(item.get("subentry_id", "")))
         await self._dhw_consent_store.async_save(self._dhw_consent.records)
 
@@ -338,6 +362,7 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
                 self._thermal_boost_owned.discard(sid)
                 self._thermal_target_c.pop(sid, None)
                 self._dhw_boost_last_stop[sid] = now
+                await self._save_dhw_control()
                 owned = False
                 if self._dhw_consent.records.get(sid, {}).get("owned"):
                     self._dhw_consent.finish(sid)
@@ -395,11 +420,12 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
                 if target > self._thermal_target_c.get(sid, 0) + 0.5:
                     await self._set_water_temperature(entity_id, target)
                     self._thermal_target_c[sid] = target
+                    await self._save_dhw_control()
                     return True
                 continue
             last_stop = self._dhw_boost_last_stop.get(sid)
             min_off = max(number(item.get("min_off_minutes"), 5), 5)
-            restart_ok = last_stop is None or (now - last_stop).total_seconds() >= min_off * 60
+            restart_ok = last_stop is None or now.timestamp() - last_stop.timestamp() >= min_off * 60
             if (pv_ok or approved_ok) and restart_ok and target > current + 0.5:
                 if approved_ok:
                     record = self._dhw_consent.records[sid]
@@ -409,6 +435,7 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
                 await self._set_boost(boost_id, True)
                 self._thermal_boost_owned.add(sid)
                 self._thermal_target_c[sid] = target
+                await self._save_dhw_control()
                 self._last_thermal_action = "boost_on"
                 self._last_thermal_reason = reason
                 self._last_thermal_at = now.isoformat()
@@ -418,6 +445,19 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
                 await self._dhw_consent_store.async_save(self._dhw_consent.records)
             if not pv_ok and approved_target is None:
                 await self._async_request_dhw_recovery(item, result, now)
+                if now.hour == 21:
+                    # Preview only morning demand, not tomorrow evening showers.
+                    # Never replace a pending or approved current recovery.
+                    record = self._dhw_consent.records.get(sid, {})
+                    if record.get("status") not in ("pending", "approved") and not record.get("owned"):
+                        tomorrow = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+                        morning = plan(self._dhw_models.get(sid, {}), tomorrow, current,
+                                       result["normal_target_c"], min(result["normal_target_c"] + 20, 73,
+                                       number(item.get(CONF_THERMAL_NORMAL_MAX_TEMP_C), 65),
+                                       number(item.get(CONF_THERMAL_HARD_MAX_TEMP_C), 70)),
+                                       reserve_in_base=True, demand_end_hour=12)
+                        if dt_util.parse_datetime(morning["deadline"]).hour < 12:
+                            await self._async_request_dhw_recovery(item, morning, now)
             # GREEN is capped at the manufacturer's heat-pump limit. It never
             # promises >53 C or quietly substitutes grid-powered resistance.
             water = self.hass.states.get(entity_id)
