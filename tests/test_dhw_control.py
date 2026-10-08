@@ -311,7 +311,7 @@ class NightControlTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_night_surplus_never_starts_maintenance_boost(self):
         c, _, data, _ = self.setup_control()
-        self.assertFalse(await c._async_apply_thermal_control(data, NOW.replace(hour=23)))
+        await c._async_apply_thermal_control(data, NOW.replace(hour=23))
         c._set_boost.assert_not_awaited()
 
     async def test_night_stops_only_owned_boost(self):
@@ -329,3 +329,33 @@ class NightControlTests(unittest.IsolatedAsyncioTestCase):
         await c._async_apply_thermal_control(data, NOW.replace(hour=23))
         c._stop_owned_thermal_boost.assert_not_awaited()
         c._set_boost.assert_not_awaited()
+
+
+class GreenRestTests(unittest.IsolatedAsyncioTestCase):
+    setup_control = ControlTests.setup_control
+
+    async def test_night_lowers_green_setpoint_without_power_command(self):
+        c, item, data, _ = self.setup_control()
+        item["thermal_target_temperature_c"] = 53
+        await c._async_apply_thermal_control(data, NOW.replace(hour=23))
+        c._set_water_temperature.assert_awaited_once_with("water_heater.test", 45)
+        c._set_boost.assert_not_awaited()
+        c.hass.services.async_call.assert_not_awaited()
+
+    async def test_morning_recalculates_restore_time_after_restart(self):
+        c, item, _, _ = self.setup_control()
+        result = {"green_target_c": 53}
+        self.assertEqual(c._green_rest_target(item, result, NOW.replace(hour=23)), 45)
+        self.assertEqual(c._green_rest_target(item, result, NOW.replace(hour=6)), 53)
+
+    async def test_late_predicted_use_prevents_early_setback(self):
+        c, item, _, _ = self.setup_control()
+        c._dhw_models["boiler"] = {"draw_by_day": {"2026-10-01": {"23": 3}}}
+        self.assertEqual(c._green_rest_target(item, {"green_target_c": 53}, NOW.replace(hour=23)), 53)
+
+    async def test_day_restores_green_even_if_ha_missed_early_start(self):
+        c, item, data, _ = self.setup_control()
+        item["thermal_target_temperature_c"] = 45
+        data["grid_export_w"] = 0
+        await c._async_apply_thermal_control(data, NOW.replace(hour=8))
+        c._set_water_temperature.assert_awaited_once_with("water_heater.test", 53)

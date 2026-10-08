@@ -344,6 +344,47 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
             return
         await super()._async_call_entity_control(entity_id, turn_on)
 
+    def _green_rest_target(self, item, result, now):
+        """Lower only after evening use; restore early using absolute deadlines."""
+        normal = result["green_target_c"]
+        if 7 <= now.hour < 22:
+            return normal
+        sid = str(item.get("subentry_id", ""))
+        model = self._dhw_models.get(sid, {})
+        hourly, _ = forecast(model, now)
+        if now.hour >= 22 and any(hourly[h] >= .4 for h in range(now.hour, 24)):
+            return normal
+        morning_day = now + timedelta(days=1) if now.hour >= 22 else now
+        morning, _ = forecast(model, morning_day)
+        first_hour = next((h for h in range(0, 12) if morning[h] >= .4), 7)
+        deadline = morning_day.replace(hour=first_hour, minute=0, second=0, microsecond=0)
+        water = self.hass.states.get(item.get("entity_id", ""))
+        lower = temperature(water.attributes.get("min_temp"), self.hass.config.units.temperature_unit) if water else None
+        rest = min(normal, max(45.0, lower or 40.0))
+        # Use the lowest permitted overnight temperature, not today's warmer
+        # reading, and allow additional time for the native restart delay.
+        rate = max(number(model.get("green_c_per_h"), 2), .5)
+        lead = max(normal - rest, 0) / rate * 1.25 + 1.5
+        restore_at = deadline.timestamp() - lead * 3600
+        result.update(green_rest_target_c=rest,
+                      green_restore_at=deadline.fromtimestamp(restore_at, now.tzinfo).isoformat(),
+                      green_rest_active=now.timestamp() < restore_at)
+        return rest if now.timestamp() < restore_at else normal
+
+    async def _apply_green_setpoint(self, item, target, now, reason):
+        entity = str(item.get("entity_id", ""))
+        water = self.hass.states.get(entity)
+        if not water or water.state.upper() != "GREEN":
+            return False
+        actual = number(item.get("thermal_target_temperature_c"))
+        if actual is None or abs(actual - target) < .5:
+            return False
+        await self._set_water_temperature(entity, target)
+        self._last_thermal_action = "green_scheduled_setpoint"
+        self._last_thermal_reason = reason
+        self._last_thermal_at = now.isoformat()
+        return True
+
     async def _async_apply_thermal_control(self, data: dict, now: Any) -> bool:
         """Own this path: legacy below-base logic must not override GREEN planning."""
         if not self.real_control_enabled:
@@ -419,6 +460,9 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
                 if owned:
                     await self._stop_owned_thermal_boost(item, "Riposo notturno: nessun recupero mattutino necessario", now)
                     return True
+                rest_target = self._green_rest_target(item, result, now)
+                if await self._apply_green_setpoint(item, rest_target, now, "Riposo GREEN o preparazione mattutina anticipata"):
+                    return True
                 continue
             entity_id = str(item.get("entity_id", ""))
             boost_id = str(item.get(CONF_THERMAL_BOOST_ENTITY, ""))
@@ -473,10 +517,10 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
             # promises >53 C or quietly substitutes grid-powered resistance.
             water = self.hass.states.get(entity_id)
             green_target = result["green_target_c"]
-            if result["green_due"] and water and water.state.upper() != "GREEN" and "GREEN" in water.attributes.get("operation_list", []):
+            if (result["green_due"] or 7 <= now.hour < 22) and water and water.state.upper() != "GREEN" and "GREEN" in water.attributes.get("operation_list", []):
                 await self.hass.services.async_call("water_heater", "set_operation_mode", {"entity_id": entity_id, "operation_mode": "GREEN"}, blocking=True)
                 return True
-            if result["green_due"] and water and water.state.upper() == "GREEN" and abs(number(item.get("thermal_target_temperature_c"), 0) - green_target) >= 0.5:
+            if (result["green_due"] or 7 <= now.hour < 22) and water and water.state.upper() == "GREEN" and abs(number(item.get("thermal_target_temperature_c"), 0) - green_target) >= 0.5:
                 await self._set_water_temperature(entity_id, green_target)
                 self._last_thermal_action = "green_early_setpoint"
                 self._last_thermal_reason = reason
