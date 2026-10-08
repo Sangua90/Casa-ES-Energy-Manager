@@ -204,7 +204,9 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
                             f"Tempo prudente di riscaldamento: {result['boost_heating_hours']:.1f} ore. "
                             "Il consenso vale per un solo recupero e scade al termine del tempo previsto. "
                             "Rispondi entro 45 minuti; senza risposta resta GREEN."),
-                "data": {"tag": f"casa_es_dhw_{sid}", "actions": [
+                "data": {"tag": f"casa_es_dhw_{sid}",
+                         "url": "/energy-manager/acqua-calda",
+                         "clickAction": "/energy-manager/acqua-calda", "actions": [
                     {"action": f"CASA_ES_DHW_YES_{token}", "title": "Sì, usa la resistenza", "authenticationRequired": True},
                     {"action": f"CASA_ES_DHW_NO_{token}", "title": "No"}]}}, blocking=True)
             self._dhw_notify_error = None

@@ -182,6 +182,10 @@ class ControlTests(unittest.IsolatedAsyncioTestCase):
         actions = payload["data"]["actions"]
         self.assertEqual(len(actions), 2)
         self.assertTrue(actions[0]["action"].startswith("CASA_ES_DHW_YES_"))
+        navigation = c.hass.services.async_call.call_args.args[2]["data"]
+        self.assertEqual(navigation["url"], "/energy-manager/acqua-calda")
+        self.assertEqual(navigation["clickAction"], "/energy-manager/acqua-calda")
+        self.assertEqual(c._dhw_consent.records["boiler"]["status"], "pending")
         self.assertIn("rete", payload["message"])
 
     async def test_notification_reply_refreshes_only_valid_request(self):
