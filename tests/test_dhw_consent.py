@@ -50,3 +50,12 @@ class ConsentTests(unittest.TestCase):
         self.assertGreater(slow["recovery_request_lead_hours"], cold["recovery_request_lead_hours"])
         self.assertAlmostEqual(cold["recovery_request_lead_hours"] - cold["boost_heating_hours"], 0.75, places=2)
         self.assertGreater(cold["boost_heating_hours"], 2)
+
+
+    def test_expired_morning_request_allows_evening_but_not_repeat(self):
+        c, p, r = self.setup_consent()
+        r.update(status="expired", deadline=NOW.replace(hour=7).isoformat())
+        p["deadline"] = NOW.replace(hour=19).isoformat()
+        self.assertIsNotNone(c.request("boiler", p, NOW.replace(hour=16)))
+        c.records["boiler"]["status"] = "expired"
+        self.assertIsNone(c.request("boiler", p, NOW.replace(hour=17)))

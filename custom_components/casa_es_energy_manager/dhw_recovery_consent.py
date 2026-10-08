@@ -10,13 +10,19 @@ class DHWRecoveryConsent:
     def request(self, sid, plan, now):
         episode = datetime.fromisoformat(plan["deadline"]).date().isoformat()
         previous = self.records.get(sid, {})
-        if previous.get("episode") == episode and not (
+        # A missed morning request must not suppress the evening shower request.
+        # Refusal and approval remain single-use; never renew either silently.
+        expired_for_earlier_use = (previous.get("status") == "expired" and not previous.get("owned")
+            and plan["deadline"] != previous.get("deadline")
+            and datetime.fromisoformat(plan["deadline"]).timestamp() >
+                datetime.fromisoformat(previous.get("deadline", previous["expires"])).timestamp() + 3600)
+        if previous.get("episode") == episode and not expired_for_earlier_use and not (
             previous.get("status") == "notification_failed" and
             now.timestamp() >= datetime.fromisoformat(previous["retry_at"]).timestamp()
         ):
             return None
         token = uuid4().hex
-        record = {"episode": episode, "status": "pending", "token": token,
+        record = {"episode": episode, "deadline": plan["deadline"], "status": "pending", "token": token,
                   "target_c": plan["target_c"],
                   "runtime_hours": min(max(plan["boost_heating_hours"], 2), 24),
                   "expires": (now + timedelta(minutes=45)).isoformat()}

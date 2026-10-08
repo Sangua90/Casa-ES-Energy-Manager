@@ -151,6 +151,9 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         await self.async_request_refresh()
 
     async def _async_request_dhw_recovery(self, item, result, now) -> None:
+        # Sleeping hours are for native maintenance, not phone consent prompts.
+        if not 7 <= now.hour < 22:
+            return
         service = str(item.get(CONF_THERMAL_NOTIFY_SERVICE, ""))
         if not service.startswith("notify.mobile_app_"):
             return
