@@ -278,7 +278,7 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         base = min(number(item.get(CONF_THERMAL_BASE_TEMP_C), 53), 53, maximum)
         current = number(item.get("thermal_current_temperature_c"), base)
         subentry_id = str(item.get("subentry_id", ""))
-        result = plan(self._dhw_models.get(subentry_id, {}), now, current, base, maximum)
+        result = plan(self._dhw_models.get(subentry_id, {}), now, current, base, maximum, reserve_in_base=True)
         tomorrow_fv = number(data.get("forecast_tomorrow_kwh"))
         today_fv = number(data.get("forecast_today_kwh"))
         poor_tomorrow = tomorrow_fv is not None and (tomorrow_fv < 6 or (today_fv and tomorrow_fv < today_fv * 0.35))
@@ -287,7 +287,7 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         if poor_tomorrow and now.hour >= 10:
             morning = sum(result["tomorrow_hourly_draw_c"][:12])
             loss = number(self._dhw_models.get(subentry_id, {}).get("standby_loss_c_per_h"), 0.5)
-            required = max(result["required_uncapped_c"], base + result["expected_remaining_draw_c"] + morning + result["reserve_c"] + min(loss * (32 - now.hour), 5))
+            required = max(result["required_uncapped_c"], result["minimum_after_use_c"] + result["expected_remaining_draw_c"] + morning + result["reserve_c"] + min(loss * (32 - now.hour), 5))
             result["required_uncapped_c"] = round(required, 1)
             result["target_c"] = round(min(required, maximum), 1)
             result["capacity_shortfall_c"] = round(max(required - maximum, 0), 1)
@@ -302,7 +302,7 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         self._dhw_plans[subentry_id] = result
         return result["target_c"], (
             f"storico HA: prelievo residuo {result['expected_remaining_draw_c']:.1f}°C; "
-            f"riserva adattiva {result['reserve_c']:.1f}°C; "
+            f"riserva fissa {result['reserve_c']:.1f}°C; "
             f"uso previsto {result['deadline']}; anticipo GREEN {result['green_lead_hours']:.1f} h")
 
     async def _set_water_temperature(self, entity_id: str, value: float) -> None:

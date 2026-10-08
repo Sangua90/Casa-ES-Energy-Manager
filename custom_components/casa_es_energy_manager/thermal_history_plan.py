@@ -192,7 +192,7 @@ def forecast(model: dict, day: datetime) -> tuple[list[float], float]:
 
 
 def plan(model: dict, now: datetime, current: float, base: float, maximum: float,
-         green_maximum: float = 53.0) -> dict:
+         green_maximum: float = 53.0, reserve_in_base: bool = False) -> dict:
     hourly, margin = forecast(model, now)
     tomorrow, tomorrow_margin = forecast(model, now + timedelta(days=1))
     upcoming = [h for h in range(now.hour, 24) if hourly[h] >= 0.4]
@@ -209,7 +209,19 @@ def plan(model: dict, now: datetime, current: float, base: float, maximum: float
         observed_this_hour = number(model.get("today_draw", {}).get(str(now.hour)), 0)
         remaining -= min(observed_this_hour, hourly[now.hour])
     loss = max(number(model.get("standby_loss_c_per_h"), 0.5), 0)
-    required = base + remaining + margin + min(loss * hours, 5)
+    if reserve_in_base:
+        # The normal daily setpoint already contains the safety reserve.
+        # GREEN maintains it before use: compensate cooling during the use
+        # window, not all the daytime hours preceding the first shower.
+        demand_hours = upcoming if upcoming else [h for h in range(24) if tomorrow[h] >= 0.4]
+        use_hours = max(demand_hours[-1] + 1 - deadline.hour, 1) if demand_hours else 1
+        loss_hours = use_hours
+        minimum_after_use = max(base - margin, 0)
+    else:
+        loss_hours = hours
+        minimum_after_use = base
+    loss_allowance = min(loss * loss_hours, 5)
+    required = minimum_after_use + remaining + margin + loss_allowance
     target = min(required, maximum)
     green_target = min(target, green_maximum)
     rate = max(number(model.get("green_c_per_h"), 2), 0.5)
@@ -219,6 +231,9 @@ def plan(model: dict, now: datetime, current: float, base: float, maximum: float
     recovery_lead_hours = boost_heating_hours + 0.75  # 45 minutes to answer.
     return {"target_c": round(target, 1), "required_uncapped_c": round(required, 1),
             "green_target_c": round(green_target, 1), "reserve_c": round(margin, 1),
+            "reserve_in_base": reserve_in_base, "normal_target_c": base,
+            "minimum_after_use_c": round(minimum_after_use, 1),
+            "loss_allowance_c": round(loss_allowance, 2),
             "expected_remaining_draw_c": round(remaining, 2),
             "deadline": deadline.isoformat(), "green_lead_hours": round(lead_hours, 2),
             "green_start": datetime.fromtimestamp(deadline.timestamp() - lead_hours * 3600, now.tzinfo).isoformat(),

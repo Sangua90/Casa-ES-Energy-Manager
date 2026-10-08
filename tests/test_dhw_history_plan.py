@@ -157,3 +157,15 @@ class FixedReserveTrialTests(unittest.TestCase):
         result=dhw.plan(model,NOW,40,53,73)
         self.assertEqual(result["reserve_c"],4.0)
         self.assertEqual(result["tomorrow_reserve_c"],4.0)
+
+
+class NormalTargetTests(unittest.TestCase):
+    def test_daily_target_includes_reserve_and_only_use_window_losses(self):
+        model = {"draw_by_day": {"2026-10-01": {"19": 3, "20": 3}}, "standby_loss_c_per_h": .625}
+        now = NOW.replace(hour=8)
+        result = dhw.plan(model, now, 51, 53, 73, reserve_in_base=True)
+        self.assertEqual(result["reserve_c"], 4)
+        self.assertEqual(result["minimum_after_use_c"], 49)
+        self.assertEqual(result["loss_allowance_c"], 1.25)
+        self.assertEqual(result["target_c"], 60.2)
+        self.assertEqual(result["target_c"], dhw.plan(model, now.replace(hour=12), 51, 53, 73, reserve_in_base=True)["target_c"])
