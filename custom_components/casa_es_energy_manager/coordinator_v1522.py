@@ -12,6 +12,8 @@ from homeassistant.util import dt as dt_util
 from .coordinator_v1520 import CasaESEnergyCoordinator as PreviousCoordinator
 from .house_climate_plan import HOUSE_TYPE, ROOM_TYPE, finite, room_plan, situation, auxiliary_active
 from .engine_bridge import async_plan, async_import_history
+from homeassistant.components.recorder.statistics import statistics_during_period
+from .pv_local_nowcast import fit as fit_pv, estimate as estimate_pv, combined as combine_pv
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -19,6 +21,12 @@ _LOGGER = logging.getLogger(__name__)
 class CasaESEnergyCoordinator(PreviousCoordinator):
     def __init__(self, hass, entry):
         super().__init__(hass, entry)
+        self._pv_model = {}
+        self._pv_next_learning = 0
+        self._pv_estimate = None
+        self._pv_combined = None
+        self._pv_info = {}
+        self._pv_store = Store(hass, 1, f"casa_es_energy_manager.{entry.entry_id}.pv_local_nowcast")
         self._house_owned = {}
         self._house_hold = {}
         self._house_error = None
@@ -36,6 +44,8 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         self._house_store = Store(hass, 1, f"casa_es_energy_manager.{entry.entry_id}.house_climate_control")
 
     async def async_initialize(self):
+        pv_saved = await self._pv_store.async_load()
+        self._pv_model = pv_saved if isinstance(pv_saved, dict) else {}
         saved = await self._house_store.async_load()
         if isinstance(saved, dict):
             self._house_owned = saved.get("owned", {})
@@ -48,6 +58,63 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
             self._house_gas_stopped_at = saved.get("gas_stopped_at", 0)
         await super().async_initialize()
         self._house_history_task = self.hass.async_create_background_task(self._import_climate_history(), "Energy Meter climate history")
+
+    def _pv_capacity(self):
+        entries = self.hass.config_entries.async_entries("open_meteo_solar_forecast")
+        if entries:
+            power = entries[0].options.get("modules_power", 8720)
+            values = power if isinstance(power, (list, tuple)) else [power]
+            return max(sum(finite(value, 0) for value in values), 1)
+        return 8720.0
+
+    def _numeric_state(self, entity_id, *, power=False, energy=False):
+        value = super()._numeric_state(entity_id, power=power, energy=energy)
+        if (power and entity_id and entity_id == self._config("pv_potential_power_sensor")
+                and getattr(self, "_pv_combined", None) is not None):
+            return self._pv_combined
+        return value
+
+    async def _refresh_pv_nowcast(self, now):
+        nominal = self._pv_capacity()
+        roles = {"actual": self._config("pv_power_sensor"),
+                 "soc": self._config("battery_soc_sensor"),
+                 "forecast": "sensor.casa_es_power_production_now",
+                 "irradiance": "sensor.stazione_meteo_solar_radiation"}
+        if now.timestamp() >= self._pv_next_learning and all(roles.values()):
+            self._pv_next_learning = now.timestamp() + 86400
+            try:
+                end = now.replace(hour=0, minute=0, second=0, microsecond=0)
+                statistics = await get_instance(self.hass).async_add_executor_job(partial(
+                    statistics_during_period, self.hass, dt_util.as_utc(end - timedelta(days=7)), dt_util.as_utc(end),
+                    set(roles.values()), "5minute", None, {"mean"}))
+                candidate = fit_pv(statistics, roles, now, nominal)
+                if candidate.get("accepted"):
+                    self._pv_model = candidate
+                    await self._pv_store.async_save(candidate)
+                self._pv_info["learning_result"] = candidate.get("reason")
+            except Exception as err:
+                self._pv_next_learning = now.timestamp() + 3600
+                self._pv_info["learning_result"] = type(err).__name__
+                _LOGGER.warning("Local PV learning unavailable: %s", type(err).__name__)
+        weather = self.hass.states.get(roles["irradiance"])
+        current = super()._numeric_state(roles["actual"], power=True)
+        forecast = super()._numeric_state(roles["forecast"], power=True)
+        fresh = bool(weather and 0 <= now.timestamp() - getattr(weather, "last_reported", weather.last_updated).timestamp() <= 300
+                     and weather.attributes.get("unit_of_measurement") in ("W/m²", "W/m2"))
+        percent = self.hass.states.get("input_number.energy_manager_margine_stima_fv")
+        maximum = self.hass.states.get("input_number.energy_manager_extra_massimo_stima_fv")
+        margin = max(0, min(finite(percent.state if percent else None, 3), 10))
+        extra_max = max(0, min(finite(maximum.state if maximum else None, 200), 500))
+        local = estimate_pv(self._pv_model, weather.state, now, nominal, margin, extra_max) if fresh else None
+        self._pv_estimate = local if local is not None else forecast
+        self._pv_combined = combine_pv(current, self._pv_estimate)
+        self._pv_info.update(method="local_irradiance_validated" if local is not None else "weather_forecast_fallback",
+            actual_w=current, weather_forecast_w=forecast, hypothetical_w=self._pv_estimate,
+            nominal_w=nominal, positive_margin_pct=margin, extra_max_w=extra_max,
+            station_fresh=fresh, trained_at=self._pv_model.get("trained_at"),
+            validation_samples=self._pv_model.get("validation_samples"),
+            validation_mae_w=self._pv_model.get("validation_mae_w"),
+            weather_mae_w=self._pv_model.get("weather_mae_w"))
 
     def _house_config(self):
         houses = [s for s in self.entry.subentries.values() if s.subentry_type == HOUSE_TYPE]
@@ -644,7 +711,10 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         await super().async_prepare_unload()
 
     async def _async_update_data(self):
+        await self._refresh_pv_nowcast(dt_util.now())
         data = await super()._async_update_data()
+        data["pv_local_nowcast_w"] = self._pv_estimate
+        data["pv_nowcast_details"] = self._pv_info
         try:
             await self._async_house_plan(data, dt_util.now())
             self._house_error = None

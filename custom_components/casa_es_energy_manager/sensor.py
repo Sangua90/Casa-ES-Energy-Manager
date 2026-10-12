@@ -41,6 +41,7 @@ SENSORS = (
     CasaESSensorDescription(key="pv_potential_w", name="Potenza FV potenziale stimata", **_POWER),
     CasaESSensorDescription(key="pv_potential_gap_w", name="Potenziale FV non sfruttato stimato", **_POWER),
     CasaESSensorDescription(key="pv_potential_after_house_w", name="FV potenziale dopo i carichi casa", **_POWER),
+    CasaESSensorDescription(key="pv_local_nowcast_w", name="FV stimato locale stazione meteo", **_POWER),
     CasaESSensorDescription(key="forecast_remaining_kwh", name="Previsione FV residua oggi", **_ENERGY),
     CasaESSensorDescription(key="forecast_current_hour_power_w", name="Potenza FV prevista ora corrente", **_POWER),
     CasaESSensorDescription(key="forecast_current_hour_kwh", name="Energia FV prevista ora corrente", **_ENERGY),
@@ -136,6 +137,8 @@ class CasaESEnergySensor(CoordinatorEntity[CasaESEnergyCoordinator], SensorEntit
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
+        if self.description.key == "pv_local_nowcast_w":
+            return dict(self.coordinator.data.get("pv_nowcast_details", {}))
         if self.description.key == "engine_state":
             return {"reasons": self.coordinator.data.get("engine_reasons", []),
                     "energy_budget": self.coordinator.data.get("engine_energy_budget", {}),
