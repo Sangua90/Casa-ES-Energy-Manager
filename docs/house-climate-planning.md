@@ -53,3 +53,7 @@ Missing/invalid helpers use bounded defaults. Helpers have no forced initial
 value after creation, so user edits are restored after Home Assistant restarts.
 The actual heat-pump target, rather than the gas maintenance target, determines
 coasting; calibrated device setpoints respect the selected storage limits.
+
+
+### PV storage fan
+The persistent dashboard selector `input_boolean.energy_manager_ventola_alta_surplus` enables High fan only for automatically owned heat pumps during solar thermal storage. Supported fan modes are checked. The prior fan setting is stored in the existing persisted ownership record and restored when storage ends or the selector is disabled. Manual fan changes and manually running units are not overwritten. Fan changes preserve the compressor mode timestamp; a telemetry grace period avoids mistaking our pending fan command for a manual override. Heating storage is configured at +5 C, ceiling 27 C; cooling margin is separate at 2 C, floor 24 C.

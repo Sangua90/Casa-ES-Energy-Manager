@@ -560,3 +560,26 @@ class FiveDegreeStorageTests(unittest.TestCase):
         house={'season':'summer','solar_storage_margin_c':5,'solar_storage_cooling_margin_c':2,'solar_storage_cool_min_c':22}
         room={**PlanTests().room(),'solar_storage_available':True}
         self.assertEqual(plan.room_plan(house,room,NOW,29,True,True)['heat_pump_target'],24)
+
+class StorageFanTests(unittest.IsolatedAsyncioTestCase):
+    setup_control=ControlTests.setup_control
+    async def test_high_fan_restores_previous_and_survives_saved_record(self):
+        c,house,room,data,states=self.setup_control()
+        states['climate.hp'].attributes.update(fan_modes=['auto','high','low'],fan_mode='low')
+        c._house_owned['climate.hp']={'mode':'heat','target':26,'at':NOW.timestamp()-600,'mode_at':NOW.timestamp()-600}
+        self.assertTrue(await c._house_storage_fan('climate.hp',True,NOW))
+        record=c._house_owned['climate.hp']
+        self.assertEqual(record['fan_previous'],'low')
+        self.assertEqual(record['mode_at'],NOW.timestamp()-600)
+        states['climate.hp'].attributes['fan_mode']='high'
+        c._house_owned['climate.hp']=dict(record)
+        self.assertTrue(await c._house_storage_fan('climate.hp',False,NOW+timedelta(minutes=5)))
+        self.assertEqual(c._house_owned['climate.hp']['fan'],'low')
+        self.assertNotIn('fan_previous',c._house_owned['climate.hp'])
+    async def test_manual_fan_and_unowned_compressor_are_untouched(self):
+        c,house,room,data,states=self.setup_control()
+        states['climate.hp'].attributes.update(fan_modes=['auto','high','low'],fan_mode='low')
+        self.assertFalse(await c._house_storage_fan('climate.hp',True,NOW))
+        c._house_owned['climate.hp']={'mode':'heat','target':26,'at':NOW.timestamp()-600,'fan':'high','fan_previous':'auto'}
+        self.assertFalse(await c._house_storage_fan('climate.hp',False,NOW))
+        c.hass.services.async_call.assert_not_called()

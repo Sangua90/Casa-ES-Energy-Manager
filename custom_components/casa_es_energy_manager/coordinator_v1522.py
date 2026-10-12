@@ -279,7 +279,8 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         if owned and now.timestamp() - owned["at"] > 120 and (
             state.state != owned["mode"] or
             (owned.get("target") is not None and actual is not None and abs(actual - owned["target"]) > tolerance) or
-            (owned.get("fan") is not None and state.attributes.get("fan_mode") != owned["fan"])
+            (owned.get("fan") is not None and now.timestamp() - owned.get("fan_at", owned["at"]) > 120
+             and state.attributes.get("fan_mode") != owned["fan"])
         ):
             self._house_owned.pop(entity, None)
             self._house_hold[entity] = now.timestamp() + 2 * 3600
@@ -316,10 +317,43 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
             payload.update(hvac_mode=mode, temperature=target * 9 / 5 + 32 if self.hass.config.units.temperature_unit == "°F" else target)
             service = "set_temperature"
         await self.hass.services.async_call("climate", service, payload, blocking=True)
-        self._house_owned[entity] = {"mode": mode, "target": target, "at": now.timestamp(),
+        self._house_owned[entity] = {**(owned or {}), "mode": mode, "target": target, "at": now.timestamp(),
                                      "mode_at": owned.get("mode_at", owned["at"]) if owned and owned["mode"] == mode else now.timestamp()}
         await self._house_save()
         return True
+
+    async def _house_storage_fan(self, entity, active, now):
+        """Persist only our fan change; restore it without overwriting manual edits."""
+        owned = self._house_owned.get(entity)
+        state = self.hass.states.get(entity)
+        if not owned or not state or state.state in ("unknown", "unavailable"):
+            return False
+        modes = state.attributes.get("fan_modes", [])
+        actual = state.attributes.get("fan_mode")
+        if now.timestamp() - owned.get("fan_at", 0) < 60:
+            return False
+        if owned.get("fan") is not None and actual != owned["fan"]:
+            return False
+        if active and owned.get("mode") in ("heat", "cool") and "high" in modes:
+            if "fan_previous" not in owned:
+                if actual not in modes:
+                    return False
+                owned["fan_previous"] = actual
+            wanted = "high"
+        elif "fan_previous" in owned:
+            wanted = owned["fan_previous"]
+            if wanted not in modes:
+                return False
+        else:
+            return False
+        if actual != wanted:
+            await self.hass.services.async_call("climate", "set_fan_mode", {"entity_id": entity, "fan_mode": wanted}, blocking=True)
+            owned["fan_at"] = now.timestamp()
+        owned["fan"] = wanted
+        if not active:
+            owned.pop("fan_previous", None)
+        await self._house_save()
+        return actual != wanted
 
     async def _async_house_plan(self, data, now):
         house, rooms = self._house_config()
@@ -515,10 +549,9 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
                         finite(house.get("solar_storage_cool_min_c"), 24) if decision.get("solar_storage_active") else 20)
                     decision["device_setpoint"] = target
                     started = await self._house_command(hp, mode, target, now, compressor=True)
-                    if started and "auto" in hp_state.attributes.get("fan_modes", []):
-                        await self.hass.services.async_call("climate", "set_fan_mode", {"entity_id": hp, "fan_mode": "auto"}, blocking=True)
-                        self._house_owned[hp]["fan"] = "auto"
-                        await self._house_save()
+                    fan_option = self.hass.states.get("input_boolean.energy_manager_ventola_alta_surplus")
+                    fan_active = bool(fan_option and fan_option.state == "on" and decision.get("solar_storage_active"))
+                    await self._house_storage_fan(hp, fan_active, now)
                     if started and not is_owned:
                         self._house_last_start = now.timestamp()
                         await self._house_save()
@@ -530,6 +563,8 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
                 await self._house_command(hp, "off", None, now, compressor=True,
                                           safety_stop=emergency or not electrical or decision["source"] == "window_open_or_unknown" or
                                           (not solar and not (house.get("season") == "winter" and house.get("allow_economic_grid") and decision["economics_verified"])))
+            if decision["heat_pump_mode"] == "off" and machine_mode == "auto":
+                await self._house_storage_fan(hp, False, now)
             if (house.get("hydraulics_confirmed") and self.house_gas_mode == "auto" and decision["radiator_target"] is not None and house.get("season") == "winter"
                     and now.timestamp() - self._house_gas_stopped_at >= finite(house.get("dissipation_seconds"), 180)):
                 gas_entity = house.get("gas_entity", "")
