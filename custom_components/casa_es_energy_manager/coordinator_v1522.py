@@ -93,6 +93,12 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
                  "soc": self._config("battery_soc_sensor"),
                  "forecast": "sensor.casa_es_power_production_now",
                  "irradiance": "sensor.stazione_meteo_solar_radiation"}
+        for role, entity in {"string1": "sensor.inverter_solarman_pv_power_1",
+                             "string2": "sensor.inverter_solarman_pv_power_2",
+                             "battery_power": "sensor.inverter_solarman_battery_power",
+                             "grid": "sensor.inverter_solarman_grid_power"}.items():
+            if self.hass.states.get(entity):
+                roles[role] = entity
         if enabled and now.timestamp() >= self._pv_next_learning and all(roles.values()):
             self._pv_next_learning = now.timestamp() + 86400
             try:
@@ -105,6 +111,10 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
                     self._pv_model = candidate
                     await self._pv_store.async_save(candidate)
                 self._pv_info["learning_result"] = candidate.get("reason")
+                self._pv_info["training_days"] = candidate.get("training_days", 0)
+                self._pv_info["training_samples"] = candidate.get("training_samples", 0)
+                self._pv_info["excluded_string_mismatch"] = candidate.get("excluded_string_mismatch", 0)
+                self._pv_info["excluded_charge_limit"] = candidate.get("excluded_charge_limit", 0)
             except Exception as err:
                 self._pv_next_learning = now.timestamp() + 3600
                 self._pv_info["learning_result"] = type(err).__name__
@@ -124,7 +134,7 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         self._pv_info.update(method="local_irradiance_validated" if local is not None else "weather_forecast_fallback",
             actual_w=current, weather_forecast_w=forecast, hypothetical_w=self._pv_estimate,
             nominal_w=nominal, positive_margin_pct=margin, extra_max_w=extra_max, local_model_enabled=enabled,
-            layout_since=layout_since, layout_date_valid=valid_layout, station_fresh=fresh, trained_at=self._pv_model.get("trained_at"),
+            learning_sensors=roles, layout_since=layout_since, layout_date_valid=valid_layout, station_fresh=fresh, trained_at=self._pv_model.get("trained_at"),
             validation_samples=self._pv_model.get("validation_samples"),
             validation_mae_w=self._pv_model.get("validation_mae_w"),
             weather_mae_w=self._pv_model.get("weather_mae_w"))

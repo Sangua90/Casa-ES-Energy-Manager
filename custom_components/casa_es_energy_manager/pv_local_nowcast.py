@@ -39,6 +39,7 @@ def fit(statistics, roles, now, nominal_w, layout_since=None):
     streams = {role: {epoch(r.get("start")): r for r in statistics.get(entity, [])}
                for role, entity in roles.items()}
     rows = []
+    excluded_string_mismatch = excluded_charge_limit = 0
     for stamp, r in streams["irradiance"].items():
         if stamp is None:
             continue
@@ -51,6 +52,21 @@ def fit(statistics, roles, now, nominal_w, layout_since=None):
         forecast = number(streams["forecast"].get(stamp, {}).get("mean"))
         if None in (ghi, real, soc, forecast) or ghi < 100 or real < 500 or real >= nominal_w * .9 or soc >= 90:
             continue
+        if "string1" in streams and "string2" in streams:
+            p1 = number(streams["string1"].get(stamp, {}).get("mean"))
+            p2 = number(streams["string2"].get(stamp, {}).get("mean"))
+            if p1 is None or p2 is None or p1 < 0 or p2 < 0 or abs(p1 + p2 - real) > max(100, real * .05):
+                excluded_string_mismatch += 1
+                continue
+        if "battery_power" in streams and "grid" in streams:
+            charging = number(streams["battery_power"].get(stamp, {}).get("mean"))
+            grid = number(streams["grid"].get(stamp, {}).get("mean"))
+            # Positive battery power is charging for this verified inverter.
+            # Near its 3.5 kW acceptance cap with no export, clipping cannot be
+            # ruled out. Exclude conservatively rather than teach low PV yield.
+            if charging is not None and grid is not None and charging >= 3300 and abs(grid) <= 100:
+                excluded_charge_limit += 1
+                continue
         rows.append((at, ghi, real, forecast))
     cutoff = now.date() - timedelta(days=2)
     train = [r for r in rows if r[0].date() < cutoff]
@@ -63,7 +79,8 @@ def fit(statistics, roles, now, nominal_w, layout_since=None):
                                 "samples": len(selected),
                                 "max_irradiance": max(r[1] for r in selected)}
     model = {"layout_since": layout_since, "hours": hours, "trained_at": now.isoformat(), "nominal_w": nominal_w,
-             "training_samples": len(train), "training_days": len({r[0].date() for r in train})}
+             "excluded_string_mismatch": excluded_string_mismatch,
+             "excluded_charge_limit": excluded_charge_limit, "training_samples": len(train), "training_days": len({r[0].date() for r in train})}
     paired = []
     for at, ghi, real, forecast in validation:
         c = coefficient(model, at)

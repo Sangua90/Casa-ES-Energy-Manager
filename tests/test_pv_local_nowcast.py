@@ -105,3 +105,23 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         await c._refresh_pv_nowcast(NOW)
         self.assertEqual(c._pv_model,{})
         self.assertEqual(c._pv_estimate,4500)
+
+class AdditionalPVTelemetryTests(unittest.TestCase):
+    def test_string_consistency_and_charge_limit_filter(self):
+        roles={**ROLES,'string1':'p1','string2':'p2','battery_power':'bp','grid':'grid'}
+        stats=ModelTests().statistics()
+        stats['p1']=[{**r,'mean':r['mean']/2} for r in stats['actual']]
+        stats['p2']=[{**r,'mean':r['mean']/2} for r in stats['actual']]
+        stats['bp']=[{**r,'mean':1500} for r in stats['actual']]
+        stats['grid']=[{**r,'mean':0} for r in stats['actual']]
+        good=pv.fit(stats,roles,NOW,8720)
+        self.assertTrue(good['accepted'])
+        stats['p2']=[{**r,'mean':0} for r in stats['p2']]
+        bad=pv.fit(stats,roles,NOW,8720)
+        self.assertFalse(bad['accepted']);self.assertGreater(bad['excluded_string_mismatch'],0)
+        stats['p2']=[dict(r) for r in stats['p1']]
+        stats['bp']=[{**r,'mean':3500} for r in stats['bp']]
+        clipped=pv.fit(stats,roles,NOW,8720)
+        self.assertFalse(clipped['accepted']);self.assertGreater(clipped['excluded_charge_limit'],0)
+        stats['grid']=[{**r,'mean':-1000} for r in stats['grid']]
+        self.assertTrue(pv.fit(stats,roles,NOW,8720)['accepted'])
