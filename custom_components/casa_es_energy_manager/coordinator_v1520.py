@@ -72,6 +72,7 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         self._dhw_consent_store = Store(hass, 1, f"casa_es_energy_manager.{entry.entry_id}.dhw_recovery_consent")
         self._dhw_consent = DHWRecoveryConsent()
         self._dhw_notify_error = None
+        self._dhw_grid_recovery_enabled = False
 
     async def async_initialize(self) -> None:
         self._restore_dhw_control(await self._dhw_control_store.async_load())
@@ -109,11 +110,15 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
             "last_stop": {sid: at.isoformat() for sid, at in self._dhw_boost_last_stop.items()}})
 
     def pending_dhw_recoveries(self):
+        if not getattr(self, "_dhw_grid_recovery_enabled", False):
+            return []
         now = dt_util.now()
         return [(sid, r) for sid, r in self._dhw_consent.records.items()
                 if r.get("status") == "pending" and dt_util.parse_datetime(r["expires"]).timestamp() > now.timestamp()]
 
     async def async_resend_dhw_recovery(self):
+        if not getattr(self, "_dhw_grid_recovery_enabled", False):
+            return
         # Explicit user action is required to reopen a declined/expired episode.
         # Never reset an active recovery or adopt a manually started Boost.
         for sid, record in list(self._dhw_consent.records.items()):
@@ -138,13 +143,16 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         self._dhw_notice_states = notices
         for sid, record in self._dhw_consent.records.items():
             status = record.get("status")
+            if not getattr(self, "_dhw_grid_recovery_enabled", False) and status in ("pending", "approved", "notification_failed"):
+                record["status"] = status = "cancelled"
+                await self._dhw_consent_store.async_save(self._dhw_consent.records)
             if status == "pending" and dt_util.parse_datetime(record["expires"]).timestamp() <= dt_util.now().timestamp():
                 record["status"] = status = "expired"
                 await self._dhw_consent_store.async_save(self._dhw_consent.records)
             stamp = (record.get("episode"), status)
             if notices.get(sid) == stamp:
                 continue
-            if status in ("completed", "declined", "expired"):
+            if status in ("completed", "declined", "expired", "cancelled"):
                 # A restart must not resurrect a finished request. Keep its
                 # history in the dashboard, remove only the obsolete notice.
                 if self.hass.services.has_service("persistent_notification", "dismiss"):
@@ -164,6 +172,8 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
                 notices[sid] = stamp
 
     async def _async_dhw_notification_action(self, event) -> None:
+        if not getattr(self, "_dhw_grid_recovery_enabled", False):
+            return
         sid = self._dhw_consent.answer(event.data.get("action"), dt_util.now())
         if sid is None:
             return
@@ -171,6 +181,8 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         await self.async_request_refresh()
 
     async def _async_request_dhw_recovery(self, item, result, now) -> None:
+        if not getattr(self, "_dhw_grid_recovery_enabled", False):
+            return
         # Sleeping hours are for native maintenance, not phone consent prompts.
         if not 7 <= now.hour < 22:
             return
@@ -419,7 +431,8 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
                 continue
             target, reason = self._thermal_target(item, data, now)
             result = self._dhw_plans[sid]
-            approved_target = self._dhw_consent.approved_target(sid, now)
+            approved_target = (self._dhw_consent.approved_target(sid, now)
+                               if getattr(self, "_dhw_grid_recovery_enabled", False) else None)
             grid_cycle = self._dhw_consent.records.get(sid, {}).get("owned", False)
             if approved_target is not None:
                 # A reply authorizes only the temperature shown in that request.
@@ -535,6 +548,8 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         data = await super()._async_update_data()
         data["dhw_history_error"] = self._dhw_history_error
         data["dhw_notification_error"] = self._dhw_notify_error
+        data["dhw_grid_recovery_enabled"] = getattr(self, "_dhw_grid_recovery_enabled", False)
+        data["dhw_boost_policy"] = "pv_only_gas_fallback"
         await self._async_sync_dhw_notices()
         data["dhw_recovery_decisions"] = {sid: {k: v for k, v in record.items() if k != "token"}
                                           for sid, record in self._dhw_consent.records.items()}

@@ -36,6 +36,7 @@ class ControlTests(unittest.IsolatedAsyncioTestCase):
     def setup_control(self):
         c = object.__new__(Coordinator)
         c.real_control_enabled = True
+        c._dhw_grid_recovery_enabled = True
         c._dhw_models, c._dhw_plans = {}, {}
         c._thermal_boost_owned, c._thermal_target_c = set(), {}
         c._dhw_boost_last_stop = {}
@@ -363,3 +364,40 @@ class GreenRestTests(unittest.IsolatedAsyncioTestCase):
         data["grid_export_w"] = 0
         await c._async_apply_thermal_control(data, NOW.replace(hour=8))
         c._set_water_temperature.assert_awaited_once_with("water_heater.test", 53)
+
+
+class PVOnlyPolicyTests(unittest.IsolatedAsyncioTestCase):
+    setup_control = ControlTests.setup_control
+
+    async def test_no_grid_notification_or_old_reply(self):
+        c, item, _, _ = self.setup_control()
+        c._dhw_grid_recovery_enabled = False
+        c._async_request_dhw_recovery = Coordinator._async_request_dhw_recovery.__get__(c)
+        await c._async_request_dhw_recovery(item, dhw.plan({}, NOW, 43, 53, 73), NOW)
+        c.hass.services.async_call.assert_not_awaited()
+        c._dhw_consent.request("boiler", dhw.plan({}, NOW, 43, 53, 73), NOW)
+        token = c._dhw_consent.records["boiler"]["token"]
+        await c._async_dhw_notification_action(SimpleNamespace(data={"action":"CASA_ES_DHW_YES_"+token}))
+        self.assertEqual(c._dhw_consent.records["boiler"]["status"], "pending")
+        self.assertEqual(c.pending_dhw_recoveries(), [])
+
+    async def test_old_approval_never_authorizes_grid_but_pv_still_works(self):
+        c, item, data, _ = self.setup_control()
+        r = c._dhw_consent.request("boiler", dhw.plan({}, NOW, 43, 53, 73), NOW)
+        c._dhw_consent.answer("CASA_ES_DHW_YES_"+r["token"], NOW)
+        c._dhw_grid_recovery_enabled = False
+        data["grid_export_w"] = 0
+        await c._async_apply_thermal_control(data, NOW)
+        c._set_boost.assert_not_awaited()
+        data["grid_export_w"] = 1500
+        await c._async_apply_thermal_control(data, NOW)
+        c._set_boost.assert_awaited_once_with("switch.boost", True)
+
+    async def test_pending_notice_is_cancelled(self):
+        c, _, _, _ = self.setup_control()
+        c._dhw_grid_recovery_enabled = False
+        c.hass.services.has_service = lambda *args: True
+        c._dhw_consent.request("boiler", dhw.plan({}, NOW, 43, 53, 73), NOW)
+        await c._async_sync_dhw_notices()
+        self.assertEqual(c._dhw_consent.records["boiler"]["status"], "cancelled")
+        self.assertEqual(c.hass.services.async_call.call_args.args[1], "dismiss")
