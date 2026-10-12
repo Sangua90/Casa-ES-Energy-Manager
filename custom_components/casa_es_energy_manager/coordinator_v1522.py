@@ -135,8 +135,9 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         house = dict(houses[0].data) if houses else None
         if house is not None:
             for key, entity, default, lower, upper in (
-                ("solar_storage_margin_c", "input_number.energy_manager_margine_accumulo_termico", 2, 0, 3),
-                ("solar_storage_heat_max_c", "input_number.energy_manager_limite_caldo_accumulo", 24, 22, 25),
+                ("solar_storage_margin_c", "input_number.energy_manager_margine_accumulo_termico", 5, 0, 5),
+                ("solar_storage_heat_max_c", "input_number.energy_manager_limite_caldo_accumulo", 27, 22, 27),
+                ("solar_storage_cooling_margin_c", "input_number.energy_manager_margine_accumulo_fresco", 2, 0, 3),
                 ("solar_storage_cool_min_c", "input_number.energy_manager_limite_freddo_accumulo", 24, 22, 26),
                 ("solar_storage_threshold_ratio", "input_number.energy_manager_soglia_surplus_accumulo", 1.25, 1, 2)):
                 state = self.hass.states.get(entity)
@@ -510,7 +511,7 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
                 mode = decision["heat_pump_mode"]
                 if hp_state and mode in hp_state.attributes.get("hvac_modes", []):
                     target = self._house_calibrated_setpoint(hp, decision["heat_pump_target"], "cooling" if mode == "cool" else "heat_pump", learned, mode,
-                        finite(house.get("solar_storage_heat_max_c"), 24) if decision.get("solar_storage_active") else 22,
+                        finite(house.get("solar_storage_heat_max_c"), 27) if decision.get("solar_storage_active") else 22,
                         finite(house.get("solar_storage_cool_min_c"), 24) if decision.get("solar_storage_active") else 20)
                     decision["device_setpoint"] = target
                     started = await self._house_command(hp, mode, target, now, compressor=True)
