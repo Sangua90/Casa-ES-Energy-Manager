@@ -52,7 +52,16 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
     def _house_config(self):
         houses = [s for s in self.entry.subentries.values() if s.subentry_type == HOUSE_TYPE]
         rooms = [s for s in self.entry.subentries.values() if s.subentry_type == ROOM_TYPE]
-        return (dict(houses[0].data) if houses else None), rooms
+        house = dict(houses[0].data) if houses else None
+        if house is not None:
+            for key, entity, default, lower, upper in (
+                ("solar_storage_margin_c", "input_number.energy_manager_margine_accumulo_termico", 2, 0, 3),
+                ("solar_storage_heat_max_c", "input_number.energy_manager_limite_caldo_accumulo", 24, 22, 25),
+                ("solar_storage_cool_min_c", "input_number.energy_manager_limite_freddo_accumulo", 24, 22, 26),
+                ("solar_storage_threshold_ratio", "input_number.energy_manager_soglia_surplus_accumulo", 1.25, 1, 2)):
+                state = self.hass.states.get(entity)
+                house[key] = max(lower, min(finite(state.state if state else None, default), upper))
+        return house, rooms
 
     def _house_claimed_entities(self):
         house, rooms = self._house_config()
@@ -314,6 +323,7 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
                 w = self.hass.states.get(entity)
                 if not w or w.state != "off":
                     contamination.append("window_open_or_unknown")
+            r["solar_storage_available"] = live_surplus >= finite(r.get("nominal_power_w"), 1200) * finite(house.get("solar_storage_threshold_ratio"), 1.25)
             zones.append({"id": s.subentry_id, "config": r, "temperature": self._room_temperature(r),
                           "thermal_source": thermal_source, "contamination": contamination,
                           "sensors": sensors, "independent_temperature": sensors.get(r.get("temperature_entity")),
@@ -403,6 +413,7 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
                                and s.state in ("heat", "cool", "heat_cool", "auto") and s.state != wanted for r in rooms)
             if incompatible:
                 electrical = False
+            room["solar_storage_available"] = solar and available + covered >= watts * finite(house.get("solar_storage_threshold_ratio"), 1.25)
             decision = room_plan(house, room, now, current, solar, electrical)
             decision["subentry_id"] = subentry.subentry_id
             decision["commands_enabled"] = execute and room.get("reviewed", False)
@@ -410,7 +421,7 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
             decision["preheat_minutes"] = room.get("preheat_minutes", 90)
             decision["estimated_temperature"] = current
             decision["overshoot_c"] = max(0, min(finite(learned.get("overshoot_c"), 0), 1))
-            if decision["heat_pump_mode"] == "heat" and current is not None and current >= decision["room_target"] - decision["overshoot_c"]:
+            if decision["heat_pump_mode"] == "heat" and current is not None and current >= finite(decision["heat_pump_target"], decision["room_target"]) - decision["overshoot_c"]:
                 decision.update(heat_pump_mode="off", source="learned_inertia_coast")
             if emergency:
                 decision.update(source="power_guard", heat_pump_mode="off")
@@ -429,7 +440,9 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
             if decision["heat_pump_mode"] != "off":
                 mode = decision["heat_pump_mode"]
                 if hp_state and mode in hp_state.attributes.get("hvac_modes", []):
-                    target = self._house_calibrated_setpoint(hp, decision["heat_pump_target"], "cooling" if mode == "cool" else "heat_pump", learned, mode)
+                    target = self._house_calibrated_setpoint(hp, decision["heat_pump_target"], "cooling" if mode == "cool" else "heat_pump", learned, mode,
+                        finite(house.get("solar_storage_heat_max_c"), 24) if decision.get("solar_storage_active") else 22,
+                        finite(house.get("solar_storage_cool_min_c"), 24) if decision.get("solar_storage_active") else 20)
                     decision["device_setpoint"] = target
                     started = await self._house_command(hp, mode, target, now, compressor=True)
                     if started and "auto" in hp_state.attributes.get("fan_modes", []):
@@ -541,11 +554,11 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
                 result[entity] = value
         return result
 
-    def _house_calibrated_setpoint(self, entity, target, source, learned, mode):
+    def _house_calibrated_setpoint(self, entity, target, source, learned, mode, heat_max=22, cool_min=20):
         bias = learned.get("model", {}).get("sensor_bias", {}).get(entity + ":" + source, {})
         if bias.get("samples", 0) >= 12 and finite(bias.get("confidence"), 0) >= .3:
             target += max(-2, min(finite(bias.get("offset_c"), 0), 2))
-        return min(target, 22) if mode == "heat" else max(20, min(target, 30))
+        return min(target, heat_max) if mode == "heat" else max(cool_min, min(target, 30))
 
     async def _house_power_guard(self, house, rooms, data, now):
         """Hardware emergency also applies to manual loads, never to the Ariston main switch."""

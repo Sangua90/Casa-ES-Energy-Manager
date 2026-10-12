@@ -469,3 +469,66 @@ class SpecialModesTests(unittest.TestCase):
         self.assertEqual(plan.next_deadline(room,now).hour,21)
         self.assertEqual(plan.next_deadline(room,now,non_working_day=True).hour,22)
         self.assertEqual(plan.situation({},now),"normal")
+
+
+class SolarPreconditioningTests(unittest.TestCase):
+    def test_surplus_heats_outside_gas_schedule_without_raising_trvs(self):
+        room = PlanTests().room()
+        now = NOW.replace(hour=12)
+        r = plan.room_plan({"season": "winter"}, room, now, 19, True, True)
+        self.assertFalse(r["occupied"])
+        self.assertEqual(r["room_target"], 17)
+        self.assertEqual(r["radiator_target"], 17)
+        self.assertEqual(r["heat_pump_mode"], "heat")
+        self.assertEqual(r["heat_pump_target"], 21)
+        self.assertTrue(r["solar_preconditioning"])
+        self.assertEqual(plan.room_plan({"season":"winter"},room,now,19,False,True)["heat_pump_mode"],"off")
+
+    def test_surplus_cooling_outside_schedule_respects_comfort_and_holiday(self):
+        room = PlanTests().room()
+        now = NOW.replace(hour=12)
+        self.assertEqual(plan.room_plan({"season":"summer"},room,now,28,True,True)["heat_pump_mode"],"cool")
+        self.assertEqual(plan.room_plan({"season":"winter"},room,now,22.5,True,True)["heat_pump_mode"],"off")
+        self.assertEqual(plan.room_plan({"season":"winter","exception":{"mode":"holiday","persistent":True}},room,now,19,True,True)["heat_pump_mode"],"off")
+        self.assertEqual(plan.room_plan({"season":"winter"},room,now,19,True,False)["heat_pump_mode"],"off")
+
+
+class SolarStorageTests(unittest.TestCase):
+    def test_large_surplus_expands_temperature_band_but_leaves_gas_target(self):
+        room = {**PlanTests().room(), "solar_storage_available": True}
+        now = NOW.replace(hour=12)
+        r = plan.room_plan({"season":"winter"},room,now,22,True,True)
+        self.assertEqual(r["heat_pump_mode"],"heat")
+        self.assertEqual(r["heat_pump_target"],23)
+        self.assertEqual(r["radiator_target"],17)
+        room["comfort_temperature"] = 22
+        self.assertEqual(plan.room_plan({"season":"winter"},room,now,23,True,True)["heat_pump_target"],24)
+        room["comfort_temperature"] = 21
+        cool = plan.room_plan({"season":"summer"},room,now,25,True,True)
+        self.assertEqual(cool["heat_pump_target"],24)
+        self.assertFalse(plan.room_plan({"season":"winter"},room,now,25,True,True)["heat_pump_mode"] != "off")
+
+
+class SolarStorageControlTests(unittest.IsolatedAsyncioTestCase):
+    setup_control = ControlTests.setup_control
+
+    async def test_inertia_guard_uses_hp_storage_target_not_gas_maintenance(self):
+        c, house, room, data, states = self.setup_control()
+        house.update(enabled=True, hydraulics_confirmed=False)
+        now = NOW.replace(hour=12)
+        states["climate.hp"].last_changed = now - timedelta(hours=2)
+        data["grid_export_w"] = 3500
+        await c._async_house_plan(data, now)
+        decision = data["house_climate_rooms"][0]
+        self.assertEqual(decision["room_target"], 17)
+        self.assertEqual(decision["heat_pump_target"], 23)
+        self.assertTrue(decision["solar_storage_active"])
+        self.assertTrue(any(call.args[2].get("hvac_mode") == "heat" and call.args[2].get("temperature") == 23 for call in c.hass.services.async_call.call_args_list))
+
+    async def test_runtime_settings_change_target_without_code_change(self):
+        room = {**PlanTests().room(), "solar_storage_available": True}
+        house = {"season":"winter", "solar_storage_margin_c":1, "solar_storage_heat_max_c":24}
+        first = plan.room_plan(house,room,NOW.replace(hour=12),21,True,True)
+        self.assertEqual(first["heat_pump_target"],22)
+        house["solar_storage_margin_c"] = 2
+        self.assertEqual(plan.room_plan(house,room,NOW.replace(hour=12),21,True,True)["heat_pump_target"],23)

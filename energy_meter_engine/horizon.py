@@ -1,6 +1,6 @@
 """Shared finite-horizon thermal dispatch, 24 hours at 15-minute resolution."""
 from datetime import timedelta
-from house_climate_plan import finite, target_level, heat_costs
+from house_climate_plan import finite, target_level, heat_costs, room_plan
 from thermal_model import predicted_rate
 
 
@@ -29,6 +29,11 @@ def optimize(house, zones, models, now, energy):
             key, room = zone["id"], zone["config"]
             current = temperatures[key]
             target, level, occupied, preparing = target_level(house, room, at)
+            if step == 0 and room.get("solar_storage_available"):
+                live = room_plan(house, room, at, current, bool(zone.get("solar_available")), bool(zone.get("electrical_ok")))
+                if live["heat_pump_target"] is not None:
+                    target = live["heat_pump_target"]
+                    level = "solar_storage"
             targets[key] = (target, level)
             if current is None:
                 continue

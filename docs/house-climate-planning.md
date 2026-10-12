@@ -32,3 +32,24 @@ remain confirmation gates; they cannot be learned by relaxing hardware limits.
 The profile reconfigure flow preserves the reconfigure step on submission;
 returning the create step would reject an existing house as a duplicate. Real
 Home Assistant smoke coverage checks this behavior and field serialization.
+
+
+## Live PV thermal storage settings
+
+Solar heat-pump dispatch is independent of the gas/TRV occupancy timetable.
+Ordinary surplus can prepare rooms up to their configured comfort temperature;
+large measured or guarded curtailment surplus can store additional heat/coolth.
+Existing descending room priorities, electrical budgets, manual/window guards,
+and compressor minimum on/off times remain authoritative.
+
+The Clima dashboard exposes persistent input-number helpers:
+- energy_manager_margine_accumulo_termico: 0–3 C (default 2); zero disables the additional storage band.
+- energy_manager_limite_caldo_accumulo: 22–25 C (default 24).
+- energy_manager_limite_freddo_accumulo: 22–26 C (default 24).
+- energy_manager_soglia_surplus_accumulo: 1–2 times nominal unit power (default 1.25).
+
+The integration reads these each cycle and forwards settings to Engine 0.2.7.
+Missing/invalid helpers use bounded defaults. Helpers have no forced initial
+value after creation, so user edits are restored after Home Assistant restarts.
+The actual heat-pump target, rather than the gas maintenance target, determines
+coasting; calibrated device setpoints respect the selected storage limits.

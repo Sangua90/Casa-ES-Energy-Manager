@@ -148,9 +148,26 @@ def room_plan(house, room, now, current, solar_available, electrical_ok):
     if not room.get("reviewed", False):
         result["source"] = "profile_to_confirm"
         return result
-    if not occupied and level != "base" and current >= target - .6:
-        return result
     has_hp = bool(room.get("heat_pump_entity"))
+    solar_preconditioning = (has_hp and solar_available and electrical_ok
+                             and situation(house, now) not in ("away", "weekend_away", "holiday")
+                             and not room.get("manual_only"))
+    if not occupied and level != "base" and current >= target - .6 and not solar_preconditioning:
+        return result
+    if solar_preconditioning:
+        # Surplus heat-pump dispatch is independent of the gas/TRV timetable.
+        # Keep its comfort ceiling, while leaving the radiator target unchanged.
+        comfort = min(finite(room.get("comfort_temperature"), 21), 22)
+    storage = solar_preconditioning and bool(room.get("solar_storage_available"))
+    if storage:
+        margin = max(0, min(finite(house.get("solar_storage_margin_c"), 2), 3))
+        heat_max = max(22, min(finite(house.get("solar_storage_heat_max_c"), 24), 25))
+        cool_min = max(22, min(finite(house.get("solar_storage_cool_min_c"), 24), 26))
+        comfort = min(comfort + margin, heat_max)
+        cooling = max(cooling - margin, cool_min)
+    result["solar_storage_active"] = storage
+    result["solar_preconditioning"] = solar_preconditioning
+    result["heat_pump_solar_target"] = comfort if solar_preconditioning else None
     affordable = (cost["economics_verified"] and cost["heat_pump_eur_kwh_heat"] < cost["gas_eur_kwh_heat"] * 0.95)
     if season == "summer":
         result["radiator_target"] = None
