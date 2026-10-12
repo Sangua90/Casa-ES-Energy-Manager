@@ -26,3 +26,7 @@ If live irradiance is unavailable, has invalid units, or is older than five
 minutes, or the model is unvalidated/outside its learned hours, use the existing
 Open-Meteo current-power forecast. Future hourly/daily energy curves remain
 Open-Meteo forecasts; this does not replace tomorrow's weather forecast.
+
+The dashboard input_boolean energy_manager_stima_fv_locale selects local learning.
+It remains off until the current panel layout is confirmed to cover the training
+window; turning it off returns to weather forecasts and preserves actual power.

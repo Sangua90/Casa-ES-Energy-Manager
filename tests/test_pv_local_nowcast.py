@@ -67,7 +67,7 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         c._pv_model=pv.fit(ModelTests().statistics(),ROLES,NOW,8720);c._pv_info={}
         c._config=lambda key:{"pv_power_sensor":"actual","battery_soc_sensor":"soc","pv_potential_power_sensor":"fv_pro"}.get(key)
         c.values={"actual":6000,"sensor.casa_es_power_production_now":4500,"fv_pro":4500}
-        states={"sensor.stazione_meteo_solar_radiation":SimpleNamespace(state="300",last_updated=NOW,attributes={"unit_of_measurement":"W/m²"})}
+        states={"input_boolean.energy_manager_stima_fv_locale":SimpleNamespace(state="on"),"sensor.stazione_meteo_solar_radiation":SimpleNamespace(state="300",last_updated=NOW,attributes={"unit_of_measurement":"W/m²"})}
         c.hass=SimpleNamespace(states=SimpleNamespace(get=states.get))
         return c,states
 
@@ -84,3 +84,10 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(c._pv_estimate,4500)
         self.assertEqual(c._numeric_state("fv_pro",power=True),6000)
         self.assertEqual(c._pv_info["method"],"weather_forecast_fallback")
+
+    async def test_local_model_can_be_disabled_without_losing_real_floor(self):
+        c,states=self.setup_adapter();states["input_boolean.energy_manager_stima_fv_locale"].state="off"
+        await c._refresh_pv_nowcast(NOW)
+        self.assertEqual(c._pv_estimate,4500)
+        self.assertEqual(c._numeric_state("fv_pro",power=True),6000)
+        self.assertFalse(c._pv_info["local_model_enabled"])

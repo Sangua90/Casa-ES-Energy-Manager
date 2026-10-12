@@ -76,11 +76,13 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
 
     async def _refresh_pv_nowcast(self, now):
         nominal = self._pv_capacity()
+        selector = self.hass.states.get("input_boolean.energy_manager_stima_fv_locale")
+        enabled = bool(selector and selector.state == "on")
         roles = {"actual": self._config("pv_power_sensor"),
                  "soc": self._config("battery_soc_sensor"),
                  "forecast": "sensor.casa_es_power_production_now",
                  "irradiance": "sensor.stazione_meteo_solar_radiation"}
-        if now.timestamp() >= self._pv_next_learning and all(roles.values()):
+        if enabled and now.timestamp() >= self._pv_next_learning and all(roles.values()):
             self._pv_next_learning = now.timestamp() + 86400
             try:
                 end = now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -105,12 +107,12 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         maximum = self.hass.states.get("input_number.energy_manager_extra_massimo_stima_fv")
         margin = max(0, min(finite(percent.state if percent else None, 3), 10))
         extra_max = max(0, min(finite(maximum.state if maximum else None, 200), 500))
-        local = estimate_pv(self._pv_model, weather.state, now, nominal, margin, extra_max) if fresh else None
+        local = estimate_pv(self._pv_model, weather.state, now, nominal, margin, extra_max) if fresh and enabled else None
         self._pv_estimate = local if local is not None else forecast
         self._pv_combined = combine_pv(current, self._pv_estimate)
         self._pv_info.update(method="local_irradiance_validated" if local is not None else "weather_forecast_fallback",
             actual_w=current, weather_forecast_w=forecast, hypothetical_w=self._pv_estimate,
-            nominal_w=nominal, positive_margin_pct=margin, extra_max_w=extra_max,
+            nominal_w=nominal, positive_margin_pct=margin, extra_max_w=extra_max, local_model_enabled=enabled,
             station_fresh=fresh, trained_at=self._pv_model.get("trained_at"),
             validation_samples=self._pv_model.get("validation_samples"),
             validation_mae_w=self._pv_model.get("validation_mae_w"),
