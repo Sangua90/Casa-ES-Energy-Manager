@@ -35,7 +35,7 @@ def coefficient(model, at):
     return values[str(hour)]["coefficient"]
 
 
-def fit(statistics, roles, now, nominal_w):
+def fit(statistics, roles, now, nominal_w, layout_since=None):
     streams = {role: {epoch(r.get("start")): r for r in statistics.get(entity, [])}
                for role, entity in roles.items()}
     rows = []
@@ -43,7 +43,7 @@ def fit(statistics, roles, now, nominal_w):
         if stamp is None:
             continue
         at = datetime.fromtimestamp(stamp, now.tzinfo)
-        if at.date() >= now.date():
+        if at.date() >= now.date() or (layout_since and at.date().isoformat() <= layout_since):
             continue
         ghi = number(r.get("mean"))
         real = number(streams["actual"].get(stamp, {}).get("mean"))
@@ -62,7 +62,7 @@ def fit(statistics, roles, now, nominal_w):
             hours[str(hour)] = {"coefficient": median(r[2] / r[1] for r in selected),
                                 "samples": len(selected),
                                 "max_irradiance": max(r[1] for r in selected)}
-    model = {"hours": hours, "trained_at": now.isoformat(), "nominal_w": nominal_w,
+    model = {"layout_since": layout_since, "hours": hours, "trained_at": now.isoformat(), "nominal_w": nominal_w,
              "training_samples": len(train), "training_days": len({r[0].date() for r in train})}
     paired = []
     for at, ghi, real, forecast in validation:

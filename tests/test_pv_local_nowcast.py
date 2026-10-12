@@ -38,6 +38,12 @@ class ModelTests(unittest.TestCase):
         self.assertIsNone(pv.estimate(model,1000,NOW,8720))
         self.assertEqual(pv.estimate(model,0,NOW,8720),0)
 
+    def test_recent_layout_excludes_old_days_and_installation_day(self):
+        model=pv.fit(self.statistics(),ROLES,NOW,8720,"2026-10-09")
+        self.assertFalse(model["accepted"])
+        self.assertEqual(model["training_samples"],0)
+        self.assertEqual(model["layout_since"],"2026-10-09")
+
     def test_actual_floor_and_missing_inputs(self):
         self.assertEqual(pv.combined(6000,4000),6000)
         self.assertEqual(pv.combined(4000,6000),6000)
@@ -57,17 +63,17 @@ body=next(n for n in ast.parse(source).body if isinstance(n,ast.ClassDef)).body
 methods=[n for n in body if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef)) and n.name in ("_numeric_state","_refresh_pv_nowcast")]
 module=ast.Module(body=[ast.ClassDef(name="Adapter",bases=[ast.Name(id="Base",ctx=ast.Load())],keywords=[],body=methods,decorator_list=[])],type_ignores=[])
 namespace={"Base":Base,"finite":lambda value,default=0: pv.number(value) if pv.number(value) is not None else default,
-           "estimate_pv":pv.estimate,"combine_pv":pv.combined}
+           "estimate_pv":pv.estimate,"combine_pv":pv.combined,"dt_util":SimpleNamespace(parse_datetime=datetime.fromisoformat)}
 exec(compile(ast.fix_missing_locations(module),"pv_adapter","exec"),namespace)
 Adapter=namespace["Adapter"]
 
 class AdapterTests(unittest.IsolatedAsyncioTestCase):
     def setup_adapter(self):
         c=Adapter();c._pv_capacity=lambda:8720;c._pv_next_learning=NOW.timestamp()+86400
-        c._pv_model=pv.fit(ModelTests().statistics(),ROLES,NOW,8720);c._pv_info={}
+        c._pv_model=pv.fit(ModelTests().statistics(),ROLES,NOW,8720,"2026-10-04");c._pv_info={"layout_since":"2026-10-04"}
         c._config=lambda key:{"pv_power_sensor":"actual","battery_soc_sensor":"soc","pv_potential_power_sensor":"fv_pro"}.get(key)
         c.values={"actual":6000,"sensor.casa_es_power_production_now":4500,"fv_pro":4500}
-        states={"input_boolean.energy_manager_stima_fv_locale":SimpleNamespace(state="on"),"sensor.stazione_meteo_solar_radiation":SimpleNamespace(state="300",last_updated=NOW,attributes={"unit_of_measurement":"W/m²"})}
+        states={"input_datetime.energy_manager_pannelli_attuali_dal":SimpleNamespace(state="2026-10-04"),"input_boolean.energy_manager_stima_fv_locale":SimpleNamespace(state="on"),"sensor.stazione_meteo_solar_radiation":SimpleNamespace(state="300",last_updated=NOW,attributes={"unit_of_measurement":"W/m²"})}
         c.hass=SimpleNamespace(states=SimpleNamespace(get=states.get))
         return c,states
 
@@ -91,3 +97,11 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(c._pv_estimate,4500)
         self.assertEqual(c._numeric_state("fv_pro",power=True),6000)
         self.assertFalse(c._pv_info["local_model_enabled"])
+
+    async def test_changed_layout_invalidates_previous_model(self):
+        c,states=self.setup_adapter()
+        states["input_datetime.energy_manager_pannelli_attuali_dal"].state="2026-10-10"
+        states["input_boolean.energy_manager_stima_fv_locale"].state="off"
+        await c._refresh_pv_nowcast(NOW)
+        self.assertEqual(c._pv_model,{})
+        self.assertEqual(c._pv_estimate,4500)

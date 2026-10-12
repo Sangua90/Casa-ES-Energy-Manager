@@ -30,3 +30,7 @@ Open-Meteo forecasts; this does not replace tomorrow's weather forecast.
 The dashboard input_boolean energy_manager_stima_fv_locale selects local learning.
 It remains off until the current panel layout is confirmed to cover the training
 window; turning it off returns to weather forecasts and preserves actual power.
+
+
+## Current panel layout
+The 16 × 545 W layout (8,720 W) entered service on 9 October 2026 around 16:00 Europe/Rome. The date-only helper `input_datetime.energy_manager_pannelli_attuali_dal` is set to 2026-10-09. Training excludes the whole installation day, starting on 10 October; this avoids mixing both layouts. Changing this date invalidates the old model. Missing or invalid dates disable local learning. The model remains on weather fallback until the independent training and validation criteria pass. The persistent local-learning selector can then use daily automatic retraining.
