@@ -59,6 +59,45 @@ class RecorderThermalProfiles:
 class CasaESEnergyCoordinator(PreviousCoordinator):
     """Keep native PDC on; use full recorder attributes instead of synthetic draws."""
 
+    def _virtual_surplus_opportunity(self, data: dict[str, Any]) -> bool:
+        """Release measured PV above the battery trajectory before near-full SOC.
+
+        The older clipping probe remains available; the new route uses measured
+        production only, never an optimistic forecast to steal battery power.
+        """
+        if super()._virtual_surplus_opportunity(data):
+            return True
+        allocation = data.get("v156_battery_allocation") or self._battery_allocation(data)
+        measured = number(data.get("solar_after_house_w"), None)
+        reserved = number(allocation.get("reserved_w"), None)
+        discharge = number(data.get("battery_discharge_w"), None)
+        imported = number(data.get("grid_import_w"), None)
+        soc = number(data.get("battery_soc"), None)
+        if None in (measured, reserved, discharge, imported, soc):
+            return False
+        policy = data.get("planner_policy") or {}
+        return bool(measured - max(reserved, 0) >= 100
+                    and 0 <= discharge <= 100 and 0 <= imported <= 100 and soc > 0
+                    and not allocation.get("hard_recovery")
+                    and policy.get("target_reachability") != "definite_shortfall"
+                    and not data.get("grid_warning") and not data.get("inverter_warning"))
+
+    def _thermal_solar_available(self, data):
+        """Shared unallocated solar budget for DHW and room preconditioning."""
+        allocation = data.get("v156_battery_allocation") or self._battery_allocation(data)
+        available = max(number(data.get("grid_export_w"), 0), 0)
+        if number(data.get("battery_discharge_w"), 0) <= 100 and self._virtual_surplus_opportunity(data):
+            potential = max(number(data.get("pv_potential_after_house_w"), 0), 0)
+            if not super()._virtual_surplus_opportunity(data):
+                # Trajectory release is proven by measured PV, not extrapolation.
+                potential = min(potential, max(number(data.get("solar_after_house_w"), 0), 0))
+            if allocation.get("below_target"):
+                potential = max(potential - max(number(allocation.get("reserved_w"), 0), 0), 0)
+            available = max(available, potential)
+        if allocation.get("below_target"):
+            available = min(available, max(number(allocation.get("overflow_w"), 0), 0))
+        return available
+
     def __init__(self, hass: Any, entry: Any) -> None:
         super().__init__(hass, entry)
         self._dhw_models: dict[str, dict] = {}
@@ -451,8 +490,7 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
             battery_draw = max(number(data.get("battery_discharge_w"), 0), 0)
             grid_draw = max(number(data.get("grid_import_w"), 0), 0)
             covered_power = max(existing_power - battery_draw - grid_draw, 0)
-            available = max(measured + covered_power,
-                            potential if battery_draw <= 100 and self._virtual_surplus_opportunity(data) else 0)
+            available = self._thermal_solar_available(data) + covered_power
             if allocation.get("below_target"):
                 available = min(available, max(number(allocation.get("overflow_w"), 0), 0))
             soc_ok = number(data.get("battery_soc"), 0) >= number(item.get("min_battery_soc"), 0)

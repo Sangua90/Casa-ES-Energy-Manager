@@ -16,7 +16,8 @@ spec.loader.exec_module(consent_module)
 source = (ROOT / "custom_components/casa_es_energy_manager/coordinator_v1520.py").read_text()
 tree = ast.parse(source)
 classes = ast.Module(body=[n for n in tree.body if isinstance(n, ast.ClassDef)], type_ignores=[])
-namespace = {"PreviousCoordinator": object, "Any": object, "number": dhw.number,
+from test_solar_trajectory_release import Previous
+namespace = {"PreviousCoordinator": Previous, "Any": object, "number": dhw.number,
              "temperature": dhw.temperature, "plan": dhw.plan, "forecast": dhw.forecast,
              "timedelta": timedelta, "DHWRecoveryConsent": consent_module.DHWRecoveryConsent,
              "dt_util": SimpleNamespace(parse_datetime=datetime.fromisoformat, now=lambda: NOW)}

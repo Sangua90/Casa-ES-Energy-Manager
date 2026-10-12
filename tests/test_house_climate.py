@@ -85,7 +85,8 @@ class PlanTests(unittest.TestCase):
 
 source = (ROOT / "custom_components/casa_es_energy_manager/coordinator_v1522.py").read_text(encoding="utf-8")
 classes = ast.Module(body=[n for n in ast.parse(source).body if isinstance(n, ast.ClassDef)], type_ignores=[])
-namespace = {"PreviousCoordinator": object, "HOUSE_TYPE": plan.HOUSE_TYPE, "ROOM_TYPE": plan.ROOM_TYPE,
+from test_solar_trajectory_release import ns as solar_ns
+namespace = {"PreviousCoordinator": solar_ns["Controller"], "HOUSE_TYPE": plan.HOUSE_TYPE, "ROOM_TYPE": plan.ROOM_TYPE,
              "auxiliary_active": plan.auxiliary_active, "situation": plan.situation, "celsius": plan.celsius, "finite": plan.finite, "room_plan": plan.room_plan,
              "dt_util": SimpleNamespace(parse_datetime=datetime.fromisoformat), "timedelta": timedelta, "async_plan": AsyncMock(return_value={"state": "DEGRADED", "zones": {}})}
 exec(compile(classes, "coordinator_v1522.py", "exec"), namespace)

@@ -370,11 +370,7 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         data["house_climate_exception"] = house["exception"]
         zones = []
         allocation_live = data.get("v156_battery_allocation") or {}
-        live_surplus = max(finite(data.get("grid_export_w"), 0), 0)
-        if finite(data.get("battery_discharge_w"), 0) <= 100 and self._virtual_surplus_opportunity(data):
-            live_surplus = max(live_surplus, max(finite(data.get("pv_potential_after_house_w"), 0), 0))
-        if allocation_live.get("below_target"):
-            live_surplus = min(live_surplus, max(finite(allocation_live.get("overflow_w"), 0), 0))
+        live_surplus = self._thermal_solar_available(data)
         for s in rooms:
             r = dict(s.data)
             hp = self.hass.states.get(r.get("heat_pump_entity", ""))
@@ -437,15 +433,8 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         data["engine_machine_models"] = self._house_engine_result.get("machine_models", {})
         data["engine_gas_campaign"] = self._house_engine_result.get("gas_campaign", {})
         decisions = []
-        available = max(finite(data.get("grid_export_w"), 0), 0)
+        available = self._thermal_solar_available(data)
         allocation = data.get("v156_battery_allocation") or {}
-        if allocation.get("below_target"):
-            available = min(available, max(finite(allocation.get("overflow_w"), 0), 0))
-        if finite(data.get("battery_discharge_w"), 0) <= 100 and self._virtual_surplus_opportunity(data):
-            potential = max(finite(data.get("pv_potential_after_house_w"), 0), 0)
-            if allocation.get("below_target"):
-                potential = min(potential, max(finite(allocation.get("overflow_w"), 0), 0))
-            available = max(available, potential)
         phase_budget = {p: finite(data.get(f"phase_{p}_headroom_w"), 0) for p in ("l1", "l2", "l3")}
         inverter_budget = finite(data.get("inverter_headroom_w"), 0)
         gas_demand = False
