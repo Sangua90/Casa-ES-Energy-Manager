@@ -150,8 +150,7 @@ def room_plan(house, room, now, current, solar_available, electrical_ok):
         return result
     has_hp = bool(room.get("heat_pump_entity"))
     solar_preconditioning = (has_hp and solar_available and electrical_ok
-                             and situation(house, now) not in ("away", "weekend_away", "holiday")
-                             and not room.get("manual_only"))
+                             and situation(house, now) not in ("away", "weekend_away", "holiday"))
     if not occupied and level != "base" and current >= target - .6 and not solar_preconditioning:
         return result
     if solar_preconditioning:

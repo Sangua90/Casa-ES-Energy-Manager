@@ -533,3 +533,16 @@ class SolarStorageControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(first["heat_pump_target"],22)
         house["solar_storage_margin_c"] = 2
         self.assertEqual(plan.room_plan(house,room,NOW.replace(hour=12),21,True,True)["heat_pump_target"],23)
+
+class LowPrioritySolarRoomsTests(unittest.TestCase):
+    def test_rooms_without_routine_still_harvest_surplus(self):
+        room={**PlanTests().room(), 'manual_only':True, 'solar_storage_available':True}
+        for season,current,mode in [('winter',20,'heat'),('summer',29,'cool')]:
+            with self.subTest(season=season):
+                result=plan.room_plan({'season':season},room,NOW,current,True,True)
+                self.assertEqual(result['heat_pump_mode'],mode)
+                self.assertFalse(result['occupied'])
+                self.assertTrue(result['solar_storage_active'])
+        self.assertEqual(plan.room_plan({'season':'winter'},room,NOW,20,False,True)['heat_pump_mode'],'off')
+        self.assertEqual(plan.room_plan({'season':'winter'},room,NOW,20,True,False)['heat_pump_mode'],'off')
+        self.assertEqual(plan.room_plan({'season':'winter','exception':{'mode':'holiday','persistent':True}},room,NOW,20,True,True)['heat_pump_mode'],'off')
