@@ -192,3 +192,19 @@ class NormalTargetTests(unittest.TestCase):
         result = dhw.plan(model, NOW.replace(hour=0), 50, 53, 73, reserve_in_base=True, demand_end_hour=12)
         self.assertEqual(result["expected_remaining_draw_c"], 2)
         self.assertLess(result["target_c"], 60)
+
+    def test_actual_morning_plan_does_not_charge_evening_showers(self):
+        model = {"draw_by_day": {"2026-10-01": {"7": 1, "19": 14}}, "standby_loss_c_per_h": .6}
+        r = dhw.plan(model, NOW.replace(hour=6), 50, 53, 73, reserve_in_base=True, evening_minimum=63)
+        self.assertEqual(r["expected_remaining_draw_c"], 1)
+        self.assertEqual(r["demand_window_end_hour"], 12)
+        self.assertEqual(r["target_c"], 54.6)
+        evening = dhw.plan(model, NOW.replace(hour=13), 50, 53, 73, reserve_in_base=True, evening_minimum=63)
+        self.assertEqual(evening["expected_remaining_draw_c"], 14)
+        self.assertGreater(evening["target_c"], 63)
+
+    def test_morning_preview_with_no_morning_use_never_falls_back_to_evening(self):
+        model = {"draw_by_day": {"2026-10-01": {"19": 14}}}
+        r = dhw.plan(model, NOW.replace(hour=0), 50, 53, 73, reserve_in_base=True, demand_end_hour=12)
+        self.assertEqual(r["expected_remaining_draw_c"], 0)
+        self.assertLess(r["target_c"], 55)

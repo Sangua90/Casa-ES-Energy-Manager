@@ -196,6 +196,7 @@ def plan(model: dict, now: datetime, current: float, base: float, maximum: float
     hourly, margin = forecast(model, now)
     tomorrow, tomorrow_margin = forecast(model, now + timedelta(days=1))
     hourly = hourly[:demand_end_hour] + [0.0] * (24 - demand_end_hour)
+    tomorrow = tomorrow[:demand_end_hour] + [0.0] * (24 - demand_end_hour)
     upcoming = [h for h in range(now.hour, 24) if hourly[h] >= 0.4]
     if upcoming:
         deadline = now.replace(hour=upcoming[0], minute=0, second=0, microsecond=0)
@@ -204,17 +205,23 @@ def plan(model: dict, now: datetime, current: float, base: float, maximum: float
         deadline = (now + timedelta(days=1)).replace(hour=hour, minute=0, second=0, microsecond=0)
         margin = tomorrow_margin
     hours = max((deadline.timestamp() - now.timestamp()) / 3600, 0)
-    remaining = sum(hourly[now.hour:]) if upcoming else sum(tomorrow)
+    # Morning recovery covers morning uses, not the evening shower budget.
+    # Otherwise a small 07:00 use can trigger a 68 C resistance request.
+    window_end = min(demand_end_hour, 12) if deadline.hour < 12 else demand_end_hour
+    remaining = sum(hourly[now.hour:window_end]) if upcoming else sum(tomorrow[:window_end])
     if upcoming:
         # Do not predict the same current-hour draw twice after it happened.
-        observed_this_hour = number(model.get("today_draw", {}).get(str(now.hour)), 0)
+        observed_day = timestamp(model.get("updated_at"))
+        observed_this_hour = (number(model.get("today_draw", {}).get(str(now.hour)), 0)
+                              if observed_day is None or observed_day.date() == now.date() else 0)
         remaining -= min(observed_this_hour, hourly[now.hour])
     loss = max(number(model.get("standby_loss_c_per_h"), 0.5), 0)
     if reserve_in_base:
         # The normal daily setpoint already contains the safety reserve.
         # GREEN maintains it before use: compensate cooling during the use
         # window, not all the daytime hours preceding the first shower.
-        demand_hours = upcoming if upcoming else [h for h in range(24) if tomorrow[h] >= 0.4]
+        demand_hours = ([h for h in upcoming if h < window_end] if upcoming
+                        else [h for h in range(window_end) if tomorrow[h] >= 0.4])
         use_hours = max(demand_hours[-1] + 1 - deadline.hour, 1) if demand_hours else 1
         loss_hours = use_hours
         minimum_after_use = max(base - margin, 0)
@@ -235,7 +242,7 @@ def plan(model: dict, now: datetime, current: float, base: float, maximum: float
     return {"target_c": round(target, 1), "required_uncapped_c": round(required, 1),
             "green_target_c": round(green_target, 1), "reserve_c": round(margin, 1),
             "reserve_in_base": reserve_in_base, "normal_target_c": base,
-            "evening_minimum_c": evening_floor,
+            "evening_minimum_c": evening_floor, "demand_window_end_hour": window_end,
             "minimum_after_use_c": round(minimum_after_use, 1),
             "loss_allowance_c": round(loss_allowance, 2),
             "expected_remaining_draw_c": round(remaining, 2),
