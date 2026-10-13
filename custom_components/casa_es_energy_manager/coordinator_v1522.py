@@ -326,6 +326,11 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
                 target = max(lower, min(lower + round((target - lower) / step) * step, upper))
             payload.update(hvac_mode=mode, temperature=target * 9 / 5 + 32 if self.hass.config.units.temperature_unit == "°F" else target)
             service = "set_temperature"
+        if compressor and mode != "off" and state.state != mode:
+            # Midea mode writes update its cached power/mode. A combined
+            # temperature write alone does not, so a following full-state
+            # command can otherwise resend the old OFF state.
+            await self.hass.services.async_call("climate", "set_hvac_mode", {"entity_id": entity, "hvac_mode": mode}, blocking=True)
         await self.hass.services.async_call("climate", service, payload, blocking=True)
         self._house_owned[entity] = {**(owned or {}), "mode": mode, "target": target, "at": now.timestamp(),
                                      "mode_at": owned.get("mode_at", owned["at"]) if owned and owned["mode"] == mode else now.timestamp()}
@@ -340,6 +345,16 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
             return False
         modes = state.attributes.get("fan_modes", [])
         actual = state.attributes.get("fan_mode")
+        if active:
+            # Never build a fan packet from pre-start power/temperature.
+            # Wait across refreshes instead of blocking the controller.
+            target = finite(state.attributes.get("temperature"))
+            if self.hass.config.units.temperature_unit == "°F" and target is not None:
+                target = (target - 32) * 5 / 9
+            if (now.timestamp() - owned.get("at", now.timestamp()) < 60
+                    or state.state != owned.get("mode") or target is None
+                    or owned.get("target") is None or abs(target - owned["target"]) > .3):
+                return False
         if now.timestamp() - owned.get("fan_at", 0) < 60:
             return False
         if owned.get("fan") is not None and actual != owned["fan"]:

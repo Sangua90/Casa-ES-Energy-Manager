@@ -565,7 +565,8 @@ class StorageFanTests(unittest.IsolatedAsyncioTestCase):
     setup_control=ControlTests.setup_control
     async def test_high_fan_restores_previous_and_survives_saved_record(self):
         c,house,room,data,states=self.setup_control()
-        states['climate.hp'].attributes.update(fan_modes=['auto','high','low'],fan_mode='low')
+        states['climate.hp'].state='heat'
+        states['climate.hp'].attributes.update(temperature=26,fan_modes=['auto','high','low'],fan_mode='low')
         c._house_owned['climate.hp']={'mode':'heat','target':26,'at':NOW.timestamp()-600,'mode_at':NOW.timestamp()-600}
         self.assertTrue(await c._house_storage_fan('climate.hp',True,NOW))
         record=c._house_owned['climate.hp']
@@ -578,8 +579,27 @@ class StorageFanTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('fan_previous',c._house_owned['climate.hp'])
     async def test_manual_fan_and_unowned_compressor_are_untouched(self):
         c,house,room,data,states=self.setup_control()
-        states['climate.hp'].attributes.update(fan_modes=['auto','high','low'],fan_mode='low')
+        states['climate.hp'].state='heat'
+        states['climate.hp'].attributes.update(temperature=26,fan_modes=['auto','high','low'],fan_mode='low')
         self.assertFalse(await c._house_storage_fan('climate.hp',True,NOW))
         c._house_owned['climate.hp']={'mode':'heat','target':26,'at':NOW.timestamp()-600,'fan':'high','fan_previous':'auto'}
         self.assertFalse(await c._house_storage_fan('climate.hp',False,NOW))
         c.hass.services.async_call.assert_not_called()
+
+class MideaCommandSequenceTests(unittest.IsolatedAsyncioTestCase):
+    setup_control=ControlTests.setup_control
+    async def test_start_then_confirm_before_full_state_fan_write(self):
+        c,house,room,data,states=self.setup_control()
+        state=states['climate.hp']
+        state.attributes.update(fan_modes=['auto','high'],fan_mode='auto',temperature=24)
+        self.assertTrue(await c._house_command('climate.hp','heat',26,NOW,compressor=True))
+        calls=c.hass.services.async_call.call_args_list
+        self.assertEqual([call.args[1] for call in calls],['set_hvac_mode','set_temperature'])
+        self.assertFalse(await c._house_storage_fan('climate.hp',True,NOW))
+        self.assertFalse(await c._house_storage_fan('climate.hp',True,NOW+timedelta(seconds=90)))
+        state.state='heat';state.attributes['temperature']=24
+        self.assertFalse(await c._house_storage_fan('climate.hp',True,NOW+timedelta(seconds=90)))
+        state.attributes['temperature']=26
+        self.assertTrue(await c._house_storage_fan('climate.hp',True,NOW+timedelta(seconds=90)))
+        self.assertEqual(c.hass.services.async_call.call_args.args[1],'set_fan_mode')
+        self.assertEqual(c._house_owned['climate.hp']['mode_at'],NOW.timestamp())
