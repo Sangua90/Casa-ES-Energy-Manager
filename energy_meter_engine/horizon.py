@@ -62,7 +62,7 @@ def optimize(house, zones, models, now, energy):
         for _, key, zone, source in sorted(candidates, key=lambda x: (-x[0], x[1])):
             room = zone["config"]
             group = room.get("machine", key)
-            power = finite(room.get("nominal_power_w"), 1200) if source != "gas" else 0
+            power = finite(room.get("dispatch_group_power_w"), finite(room.get("nominal_power_w"), 1200)) if source != "gas" else 0
             # Shared outdoor unit: reserve group maximum, never sum each head's
             # duplicated group telemetry. Live guards still use conservative
             # full-power headroom for each new head until power is verified.

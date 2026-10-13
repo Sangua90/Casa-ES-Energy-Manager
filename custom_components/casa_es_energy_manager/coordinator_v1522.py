@@ -460,7 +460,10 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
                 w = self.hass.states.get(entity)
                 if not w or w.state != "off":
                     contamination.append("window_open_or_unknown")
-            r["solar_storage_available"] = live_surplus >= finite(r.get("nominal_power_w"), 1200) * finite(house.get("solar_storage_threshold_ratio"), 1.25)
+            r["dispatch_mode"] = "cool" if house.get("season") == "summer" else "heat"
+            mean_w, start_w, _ = self._house_group_power_estimate(r, rooms, now)
+            r["dispatch_group_power_w"] = start_w
+            r["solar_storage_available"] = live_surplus >= start_w * finite(house.get("solar_storage_threshold_ratio"), 1.25)
             zones.append({"id": s.subentry_id, "config": r, "temperature": self._room_temperature(r),
                           "thermal_source": thermal_source, "contamination": contamination,
                           "sensors": sensors, "independent_temperature": sensors.get(r.get("temperature_entity")),
@@ -468,8 +471,8 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
                           "power_w": measured_power,
                           "solar_power_w": finite(data.get("pv_power_w")),
                           "neighbor_gradients": {e: temp - self._room_temperature(r) for e in r.get("neighbor_temperature_entities", []) if self._room_temperature(r) is not None and (temp := self._room_sensor_values({"temperature_entity": e} if e.startswith("sensor.") else {"heat_pump_entity": e}).get(e)) is not None},
-                          "solar_available": live_surplus >= finite(r.get("nominal_power_w"), 1200) * .95,
-                          "electrical_ok": self.house_machine_modes.get(machine) == "auto" and not data.get("grid_warning") and not data.get("inverter_warning") and r.get("phase") in ("l1", "l2", "l3") and finite(data.get("phase_" + r.get("phase", "unknown") + "_headroom_w"), 0) >= finite(r.get("nominal_power_w"), 1200)})
+                          "solar_available": live_surplus >= start_w * .95,
+                          "electrical_ok": self.house_machine_modes.get(machine) == "auto" and not data.get("grid_warning") and not data.get("inverter_warning") and r.get("phase") in ("l1", "l2", "l3") and finite(data.get("phase_" + r.get("phase", "unknown") + "_headroom_w"), 0) >= start_w})
         if now.timestamp() - getattr(self, "_house_engine_last_at", 0) >= 60:
             self._house_engine_result = await async_plan(self.hass, house, zones, {
                 "pv_remaining_kwh": data.get("forecast_energy_to_target_kwh"),
@@ -496,7 +499,23 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         decisions = []
         available = self._thermal_solar_available(data)
         allocation = data.get("v156_battery_allocation") or {}
+        grid_helper = self.hass.states.get("input_number.energy_manager_supporto_rete_clima")
+        grid_support = max(0, min(finite(grid_helper.state if grid_helper else None, 0), 500))
+        startup_grace = any(entity.startswith("climate.") and owner.get("mode") in ("heat", "cool")
+                            and 0 <= now.timestamp() - owner.get("mode_at", owner.get("at", 0)) < 180
+                            for entity, owner in self._house_owned.items())
+        grid_peak_limit = grid_support * (2 if startup_grace else 1)
+        if (finite(data.get("grid_import_w"), 0) <= grid_peak_limit
+                and finite(data.get("battery_discharge_w"), 0) <= 100
+                and not data.get("grid_warning") and not data.get("inverter_warning")
+                and finite(data.get("battery_soc"), 0) >= 97
+                and (data.get("planner_policy") or {}).get("target_reachability") != "definite_shortfall"):
+            potential = max(finite(data.get("pv_potential_after_house_w"), 0), 0)
+            if allocation.get("below_target"):
+                potential = min(potential, max(finite(allocation.get("overflow_w"), 0), 0))
+            available = max(available, potential)
         phase_budget = {p: finite(data.get(f"phase_{p}_headroom_w"), 0) for p in ("l1", "l2", "l3")}
+        group_reserved = {}
         inverter_budget = finite(data.get("inverter_headroom_w"), 0)
         gas_demand = False
         gas_sensors_valid = False
@@ -520,17 +539,27 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
                 current = estimate
             hp = room.get("heat_pump_entity", "")
             hp_state = self.hass.states.get(hp)
-            watts = finite(room.get("nominal_power_w"), 1200)
+            machine = room.get("machine", "none")
+            room["dispatch_mode"] = "cool" if house.get("season") == "summer" else "heat"
+            group_key = room.get("power_entity") or machine
+            average_w, start_w, power_basis = self._house_group_power_estimate(room, rooms, now)
             phase = room.get("phase", "unknown")
             is_owned = hp in self._house_owned and hp_state and hp_state.state != "off"
             real_watts = finite(self._house_power_w(room, hp_state), 0)
-            covered = max(real_watts - finite(data.get("grid_import_w"), 0) - finite(data.get("battery_discharge_w"), 0), 0) if is_owned else 0
+            group_reserved.setdefault(group_key, real_watts)
+            watts = max(start_w - group_reserved[group_key], 0)
+            covered = 0
+            support_left = max(grid_support - max(finite(data.get("grid_import_w"), 0), 0), 0)
             electrical = (not data.get("grid_warning") and not data.get("inverter_warning") and phase in phase_budget
-                          and phase_budget[phase] >= (0 if is_owned else watts)
-                          and inverter_budget >= (0 if is_owned else watts) and (is_owned or not settling))
+                          and phase_budget[phase] >= watts
+                          and inverter_budget >= watts and (is_owned or not settling))
             if not is_owned and now.timestamp() - self._house_last_start < 120:
                 electrical = False
-            solar = available + covered >= watts * (.8 if is_owned else .95)
+            average_increment = max(average_w - group_reserved[group_key], 0)
+            solar = (available + support_left >= average_increment
+                     and (available > 100 or group_reserved[group_key] > 100)
+                     and finite(data.get("grid_import_w"), 0) <= grid_peak_limit
+                     and finite(data.get("battery_discharge_w"), 0) <= 100)
             if not solar and (allocation.get("below_target") or finite(data.get("grid_headroom_w"), 0) < (0 if is_owned else watts)):
                 electrical = False
             machine = room.get("machine", "none")
@@ -543,12 +572,15 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
                                and s.state in ("heat", "cool", "heat_cool", "auto") and s.state != wanted for r in rooms)
             if incompatible:
                 electrical = False
-            room["solar_storage_available"] = solar and available + covered >= watts * finite(house.get("solar_storage_threshold_ratio"), 1.25)
+            room["solar_storage_available"] = solar and available + support_left >= average_increment * finite(house.get("solar_storage_threshold_ratio"), 1.25)
             decision = room_plan(house, room, now, current, solar, electrical)
             decision["subentry_id"] = subentry.subentry_id
             decision["commands_enabled"] = execute and room.get("reviewed", False)
             decision["confidence"] = learned.get("confidence", 0)
             decision["preheat_minutes"] = room.get("preheat_minutes", 90)
+            decision.update(shared_power_sensor=room.get("power_entity"), group_average_power_w=round(average_w, 1),
+                            group_start_budget_w=round(start_w, 1), incremental_power_w=round(watts, 1),
+                            power_estimate_basis=power_basis, solar_available_w=round(available, 1), grid_support_w=grid_support, grid_peak_limit_w=grid_peak_limit, measured_group_power_w=round(real_watts, 1), compressor_frequency_hz=finite(hp_state.attributes.get("compressor_frequency")) if hp_state else None)
             decision["estimated_temperature"] = current
             decision["overshoot_c"] = max(0, min(finite(learned.get("overshoot_c"), 0), 1))
             if decision["heat_pump_mode"] == "heat" and current is not None and current >= finite(decision["heat_pump_target"], decision["room_target"]) - decision["overshoot_c"]:
@@ -581,8 +613,13 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
                     if started and not is_owned:
                         self._house_last_start = now.timestamp()
                         await self._house_save()
-                    if not is_owned:
+                    if started or is_owned:
+                        # Reserve only the increment of this shared external unit.
+                        # Failed starts never consume the following room's budget.
+                        used_solar = min(available, watts)
                         available = max(available - watts, 0)
+                        grid_support = max(grid_support - max(watts - used_solar, 0), 0)
+                        group_reserved[group_key] = max(group_reserved[group_key], start_w)
                         phase_budget[phase] -= watts
                         inverter_budget -= watts
             elif is_owned and machine_mode == "auto":
@@ -661,6 +698,38 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
             elif house.get("season") != "winter":
                 await self._house_command(house["gas_entity"], "off", None, now, compressor=True, safety_stop=True)
 
+
+    def _house_group_power_estimate(self, room, rooms, now):
+        """One external-unit estimate, never nominal power times head count."""
+        machine = room.get("machine", "none")
+        members = [r for r in rooms if r.data.get("machine") == machine and r.data.get("heat_pump_entity")]
+        nominal = max([finite(r.data.get("nominal_power_w"), 1200) for r in members] or [1200])
+        active = sum(bool((state := self.hass.states.get(r.data.get("heat_pump_entity", "")))
+                          and state.state in ("heat", "cool", "auto", "heat_cool", "dry")) for r in members)
+        own_state = self.hass.states.get(room.get("heat_pump_entity", ""))
+        wanted_heads = max(1, active + (0 if own_state and own_state.state != "off" else 1))
+        buckets = self._house_engine_result.get("machine_models", {}).get(machine, {})
+        estimates = []
+        for count, bucket in buckets.items():
+            try:
+                if ":" in str(count):
+                    mode, count = str(count).rsplit(":", 1)
+                    wanted_mode = "cool" if room.get("dispatch_mode") == "cool" else "heat"
+                    if mode != wanted_mode:
+                        continue
+                count = int(count)
+            except (ValueError, TypeError):
+                continue
+            powers = [finite(v) for v in bucket.get("powers", [])]
+            powers = [v for v in powers if v is not None and max(100, nominal * .05) <= v <= nominal * 1.2]
+            age = now.timestamp() - finite(bucket.get("updated_at"), 0)
+            if count >= wanted_heads and len(powers) >= 12 and 0 <= age <= 7 * 86400:
+                average = sum(powers) / len(powers)
+                estimates.append((average, min(nominal, average * 1.35 + 150)))
+        if estimates:
+            average, start = max(estimates, key=lambda pair: pair[1])
+            return average, start, "recent_group_mean_with_start_margin"
+        return nominal, nominal, "group_nominal_fallback"
 
     def _house_power_w(self, room, hp):
         entity = room.get("power_entity", "")

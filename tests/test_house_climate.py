@@ -616,3 +616,47 @@ class MideaFanRestoreSequenceTests(unittest.IsolatedAsyncioTestCase):
         state.state='off'
         self.assertTrue(await c._house_storage_fan('climate.hp',False,NOW+timedelta(seconds=90)))
         self.assertEqual(c.hass.services.async_call.call_args.args[2]['fan_mode'],'auto')
+
+class SharedExternalPowerTests(unittest.IsolatedAsyncioTestCase):
+    setup_control=ControlTests.setup_control
+    async def test_shared_sensor_and_recent_mean_do_not_multiply_by_heads(self):
+        c,house,room,data,states=self.setup_control()
+        room.update(machine='p1',nominal_power_w=3120,power_entity='sensor.p1')
+        members=[SimpleNamespace(data={**room,'heat_pump_entity':'climate.hp'+str(i)}) for i in range(3)]
+        for r in members:states[r.data['heat_pump_entity']]=SimpleNamespace(state='off')
+        c._house_engine_result={'machine_models':{'p1':{'3':{'powers':[800]*20,'updated_at':NOW.timestamp()}}}}
+        average,start,basis=c._house_group_power_estimate(members[0].data,members,NOW)
+        self.assertEqual(average,800);self.assertEqual(start,1230)
+        states['climate.hp0'].state='heat'
+        self.assertEqual(c._house_group_power_estimate(members[1].data,members,NOW)[1],1230)
+        c._house_engine_result['machine_models']['p1']['3']['updated_at']=(NOW-timedelta(days=8)).timestamp()
+        self.assertEqual(c._house_group_power_estimate(members[1].data,members,NOW)[1],3120)
+
+    async def test_learned_group_start_fits_phase_where_full_nominal_did_not(self):
+        c,house,room,data,states=self.setup_control()
+        house.update(enabled=True,hydraulics_confirmed=False)
+        room.update(machine='p1',nominal_power_w=3120)
+        c._house_engine_result={'machine_models':{'p1':{'heat:3':{'powers':[800]*20,'updated_at':NOW.timestamp()}}}}
+        c._house_engine_last_at=NOW.timestamp()
+        data.update(grid_export_w=2200,phase_l1_headroom_w=3078)
+        await c._async_house_plan(data,NOW)
+        r=data['house_climate_rooms'][0]
+        self.assertEqual(r['group_start_budget_w'],1230)
+        self.assertEqual(r['heat_pump_mode'],'heat')
+        self.assertTrue(any(call.args[1]=='set_hvac_mode' for call in c.hass.services.async_call.call_args_list))
+
+    async def test_small_shared_grid_allowance_uses_mean_but_phase_guard_keeps_start_margin(self):
+        c,house,room,data,states=self.setup_control()
+        house.update(enabled=True,hydraulics_confirmed=False)
+        room.update(machine='p1',nominal_power_w=3120)
+        c._house_engine_result={'machine_models':{'p1':{'heat:3':{'powers':[800]*20,'updated_at':NOW.timestamp()}}}}
+        c._house_engine_last_at=NOW.timestamp()
+        states["input_number.energy_manager_supporto_rete_clima"]=SimpleNamespace(state="300")
+        data.update(grid_export_w=720,phase_l1_headroom_w=1300)
+        await c._async_house_plan(data,NOW)
+        self.assertEqual(data['house_climate_rooms'][0]['heat_pump_mode'],'heat')
+        c2,h2,r2,d2,s2=self.setup_control();h2.update(enabled=True,hydraulics_confirmed=False);r2.update(machine='p1',nominal_power_w=3120)
+        s2["input_number.energy_manager_supporto_rete_clima"]=SimpleNamespace(state="300")
+        c2._house_engine_result=c._house_engine_result;c2._house_engine_last_at=NOW.timestamp();d2.update(grid_export_w=720,phase_l1_headroom_w=1000)
+        await c2._async_house_plan(d2,NOW)
+        self.assertEqual(d2['house_climate_rooms'][0]['heat_pump_mode'],'off')

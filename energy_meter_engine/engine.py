@@ -188,12 +188,17 @@ class Engine:
             group = zone["config"].get("machine", "none")
             if group == "none":
                 continue
-            machine = machines.setdefault(group, {"active_heads": 0, "power_w": 0})
+            machine = machines.setdefault(group, {"active_heads": 0, "power_w": 0, "modes": set()})
             machine["active_heads"] += zone.get("thermal_source") in ("heat_pump", "combined", "cooling")
+            if zone.get("thermal_source") in ("heat_pump", "combined"):
+                machine["modes"].add("heat")
+            elif zone.get("thermal_source") == "cooling":
+                machine["modes"].add("cool")
             machine["power_w"] = max(machine["power_w"], finite(zone.get("power_w"), 0))
         for group, sample in machines.items():
             if sample["active_heads"] and sample["power_w"] > 0:
-                bucket = self.machine_models.setdefault(group, {}).setdefault(str(sample["active_heads"]), {"powers": []})
+                mode = next(iter(sample["modes"])) if len(sample["modes"]) == 1 else "mixed"
+                bucket = self.machine_models.setdefault(group, {}).setdefault(f"{mode}:{sample['active_heads']}", {"powers": []})
                 bucket["powers"] = (bucket["powers"] + [sample["power_w"]])[-96:]
                 bucket.update(power_w=median(bucket["powers"]), samples=len(bucket["powers"]), updated_at=now.timestamp())
         gas_meter = finite(payload.get("gas_meter"))
