@@ -603,3 +603,16 @@ class MideaCommandSequenceTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(await c._house_storage_fan('climate.hp',True,NOW+timedelta(seconds=90)))
         self.assertEqual(c.hass.services.async_call.call_args.args[1],'set_fan_mode')
         self.assertEqual(c._house_owned['climate.hp']['mode_at'],NOW.timestamp())
+
+class MideaFanRestoreSequenceTests(unittest.IsolatedAsyncioTestCase):
+    setup_control=ControlTests.setup_control
+    async def test_restore_waits_for_off_ack_to_avoid_turning_unit_back_on(self):
+        c,house,room,data,states=self.setup_control()
+        state=states['climate.hp'];state.state='heat'
+        state.attributes.update(temperature=26,fan_modes=['auto','high'],fan_mode='high')
+        c._house_owned['climate.hp']={'mode':'off','target':None,'at':NOW.timestamp(),'mode_at':NOW.timestamp(),'fan':'high','fan_previous':'auto'}
+        self.assertFalse(await c._house_storage_fan('climate.hp',False,NOW))
+        self.assertFalse(await c._house_storage_fan('climate.hp',False,NOW+timedelta(seconds=90)))
+        state.state='off'
+        self.assertTrue(await c._house_storage_fan('climate.hp',False,NOW+timedelta(seconds=90)))
+        self.assertEqual(c.hass.services.async_call.call_args.args[2]['fan_mode'],'auto')

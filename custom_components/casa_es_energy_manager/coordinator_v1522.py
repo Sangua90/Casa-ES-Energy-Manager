@@ -345,15 +345,16 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
             return False
         modes = state.attributes.get("fan_modes", [])
         actual = state.attributes.get("fan_mode")
-        if active:
-            # Never build a fan packet from pre-start power/temperature.
-            # Wait across refreshes instead of blocking the controller.
+        # Both raising AND restoring the fan serialize full Midea state.
+        # Wait for every preceding mode/target command, including OFF.
+        if (now.timestamp() - owned.get("at", now.timestamp()) < 60
+                or state.state != owned.get("mode")):
+            return False
+        if owned.get("mode") in ("heat", "cool"):
             target = finite(state.attributes.get("temperature"))
             if self.hass.config.units.temperature_unit == "°F" and target is not None:
                 target = (target - 32) * 5 / 9
-            if (now.timestamp() - owned.get("at", now.timestamp()) < 60
-                    or state.state != owned.get("mode") or target is None
-                    or owned.get("target") is None or abs(target - owned["target"]) > .3):
+            if target is None or owned.get("target") is None or abs(target - owned["target"]) > .3:
                 return False
         if now.timestamp() - owned.get("fan_at", 0) < 60:
             return False
