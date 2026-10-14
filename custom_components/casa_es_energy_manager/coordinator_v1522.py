@@ -29,6 +29,8 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         self._pv_store = Store(hass, 1, f"casa_es_energy_manager.{entry.entry_id}.pv_local_nowcast")
         self._house_reference_offsets = {}
         self._house_priorities = {}
+        self._house_surplus_state = {}
+        self._house_surplus_delays = {}
         self._house_owned = {}
         self._house_hold = {}
         self._house_error = None
@@ -52,6 +54,8 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         if isinstance(saved, dict):
             self._house_reference_offsets = saved.get("reference_offsets", {})
             self._house_priorities = saved.get("priorities", {})
+            self._house_surplus_state = saved.get("surplus_state", {})
+            self._house_surplus_delays = saved.get("surplus_delays", {})
             self._house_owned = saved.get("owned", {})
             self._house_history_until = saved.get("history_until", 0)
             self._house_exception = saved.get("exception", {})
@@ -230,8 +234,54 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         await self._house_save()
         await self.async_request_refresh()
 
+    def house_surplus_delay(self, key):
+        return int(max(0, min(finite(getattr(self, "_house_surplus_delays", {}).get(key), 10), 20)))
+
+    async def async_set_house_surplus_delay(self, key, minutes):
+        if key not in ("start", "stop") or minutes not in range(1, 21):
+            raise ValueError("Tempo non valido")
+        if not hasattr(self, "_house_surplus_delays"):
+            self._house_surplus_delays = {}
+        self._house_surplus_delays[key] = minutes
+        await self._house_save()
+        await self.async_request_refresh()
+
+    async def _house_stable_surplus(self, entity, raw, running, now, data):
+        if not hasattr(self, "_house_surplus_state"):
+            self._house_surplus_state = {}
+        old = self._house_surplus_state.get(entity, {})
+        stamp = now.timestamp()
+        state = dict(old)
+        if raw:
+            # A restart or missing telemetry cannot prove continuous surplus.
+            if not state.get("good_since") or stamp - state.get("last_observed", 0) > 120:
+                state["good_since"] = stamp
+            state.pop("bad_since", None)
+            allowed = running or stamp - state["good_since"] >= self.house_surplus_delay("start") * 60
+            reason = "stable" if allowed else "waiting_start"
+        else:
+            state.pop("good_since", None)
+            state.setdefault("bad_since", stamp)
+            grid = max(finite(data.get("grid_import_w"), 0), 0)
+            battery = max(finite(data.get("battery_discharge_w"), 0), 0)
+            bounded = (grid <= 300 and grid + battery <= 500
+                       and (battery == 0 or finite(data.get("battery_soc"), 0) >= 45)
+                       and not data.get("grid_warning") and not data.get("inverter_warning"))
+            allowed = bool(running and bounded and stamp - state["bad_since"] < self.house_surplus_delay("stop") * 60)
+            reason = "brief_deficit_hold" if allowed else "deficit_or_budget_limit"
+        state["last_observed"] = stamp
+        save = (state.get("good_since") != old.get("good_since")
+                or state.get("bad_since") != old.get("bad_since")
+                or stamp - old.get("saved_at", 0) >= 60)
+        if save:
+            state["saved_at"] = stamp
+        self._house_surplus_state[entity] = state
+        if save:
+            await self._house_save()
+        return allowed, reason
+
     async def _house_save(self):
-        await self._house_store.async_save({"priorities": getattr(self, "_house_priorities", {}), "reference_offsets": getattr(self, "_house_reference_offsets", {}), "owned": self._house_owned, "hold": self._house_hold,
+        await self._house_store.async_save({"surplus_state": getattr(self, "_house_surplus_state", {}), "surplus_delays": getattr(self, "_house_surplus_delays", {}), "priorities": getattr(self, "_house_priorities", {}), "reference_offsets": getattr(self, "_house_reference_offsets", {}), "owned": self._house_owned, "hold": self._house_hold,
                                             "gas_mode": self.house_gas_mode, "last_start": self._house_last_start,
                                             "machine_modes": self.house_machine_modes,
                                             "gas_stopped_at": self._house_gas_stopped_at,
@@ -623,6 +673,8 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
                      and (available > 100 or group_reserved[group_key] > 100)
                      and finite(data.get("grid_import_w"), 0) <= grid_peak_limit
                      and finite(data.get("battery_discharge_w"), 0) <= 100)
+            raw_solar = solar
+            solar, stability_reason = await self._house_stable_surplus(hp, solar, is_owned, now, data) if hp else (False, "no_heat_pump")
             if not solar and (allocation.get("below_target") or finite(data.get("grid_headroom_w"), 0) < (0 if is_owned else watts)):
                 electrical = False
             machine = room.get("machine", "none")
@@ -635,10 +687,13 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
                                and s.state in ("heat", "cool", "heat_cool", "auto") and s.state != wanted for r in rooms)
             if incompatible:
                 electrical = False
-            room["solar_storage_available"] = solar and available + support_left >= average_increment * finite(house.get("solar_storage_threshold_ratio"), 1.25)
+            room["solar_storage_available"] = solar and (available + support_left >= average_increment * finite(house.get("solar_storage_threshold_ratio"), 1.25)
+                or stability_reason == "brief_deficit_hold" and self._house_owned.get(hp, {}).get("solar_storage", False))
             decision = room_plan(house, room, now, current, solar, electrical)
             decision["subentry_id"] = subentry.subentry_id
             decision["priority"] = self.house_room_priority(subentry.subentry_id, room)
+            decision.update(raw_solar_available=raw_solar, surplus_stability=stability_reason,
+                            surplus_start_minutes=self.house_surplus_delay("start"), surplus_stop_minutes=self.house_surplus_delay("stop"))
             decision["commands_enabled"] = execute and room.get("reviewed", False)
             decision["confidence"] = learned.get("confidence", 0)
             decision["preheat_minutes"] = room.get("preheat_minutes", 90)
@@ -686,6 +741,9 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
                         self._house_last_start = now.timestamp()
                         await self._house_save()
                     if started or is_owned:
+                        if hp in self._house_owned and self._house_owned[hp].get("solar_storage") != bool(decision.get("solar_storage_active")):
+                            self._house_owned[hp]["solar_storage"] = bool(decision.get("solar_storage_active"))
+                            await self._house_save()
                         # Reserve only the increment of this shared external unit.
                         # Failed starts never consume the following room's budget.
                         used_solar = min(available, watts)

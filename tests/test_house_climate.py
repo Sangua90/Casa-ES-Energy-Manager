@@ -123,6 +123,9 @@ class ControlTests(unittest.IsolatedAsyncioTestCase):
         c = object.__new__(Coordinator)
         c.real_control_enabled = True
         c._house_owned, c._house_hold = {}, {}
+        # Other control tests isolate their admission/dwell behavior; dedicated
+        # stability tests below exercise the production ten-minute defaults.
+        c._house_surplus_delays = {"start": 0, "stop": 10}
         c._house_error, c._last_thermal_at = None, None
         c.house_gas_mode, c._house_last_start = "auto", 0
         c.house_machine_modes = {"salotto": "auto", "ester": "manual", "p1": "auto"}
@@ -562,6 +565,44 @@ class SolarStorageTests(unittest.TestCase):
         self.assertEqual(cool["heat_pump_target"],24)
         self.assertFalse(plan.room_plan({"season":"winter"},room,now,26,True,True)["heat_pump_mode"] != "off")
 
+
+class SurplusStabilityTests(unittest.IsolatedAsyncioTestCase):
+    setup_control=ControlTests.setup_control
+
+    async def test_ten_continuous_minutes_required_and_a_dip_resets_start(self):
+        c,_,_,data,_=self.setup_control()
+        c._house_surplus_delays={}
+        for minutes in range(10):
+            allowed,reason=await c._house_stable_surplus('climate.hp',True,False,NOW+timedelta(minutes=minutes),data)
+            self.assertFalse(allowed)
+        self.assertTrue((await c._house_stable_surplus('climate.hp',True,False,NOW+timedelta(minutes=10),data))[0])
+        await c._house_stable_surplus('climate.hp',False,False,NOW+timedelta(minutes=11),data)
+        self.assertFalse((await c._house_stable_surplus('climate.hp',True,False,NOW+timedelta(minutes=12),data))[0])
+
+    async def test_deficit_tolerance_expires_after_ten_minutes_across_restart(self):
+        c,_,_,data,_=self.setup_control()
+        c._house_surplus_delays={}
+        data.update(grid_import_w=100,battery_discharge_w=200,battery_soc=60)
+        self.assertTrue((await c._house_stable_surplus('climate.hp',False,True,NOW,data))[0])
+        saved=c._house_store.async_save.call_args.args[0]
+        other,_,_,_,_=self.setup_control()
+        other._house_surplus_delays={}
+        other._house_surplus_state=saved['surplus_state']
+        self.assertTrue((await other._house_stable_surplus('climate.hp',False,True,NOW+timedelta(minutes=9),data))[0])
+        self.assertFalse((await other._house_stable_surplus('climate.hp',False,True,NOW+timedelta(minutes=10),data))[0])
+
+    async def test_large_deficit_low_soc_or_electrical_alarm_is_not_held(self):
+        for extra in ({'grid_import_w':400},{'battery_discharge_w':600,'battery_soc':80},
+                      {'battery_discharge_w':200,'battery_soc':34},{'inverter_warning':True}):
+            c,_,_,data,_=self.setup_control()
+            data.update(extra)
+            self.assertFalse((await c._house_stable_surplus('climate.hp',False,True,NOW,data))[0])
+
+    async def test_missing_observations_do_not_count_as_confirmed_surplus(self):
+        c,_,_,data,_=self.setup_control()
+        c._house_surplus_delays={}
+        await c._house_stable_surplus('climate.hp',True,False,NOW,data)
+        self.assertFalse((await c._house_stable_surplus('climate.hp',True,False,NOW+timedelta(minutes=10),data))[0])
 
 class SolarStorageControlTests(unittest.IsolatedAsyncioTestCase):
     setup_control = ControlTests.setup_control
