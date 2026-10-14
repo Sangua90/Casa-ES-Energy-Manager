@@ -59,6 +59,10 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
             self._house_surplus_delays = saved.get("surplus_delays", {})
             self._dhw_fixed_reserve = max(0, min(finite(saved.get("dhw_fixed_reserve"), 4), 10))
             self._house_owned = saved.get("owned", {})
+            for record in self._house_owned.values():
+                record.setdefault("acknowledged", False)
+                if record.get("fan") is not None:
+                    record.setdefault("fan_acknowledged", False)
             self._house_history_until = saved.get("history_until", 0)
             self._house_exception = saved.get("exception", {})
             self._house_hold = saved.get("hold", {})
@@ -367,16 +371,45 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         # Never adopt a manually running compressor or the central thermostat.
         if not owned and compressor and state.state != "off":
             return False
-        if owned and now.timestamp() - owned["at"] > 120 and (
-            state.state != owned["mode"] or
-            (owned.get("target") is not None and actual is not None and abs(actual - owned["target"]) > tolerance) or
-            (owned.get("fan") is not None and now.timestamp() - owned.get("fan_at", owned["at"]) > 120
-             and state.attributes.get("fan_mode") != owned["fan"])
-        ):
+        if owned:
+            target_matches = (owned.get("target") is None or
+                actual is not None and abs(actual - owned["target"]) <= tolerance)
+            command_matches = state.state == owned["mode"] and target_matches
+            if command_matches and not owned.get("acknowledged", True):
+                owned["acknowledged"] = True
+                owned.pop("unconfirmed_since", None)
+                await self._house_save()
+            fan_matches = owned.get("fan") is None or state.attributes.get("fan_mode") == owned["fan"]
+            if fan_matches and not owned.get("fan_acknowledged", True):
+                owned["fan_acknowledged"] = True
+                await self._house_save()
+            changed_after_confirmation = (owned.get("acknowledged", True) and not command_matches
+                or owned.get("fan") is not None and owned.get("fan_acknowledged", True)
+                and now.timestamp() - owned.get("fan_at", owned["at"]) > 120 and not fan_matches)
+            # A request which has never been acknowledged is not evidence of
+            # a manual edit. Keep ownership so OFF remains possible after PV.
+            if not command_matches and not owned.get("acknowledged", True):
+                owned.setdefault("unconfirmed_since", owned["at"])
+        else:
+            changed_after_confirmation = False
+        if owned and now.timestamp() - owned["at"] > 120 and changed_after_confirmation:
             self._house_owned.pop(entity, None)
             self._house_hold[entity] = now.timestamp() + 2 * 3600
             await self._house_save()
             return False
+        if owned and mode != "off":
+            if owned.get("fault_until", 0) > now.timestamp():
+                return False
+            if (not owned.get("acknowledged", True) and owned.get("command_attempts", 0) >= 3
+                    and now.timestamp() - owned.get("unconfirmed_since", owned["at"]) >= 600):
+                # Stop our failing control only after compressor minimum ON;
+                # keep a bounded cooldown, then permit autonomous retry.
+                stopped = await self._house_command(entity, "off", None, now, compressor=compressor)
+                if stopped:
+                    self._house_owned[entity]["fault_until"] = now.timestamp() + 600
+                    self._house_owned[entity]["control_fault"] = "command_not_acknowledged"
+                    await self._house_save()
+                return False
         if mode == "off" and not owned:
             return False
         if state.state == mode and (mode == "off" or (actual is not None and abs(actual - target) < .3)):
@@ -414,6 +447,11 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
             await self.hass.services.async_call("climate", "set_hvac_mode", {"entity_id": entity, "hvac_mode": mode}, blocking=True)
         await self.hass.services.async_call("climate", service, payload, blocking=True)
         self._house_owned[entity] = {**(owned or {}), "mode": mode, "target": target, "at": now.timestamp(),
+                                     "acknowledged": False,
+                                     "command_attempts": (owned.get("command_attempts", 0) + 1
+                                         if owned and not owned.get("acknowledged", True) and owned.get("mode") == mode else 1),
+                                     "unconfirmed_since": (owned.get("unconfirmed_since", owned["at"])
+                                         if owned and not owned.get("acknowledged", True) and owned.get("mode") == mode else now.timestamp()),
                                      "mode_at": owned.get("mode_at", owned["at"]) if owned and owned["mode"] == mode else now.timestamp()}
         await self._house_save()
         return True
@@ -493,6 +531,7 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         if actual != wanted:
             await self.hass.services.async_call("climate", "set_fan_mode", {"entity_id": entity, "fan_mode": wanted}, blocking=True)
             owned["fan_at"] = now.timestamp()
+            owned["fan_acknowledged"] = False
         owned["fan"] = wanted
         if not active:
             owned.pop("fan_previous", None)
@@ -701,6 +740,14 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
             decision = room_plan(house, room, now, current, solar, electrical)
             decision["subentry_id"] = subentry.subentry_id
             decision["priority"] = self.house_room_priority(subentry.subentry_id, room)
+            owner = self._house_owned.get(hp, {})
+            decision["control_status"] = ("command_unconfirmed" if owner and not owner.get("acknowledged", True)
+                                          else "automatic_owned" if owner else "not_owned")
+            decision["energy_purpose"] = ("surplus_deficit_tolerance" if stability_reason == "brief_deficit_hold" and decision["heat_pump_mode"] != "off"
+                else "solar_storage" if decision["source"] in ("solar_heating", "solar_cooling")
+                else "room_demand" if decision["source"] == "economic_heat_pump"
+                else "minimum_on_protection" if is_owned and decision["heat_pump_mode"] == "off" and now.timestamp() - owner.get("mode_at", owner.get("at", 0)) < 1200
+                else "no_heat_pump_demand")
             decision.update(raw_solar_available=raw_solar, surplus_stability=stability_reason,
                             surplus_start_minutes=self.house_surplus_delay("start"), surplus_stop_minutes=self.house_surplus_delay("stop"))
             decision["commands_enabled"] = execute and room.get("reviewed", False)
@@ -742,6 +789,8 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
                         finite(house.get("solar_storage_cool_min_c"), 24) if decision.get("solar_storage_active") else 20, reference_offset=reference_offset)
                     decision["device_setpoint"] = target
                     started = await self._house_command(hp, mode, target, now, compressor=True)
+                    if self._house_owned.get(hp, {}).get("fault_until", 0) > now.timestamp():
+                        decision.update(control_status="fault_cooldown", heat_pump_mode="off", energy_purpose="control_fault")
                     fan_option = self.hass.states.get("input_boolean.energy_manager_ventola_alta_surplus")
                     fan_active = bool(fan_option and fan_option.state == "on" and decision.get("solar_storage_active"))
                     await self._house_storage_fan(hp, fan_active, now)

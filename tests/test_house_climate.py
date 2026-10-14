@@ -94,6 +94,30 @@ Coordinator = namespace["CasaESEnergyCoordinator"]
 
 
 class ControlTests(unittest.IsolatedAsyncioTestCase):
+    async def test_unacknowledged_target_is_not_a_manual_edit_and_can_stop(self):
+        c,_,_,_,states=self.setup_control()
+        states['climate.hp'].state='heat'
+        states['climate.hp'].attributes['temperature']=26.5
+        c._house_owned['climate.hp']={'mode':'heat','target':28,'at':NOW.timestamp()-1500,
+            'mode_at':NOW.timestamp()-1500,'acknowledged':False,'command_attempts':3}
+        self.assertTrue(await c._house_command('climate.hp','off',None,NOW,compressor=True))
+        self.assertNotIn('climate.hp',c._house_hold)
+        self.assertEqual(c._house_owned['climate.hp']['mode'],'off')
+
+    async def test_failed_command_retries_then_stops_with_cooldown_after_minimum(self):
+        c,_,_,_,states=self.setup_control()
+        states['climate.hp'].state='heat'
+        states['climate.hp'].attributes['temperature']=26.5
+        c._house_owned['climate.hp']={'mode':'heat','target':28,'at':NOW.timestamp()-900,
+            'mode_at':NOW.timestamp()-900,'acknowledged':False,'command_attempts':3,
+            'unconfirmed_since':NOW.timestamp()-900}
+        self.assertFalse(await c._house_command('climate.hp','heat',28,NOW,compressor=True))
+        c.hass.services.async_call.assert_not_awaited()
+        later=NOW+timedelta(minutes=5)
+        self.assertFalse(await c._house_command('climate.hp','heat',28,later,compressor=True))
+        self.assertEqual(c._house_owned['climate.hp']['mode'],'off')
+        self.assertEqual(c._house_owned['climate.hp']['fault_until'],later.timestamp()+600)
+
     async def test_priority_defaults_overrides_and_persistence(self):
         c, _, room, _, _ = self.setup_control()
         names=['Salotto','Camera ES','Palestra','Sottoscala','Camera Ester']
