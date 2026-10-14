@@ -555,6 +555,7 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
             available = max(available, potential)
         phase_budget = {p: finite(data.get(f"phase_{p}_headroom_w"), 0) for p in ("l1", "l2", "l3")}
         group_reserved = {}
+        cycle_started_groups = set()
         inverter_budget = finite(data.get("inverter_headroom_w"), 0)
         gas_demand = False
         gas_sensors_valid = False
@@ -592,7 +593,8 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
             electrical = (not data.get("grid_warning") and not data.get("inverter_warning") and phase in phase_budget
                           and phase_budget[phase] >= watts
                           and inverter_budget >= watts and (is_owned or not settling))
-            if not is_owned and now.timestamp() - self._house_last_start < 120:
+            if (not is_owned and now.timestamp() - self._house_last_start < 120
+                    and not (machine == "p1" and group_key in cycle_started_groups)):
                 electrical = False
             average_increment = max(average_w - group_reserved[group_key], 0)
             solar = (available + support_left >= average_increment
@@ -657,6 +659,7 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
                     fan_active = bool(fan_option and fan_option.state == "on" and decision.get("solar_storage_active"))
                     await self._house_storage_fan(hp, fan_active, now)
                     if started and not is_owned:
+                        cycle_started_groups.add(group_key)
                         self._house_last_start = now.timestamp()
                         await self._house_save()
                     if started or is_owned:
@@ -808,11 +811,13 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
             state = self.hass.states.get(entity)
             lower = celsius(state.attributes.get("min_temp", 16), self.hass.config.units.temperature_unit) if state else 16
             upper = celsius(state.attributes.get("max_temp", 30), self.hass.config.units.temperature_unit) if state else 30
+            if source == "heat_pump" and mode == "heat":
+                upper = min(upper if upper is not None else 30, 28)
             return max(lower if lower is not None else 16, min(target, upper if upper is not None else 30))
         bias = learned.get("model", {}).get("sensor_bias", {}).get(entity + ":" + source, {})
         if bias.get("samples", 0) >= 12 and finite(bias.get("confidence"), 0) >= .3:
             target += max(-2, min(finite(bias.get("offset_c"), 0), 2))
-        return min(target, heat_max) if mode == "heat" else max(cool_min, min(target, 30))
+        return min(target, heat_max, 28) if mode == "heat" and source == "heat_pump" else min(target, heat_max) if mode == "heat" else max(cool_min, min(target, 30))
 
     async def _house_power_guard(self, house, rooms, data, now):
         """Hardware emergency also applies to manual loads, never to the Ariston main switch."""

@@ -647,6 +647,25 @@ class MideaFanRestoreSequenceTests(unittest.IsolatedAsyncioTestCase):
 
 class SharedExternalPowerTests(unittest.IsolatedAsyncioTestCase):
     setup_control=ControlTests.setup_control
+    async def test_p1_starts_eligible_heads_in_same_cycle_with_one_group_budget(self):
+        c,house,room,data,states=self.setup_control()
+        house.update(enabled=True,hydraulics_confirmed=False,season='winter')
+        room.update(machine='p1',nominal_power_w=3120,power_entity='sensor.p1')
+        members=[]
+        template=states['climate.hp']
+        for i in range(3):
+            entity='climate.head'+str(i)
+            states[entity]=SimpleNamespace(state='off',last_changed=template.last_changed,attributes=dict(template.attributes))
+            members.append(SimpleNamespace(data={**room,'heat_pump_entity':entity},subentry_id=str(i)))
+        c._house_config=lambda:(house,members)
+        c._house_engine_result={'machine_models':{'p1':{'heat:3':{'powers':[800]*20,'updated_at':NOW.timestamp()}}}}
+        c._house_engine_last_at=NOW.timestamp()
+        data.update(grid_export_w=2200,phase_l1_headroom_w=3078)
+        await c._async_house_plan(data,NOW)
+        starts=[call.args[2]['entity_id'] for call in c.hass.services.async_call.call_args_list
+                if call.args[1]=='set_hvac_mode' and call.args[2].get('hvac_mode')=='heat']
+        self.assertEqual(starts,['climate.head0','climate.head1','climate.head2'],str(data.get('house_climate_rooms')))
+        self.assertEqual([r['incremental_power_w'] for r in data['house_climate_rooms']],[1230,0,0])
     async def test_shared_sensor_and_recent_mean_do_not_multiply_by_heads(self):
         c,house,room,data,states=self.setup_control()
         room.update(machine='p1',nominal_power_w=3120,power_entity='sensor.p1')
@@ -665,6 +684,7 @@ class SharedExternalPowerTests(unittest.IsolatedAsyncioTestCase):
         house.update(enabled=True,hydraulics_confirmed=False)
         room.update(machine='p1',nominal_power_w=3120)
         c._house_engine_result={'machine_models':{'p1':{'heat:3':{'powers':[800]*20,'updated_at':NOW.timestamp()}}}}
+        c._house_engine_last_at=NOW.timestamp()
         c._house_engine_last_at=NOW.timestamp()
         data.update(grid_export_w=2200,phase_l1_headroom_w=3078)
         await c._async_house_plan(data,NOW)
@@ -699,7 +719,7 @@ class TRVReferenceTests(unittest.IsolatedAsyncioTestCase):
         states['climate.valve'].attributes['current_temperature']=21.5
         offset,quality=await c._house_trv_reference(house,room,NOW)
         self.assertEqual(offset,7.5);self.assertEqual(quality,'trvs_radiators_cold')
-        self.assertEqual(c._house_calibrated_setpoint('climate.hp',25.5,'heat_pump',{},'heat',27,24,reference_offset=offset),30)
+        self.assertEqual(c._house_calibrated_setpoint('climate.hp',25.5,'heat_pump',{},'heat',27,24,reference_offset=offset),28)
         states['climate.gas'].state='heat';states['climate.valve'].attributes.update(hvac_action='heating',current_temperature=25)
         offset,quality=await c._house_trv_reference(house,room,NOW+timedelta(minutes=10))
         self.assertEqual(offset,7.5);self.assertEqual(quality,'frozen_cold_offset_radiators_hot')
