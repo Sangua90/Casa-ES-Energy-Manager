@@ -94,6 +94,31 @@ Coordinator = namespace["CasaESEnergyCoordinator"]
 
 
 class ControlTests(unittest.IsolatedAsyncioTestCase):
+    async def test_priority_defaults_overrides_and_persistence(self):
+        c, _, room, _, _ = self.setup_control()
+        names=['Salotto','Camera ES','Palestra','Sottoscala','Camera Ester']
+        self.assertEqual([c.house_room_priority(str(i),{**room,'name':n})
+                          for i,n in enumerate(names)],[1,2,3,4,5])
+        c.async_request_refresh=AsyncMock()
+        await c.async_set_house_room_priority('palestra',1)
+        saved=c._house_store.async_save.call_args.args[0]
+        self.assertEqual(saved['priorities'],{'palestra':1})
+        self.assertEqual(c.house_room_priority('palestra',{'name':'Palestra'}),1)
+        with self.assertRaises(ValueError):
+            await c.async_set_house_room_priority('palestra',6)
+
+    async def test_emergency_sheds_lowest_priority_first(self):
+        c, house, room, data, states = self.setup_control()
+        members=[]
+        template=states['climate.hp']
+        for i,name in enumerate(['Salotto','Camera ES','Palestra','Sottoscala','Camera Ester']):
+            entity='climate.head'+str(i)
+            states[entity]=SimpleNamespace(state='heat',attributes=dict(template.attributes))
+            members.append(SimpleNamespace(data={**room,'name':name,'heat_pump_entity':entity},subentry_id=str(i)))
+        data.update(load_power_w=10000,inverter_power_limit_w=10000)
+        await c._house_power_guard(house,members,data,NOW)
+        self.assertEqual(c.hass.services.async_call.call_args.args[2]['entity_id'],'climate.head4')
+
     def setup_control(self):
         c = object.__new__(Coordinator)
         c.real_control_enabled = True

@@ -78,6 +78,9 @@ async def async_setup_entry(
         entities.append(CasaESHouseSituationSelect(coordinator, entry))
         for machine, name in (("salotto", "Clima Salotto"), ("ester", "Clima Ester"), ("p1", "Clima P1")):
             entities.append(CasaESHouseMachineModeSelect(coordinator, entry, machine, name))
+        for subentry in entry.subentries.values():
+            if subentry.subentry_type == "climate_room" and subentry.data.get("heat_pump_entity"):
+                entities.append(CasaESHouseRoomPrioritySelect(coordinator, entry, subentry))
     async_add_entities(entities)
 
 
@@ -92,6 +95,29 @@ class _CasaESSelectBase(SelectEntity):
             model="Energy Manager",
             sw_version=VERSION,
         )
+
+
+class CasaESHouseRoomPrioritySelect(_CasaESSelectBase):
+    """Persistent room ranking: 1 starts first, 5 is shed first."""
+    _attr_icon = "mdi:sort-numeric-ascending"
+    _attr_options = ["1", "2", "3", "4", "5"]
+
+    def __init__(self, coordinator, entry, subentry):
+        self.coordinator = coordinator
+        self.subentry = subentry
+        self._attr_unique_id = f"{entry.entry_id}_{subentry.subentry_id}_house_priority"
+        self._attr_name = "Priorità clima " + str(subentry.data.get("name") or subentry.title)
+        self._set_device_info(entry)
+
+    @property
+    def current_option(self):
+        return str(self.coordinator.house_room_priority(self.subentry.subentry_id, self.subentry.data))
+
+    async def async_select_option(self, option):
+        if option not in self._attr_options:
+            raise ValueError("Priorità non valida")
+        await self.coordinator.async_set_house_room_priority(self.subentry.subentry_id, int(option))
+        self.async_write_ha_state()
 
 
 class CasaESHouseGasModeSelect(_CasaESSelectBase):

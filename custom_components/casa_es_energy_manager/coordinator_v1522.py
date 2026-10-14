@@ -28,6 +28,7 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         self._pv_info = {}
         self._pv_store = Store(hass, 1, f"casa_es_energy_manager.{entry.entry_id}.pv_local_nowcast")
         self._house_reference_offsets = {}
+        self._house_priorities = {}
         self._house_owned = {}
         self._house_hold = {}
         self._house_error = None
@@ -50,6 +51,7 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         saved = await self._house_store.async_load()
         if isinstance(saved, dict):
             self._house_reference_offsets = saved.get("reference_offsets", {})
+            self._house_priorities = saved.get("priorities", {})
             self._house_owned = saved.get("owned", {})
             self._house_history_until = saved.get("history_until", 0)
             self._house_exception = saved.get("exception", {})
@@ -210,8 +212,26 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
                     values.append(value)
         return sum(values) / len(values) if values else None
 
+    def house_room_priority(self, subentry_id, room):
+        defaults = {"Salotto": 1, "Camera ES": 2, "Palestra": 3,
+                    "Sottoscala": 4, "Camera Ester": 5}
+        legacy = 6 - max(1, min(finite(room.get("priority"), 2), 5))
+        value = getattr(self, "_house_priorities", {}).get(subentry_id,
+                    defaults.get(room.get("name"), legacy))
+        return int(max(1, min(finite(value, legacy), 5)))
+
+    async def async_set_house_room_priority(self, subentry_id, priority):
+        if priority not in range(1, 6):
+            raise ValueError("La priorità deve essere da 1 a 5")
+        if not hasattr(self, "_house_priorities"):
+            self._house_priorities = {}
+        self._house_priorities[subentry_id] = priority
+        self._house_engine_last_at = 0
+        await self._house_save()
+        await self.async_request_refresh()
+
     async def _house_save(self):
-        await self._house_store.async_save({"reference_offsets": getattr(self, "_house_reference_offsets", {}), "owned": self._house_owned, "hold": self._house_hold,
+        await self._house_store.async_save({"priorities": getattr(self, "_house_priorities", {}), "reference_offsets": getattr(self, "_house_reference_offsets", {}), "owned": self._house_owned, "hold": self._house_hold,
                                             "gas_mode": self.house_gas_mode, "last_start": self._house_last_start,
                                             "machine_modes": self.house_machine_modes,
                                             "gas_stopped_at": self._house_gas_stopped_at,
@@ -443,7 +463,7 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
             self._house_exception = {}
             house["exception"] = {}
             await self._house_save()
-        rooms = sorted(rooms, key=lambda r: -finite(r.data.get("priority"), 2))
+        rooms = sorted(rooms, key=lambda r: self.house_room_priority(r.subentry_id, r.data))
         meter = self.hass.states.get(house.get("gas_meter_entity", ""))
         house["gas_meter_reading"] = finite(meter.state) if meter else None
         outside = self.hass.states.get(house.get("outdoor_entity", ""))
@@ -473,6 +493,8 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         live_surplus = self._thermal_solar_available(data)
         for s in rooms:
             r = dict(s.data)
+            # Engine horizon uses a descending weight; dashboard rank is 1-first.
+            r["priority"] = 6 - self.house_room_priority(s.subentry_id, r)
             hp = self.hass.states.get(r.get("heat_pump_entity", ""))
             valves = [self.hass.states.get(e) for e in r.get("radiator_entities", [])]
             measured_power = self._house_power_w(r, hp)
@@ -616,6 +638,7 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
             room["solar_storage_available"] = solar and available + support_left >= average_increment * finite(house.get("solar_storage_threshold_ratio"), 1.25)
             decision = room_plan(house, room, now, current, solar, electrical)
             decision["subentry_id"] = subentry.subentry_id
+            decision["priority"] = self.house_room_priority(subentry.subentry_id, room)
             decision["commands_enabled"] = execute and room.get("reviewed", False)
             decision["confidence"] = learned.get("confidence", 0)
             decision["preheat_minutes"] = room.get("preheat_minutes", 90)
@@ -835,7 +858,7 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         critical = bool(sustained or inverter or phases)
         if not critical or now.timestamp() - getattr(self, "_house_last_shed", 0) < 15:
             return critical
-        for room in sorted(rooms, key=lambda r: finite(r.data.get("priority"), 2)):
+        for room in sorted(rooms, key=lambda r: -self.house_room_priority(r.subentry_id, r.data)):
             entity = room.data.get("heat_pump_entity", "")
             state = self.hass.states.get(entity)
             if not state or state.state not in ("heat", "cool", "auto", "heat_cool", "dry") or "off" not in state.attributes.get("hvac_modes", []):
