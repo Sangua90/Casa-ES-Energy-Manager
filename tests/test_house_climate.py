@@ -660,3 +660,33 @@ class SharedExternalPowerTests(unittest.IsolatedAsyncioTestCase):
         c2._house_engine_result=c._house_engine_result;c2._house_engine_last_at=NOW.timestamp();d2.update(grid_export_w=720,phase_l1_headroom_w=1000)
         await c2._async_house_plan(d2,NOW)
         self.assertEqual(d2['house_climate_rooms'][0]['heat_pump_mode'],'off')
+
+class TRVReferenceTests(unittest.IsolatedAsyncioTestCase):
+    setup_control=ControlTests.setup_control
+    async def test_cold_trv_offset_and_native_limit_preserve_room_goal(self):
+        c,house,room,data,states=self.setup_control()
+        room['name']='Camera ES'
+        states['input_boolean.energy_manager_riferimento_testine_camera_es']=SimpleNamespace(state='on')
+        states['climate.hp'].attributes['current_temperature']=29
+        states['climate.valve'].attributes['current_temperature']=21.5
+        offset,quality=await c._house_trv_reference(house,room,NOW)
+        self.assertEqual(offset,7.5);self.assertEqual(quality,'trvs_radiators_cold')
+        self.assertEqual(c._house_calibrated_setpoint('climate.hp',25.5,'heat_pump',{},'heat',27,24,reference_offset=offset),30)
+        states['climate.gas'].state='heat';states['climate.valve'].attributes.update(hvac_action='heating',current_temperature=25)
+        offset,quality=await c._house_trv_reference(house,room,NOW+timedelta(minutes=10))
+        self.assertEqual(offset,7.5);self.assertEqual(quality,'frozen_cold_offset_radiators_hot')
+        self.assertEqual(c._house_reference_offsets['climate.hp']['offset'],7.5)
+
+    async def test_hot_radiators_without_cold_model_do_not_invent_offset(self):
+        c,house,room,data,states=self.setup_control();room['name']='Camera ES'
+        states['input_boolean.energy_manager_riferimento_testine_camera_es']=SimpleNamespace(state='on')
+        states['climate.hp'].attributes['current_temperature']=29
+        states['climate.gas'].state='heat';states['climate.valve'].attributes['hvac_action']='heating'
+        offset,quality=await c._house_trv_reference(house,room,NOW)
+        self.assertIsNone(offset);self.assertEqual(quality,'radiators_hot_no_valid_cold_offset')
+    async def test_confirmed_reference_requires_fresh_values(self):
+        c,house,room,data,states=self.setup_control();room['name']='Camera ES'
+        states['input_boolean.energy_manager_riferimento_testine_camera_es']=SimpleNamespace(state='on')
+        states['climate.valve'].last_changed=NOW-timedelta(hours=7)
+        offset,quality=await c._house_trv_reference(house,room,NOW)
+        self.assertIsNone(offset);self.assertEqual(quality,'reference_unavailable_or_stale')

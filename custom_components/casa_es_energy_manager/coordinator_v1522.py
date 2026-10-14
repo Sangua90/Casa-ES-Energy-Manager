@@ -27,6 +27,7 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         self._pv_combined = None
         self._pv_info = {}
         self._pv_store = Store(hass, 1, f"casa_es_energy_manager.{entry.entry_id}.pv_local_nowcast")
+        self._house_reference_offsets = {}
         self._house_owned = {}
         self._house_hold = {}
         self._house_error = None
@@ -48,6 +49,7 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         self._pv_model = pv_saved if isinstance(pv_saved, dict) else {}
         saved = await self._house_store.async_load()
         if isinstance(saved, dict):
+            self._house_reference_offsets = saved.get("reference_offsets", {})
             self._house_owned = saved.get("owned", {})
             self._house_history_until = saved.get("history_until", 0)
             self._house_exception = saved.get("exception", {})
@@ -209,7 +211,7 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         return sum(values) / len(values) if values else None
 
     async def _house_save(self):
-        await self._house_store.async_save({"owned": self._house_owned, "hold": self._house_hold,
+        await self._house_store.async_save({"reference_offsets": getattr(self, "_house_reference_offsets", {}), "owned": self._house_owned, "hold": self._house_hold,
                                             "gas_mode": self.house_gas_mode, "last_start": self._house_last_start,
                                             "machine_modes": self.house_machine_modes,
                                             "gas_stopped_at": self._house_gas_stopped_at,
@@ -336,6 +338,43 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
                                      "mode_at": owned.get("mode_at", owned["at"]) if owned and owned["mode"] == mode else now.timestamp()}
         await self._house_save()
         return True
+
+    async def _house_trv_reference(self, house, room, now):
+        switch = self.hass.states.get("input_boolean.energy_manager_riferimento_testine_" + room.get("name", "").strip().lower().replace(" ", "_"))
+        if not switch or switch.state != "on" or not room.get("radiator_entities"):
+            return None, "native_or_learned"
+        hp = room.get("heat_pump_entity", "")
+        state = self.hass.states.get(hp)
+        valves = [self.hass.states.get(e) for e in room.get("radiator_entities", [])]
+        values = []
+        for valve in valves:
+            if not valve or valve.state in ("unknown", "unavailable"):
+                continue
+            at = getattr(valve, "last_reported", getattr(valve, "last_updated", valve.last_changed))
+            value = celsius(valve.attributes.get("current_temperature"), self.hass.config.units.temperature_unit)
+            if value is not None and 0 <= now.timestamp() - at.timestamp() <= 6 * 3600:
+                values.append(value)
+        native = celsius(state.attributes.get("current_temperature"), self.hass.config.units.temperature_unit) if state else None
+        if not values or native is None:
+            return None, "reference_unavailable_or_stale"
+        reference = sum(values) / len(values)
+        gas = self.hass.states.get(house.get("gas_entity", ""))
+        stopped = getattr(self, "_house_gas_stopped_at", 0)
+        hot = bool((gas and gas.state == "heat" and any(v and v.attributes.get("hvac_action") == "heating" for v in valves))
+                   or stopped and 0 <= now.timestamp() - stopped < 3600)
+        heating = bool(state and state.state in ("heat", "cool") and (finite(state.attributes.get("compressor_frequency"), 0) > 0
+                        or finite(self._house_power_w(room, state), 0) > 100))
+        saved = getattr(self, "_house_reference_offsets", {}).get(hp, {})
+        delta = native - reference
+        if not hot and not heating and abs(delta) <= 10:
+            if not saved or abs(delta - saved.get("offset", 0)) >= .25 or now.timestamp() - saved.get("at", 0) >= 3600:
+                self._house_reference_offsets = getattr(self, "_house_reference_offsets", {})
+                self._house_reference_offsets[hp] = {"offset": delta, "at": now.timestamp()}
+                await self._house_save()
+            return delta, "trvs_radiators_cold"
+        if saved and 0 <= now.timestamp() - saved.get("at", 0) <= 7 * 86400:
+            return saved["offset"], "frozen_cold_offset_radiators_hot" if hot else "frozen_cold_offset_heat_pump_running"
+        return None, "radiators_hot_no_valid_cold_offset" if hot else "no_valid_cold_offset"
 
     async def _house_storage_fan(self, entity, active, now):
         """Persist only our fan change; restore it without overwriting manual edits."""
@@ -596,15 +635,22 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
                 if decision["source"] not in ("window_open_or_unknown", "profile_to_confirm"):
                     gas_sensors_valid = True
                     gas_demand |= current < decision["radiator_target"] - .3
+            room_heat_limit = min(min(finite(room.get("comfort_temperature"), 21), 22) + finite(house.get("solar_storage_margin_c"), 5), finite(house.get("solar_storage_heat_max_c"), 27))
+            room_temperature_guard = bool(current is not None and hp_state and
+                ((hp_state.state == "heat" and current >= room_heat_limit) or
+                 (hp_state.state == "cool" and current <= finite(house.get("solar_storage_cool_min_c"), 24))))
+            decision["room_temperature_limit_reached"] = room_temperature_guard
             decisions.append(decision)
             if not execute or not room.get("reviewed"):
                 continue
             if decision["heat_pump_mode"] != "off":
                 mode = decision["heat_pump_mode"]
                 if hp_state and mode in hp_state.attributes.get("hvac_modes", []):
+                    reference_offset, reference_quality = await self._house_trv_reference(house, room, now)
+                    decision.update(temperature_reference_quality=reference_quality, native_reference_offset_c=reference_offset)
                     target = self._house_calibrated_setpoint(hp, decision["heat_pump_target"], "cooling" if mode == "cool" else "heat_pump", learned, mode,
                         finite(house.get("solar_storage_heat_max_c"), 27) if decision.get("solar_storage_active") else 22,
-                        finite(house.get("solar_storage_cool_min_c"), 24) if decision.get("solar_storage_active") else 20)
+                        finite(house.get("solar_storage_cool_min_c"), 24) if decision.get("solar_storage_active") else 20, reference_offset=reference_offset)
                     decision["device_setpoint"] = target
                     started = await self._house_command(hp, mode, target, now, compressor=True)
                     fan_option = self.hass.states.get("input_boolean.energy_manager_ventola_alta_surplus")
@@ -624,7 +670,7 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
                         inverter_budget -= watts
             elif is_owned and machine_mode == "auto":
                 await self._house_command(hp, "off", None, now, compressor=True,
-                                          safety_stop=emergency or not electrical or decision["source"] == "window_open_or_unknown" or
+                                          safety_stop=emergency or room_temperature_guard or not electrical or decision["source"] == "window_open_or_unknown" or
                                           (not solar and not (house.get("season") == "winter" and house.get("allow_economic_grid") and decision["economics_verified"])))
             if decision["heat_pump_mode"] == "off" and machine_mode == "auto":
                 await self._house_storage_fan(hp, False, now)
@@ -754,7 +800,13 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
                 result[entity] = value
         return result
 
-    def _house_calibrated_setpoint(self, entity, target, source, learned, mode, heat_max=22, cool_min=20):
+    def _house_calibrated_setpoint(self, entity, target, source, learned, mode, heat_max=22, cool_min=20, reference_offset=None):
+        if reference_offset is not None:
+            target += reference_offset
+            state = self.hass.states.get(entity)
+            lower = celsius(state.attributes.get("min_temp", 16), self.hass.config.units.temperature_unit) if state else 16
+            upper = celsius(state.attributes.get("max_temp", 30), self.hass.config.units.temperature_unit) if state else 30
+            return max(lower if lower is not None else 16, min(target, upper if upper is not None else 30))
         bias = learned.get("model", {}).get("sensor_bias", {}).get(entity + ":" + source, {})
         if bias.get("samples", 0) >= 12 and finite(bias.get("confidence"), 0) >= .3:
             target += max(-2, min(finite(bias.get("offset_c"), 0), 2))
