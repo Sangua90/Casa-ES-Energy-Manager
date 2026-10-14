@@ -76,6 +76,7 @@ async def async_setup_entry(
     if hasattr(coordinator, "house_gas_mode"):
         entities.append(CasaESHouseGasModeSelect(coordinator, entry))
         entities.append(CasaESHouseSituationSelect(coordinator, entry))
+        entities.append(CasaESDhwReserveSelect(coordinator, entry))
         for key in ("start", "stop"):
             entities.append(CasaESHouseSurplusDelaySelect(coordinator, entry, key))
         for machine, name in (("salotto", "Clima Salotto"), ("ester", "Clima Ester"), ("p1", "Clima P1")):
@@ -97,6 +98,27 @@ class _CasaESSelectBase(SelectEntity):
             model="Energy Manager",
             sw_version=VERSION,
         )
+
+
+class CasaESDhwReserveSelect(_CasaESSelectBase):
+    _attr_name = "Riserva aggiuntiva acqua calda"
+    _attr_icon = "mdi:thermometer-plus"
+    _attr_options = [str(n) for n in range(11)]
+
+    def __init__(self, coordinator, entry):
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{entry.entry_id}_dhw_fixed_reserve"
+        self._set_device_info(entry)
+
+    @property
+    def current_option(self):
+        return str(int(getattr(self.coordinator, "_dhw_fixed_reserve", 4)))
+
+    async def async_select_option(self, option):
+        if option not in self._attr_options:
+            raise ValueError("Riserva non valida")
+        await self.coordinator.async_set_dhw_fixed_reserve(float(option))
+        self.async_write_ha_state()
 
 
 class CasaESHouseSurplusDelaySelect(_CasaESSelectBase):

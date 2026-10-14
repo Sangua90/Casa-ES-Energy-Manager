@@ -192,9 +192,11 @@ def forecast(model: dict, day: datetime) -> tuple[list[float], float]:
 
 
 def plan(model: dict, now: datetime, current: float, base: float, maximum: float,
-         green_maximum: float = 53.0, reserve_in_base: bool = False, evening_minimum: float = 0.0, demand_end_hour: int = 24) -> dict:
+         green_maximum: float = 53.0, reserve_in_base: bool = False, evening_minimum: float = 0.0, demand_end_hour: int = 24, fixed_reserve_c: float | None = None) -> dict:
     hourly, margin = forecast(model, now)
     tomorrow, tomorrow_margin = forecast(model, now + timedelta(days=1))
+    if fixed_reserve_c is not None:
+        margin = tomorrow_margin = max(0, min(number(fixed_reserve_c, 4), 10))
     hourly = hourly[:demand_end_hour] + [0.0] * (24 - demand_end_hour)
     tomorrow = tomorrow[:demand_end_hour] + [0.0] * (24 - demand_end_hour)
     upcoming = [h for h in range(now.hour, 24) if hourly[h] >= 0.4]
@@ -224,7 +226,9 @@ def plan(model: dict, now: datetime, current: float, base: float, maximum: float
                         else [h for h in range(window_end) if tomorrow[h] >= 0.4])
         use_hours = max(demand_hours[-1] + 1 - deadline.hour, 1) if demand_hours else 1
         loss_hours = use_hours
-        minimum_after_use = max(base - margin, 0)
+        # Four degrees were already included in the configured normal base.
+        # An editable reserve must change the target, not cancel itself out.
+        minimum_after_use = max(base - 4, 0)
     else:
         loss_hours = hours
         minimum_after_use = base

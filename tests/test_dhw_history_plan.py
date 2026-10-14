@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 import importlib.util
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -31,6 +32,27 @@ def history():
 
 
 class HistoryTests(unittest.TestCase):
+    def test_editable_reserve_changes_target_without_double_counting_base(self):
+        hourly=[0.0]*24
+        hourly[20]=10.0
+        with patch.object(dhw,'forecast',return_value=(hourly,4.0)):
+            values=[dhw.plan({'standby_loss_c_per_h':0},NOW.replace(hour=18),50,53,73,
+                    reserve_in_base=True,fixed_reserve_c=n) for n in (0,4,6,10)]
+        self.assertEqual([r['target_c'] for r in values],[59,63,65,69])
+        self.assertEqual([r['minimum_after_use_c'] for r in values],[49]*4)
+        self.assertEqual([r['tomorrow_reserve_c'] for r in values],[0,4,6,10])
+
+    def test_editable_reserve_keeps_device_ceiling_and_evening_floor(self):
+        hourly=[0.0]*24
+        hourly[20]=30.0
+        with patch.object(dhw,'forecast',return_value=(hourly,4.0)):
+            r=dhw.plan({},NOW.replace(hour=18),50,53,73,reserve_in_base=True,fixed_reserve_c=10)
+        self.assertEqual(r['target_c'],73)
+        hourly[20]=1.0
+        with patch.object(dhw,'forecast',return_value=(hourly,4.0)):
+            r=dhw.plan({},NOW.replace(hour=18),50,53,73,reserve_in_base=True,fixed_reserve_c=0,evening_minimum=63)
+        self.assertEqual(r['target_c'],63)
+
     def test_boost_rate_learned_without_legionella_intervals(self):
         start = NOW.replace(day=4, hour=18)
         h = {ENTITIES[role]: [row(start, "on" if role != "legionella" else "off")]

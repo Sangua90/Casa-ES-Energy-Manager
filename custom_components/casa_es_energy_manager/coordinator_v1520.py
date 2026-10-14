@@ -358,7 +358,8 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         base = min(number(item.get(CONF_THERMAL_BASE_TEMP_C), 53), 53, maximum)
         current = number(item.get("thermal_current_temperature_c"), base)
         subentry_id = str(item.get("subentry_id", ""))
-        result = plan(self._dhw_models.get(subentry_id, {}), now, current, base, maximum, reserve_in_base=True, evening_minimum=63.0)
+        result = plan(self._dhw_models.get(subentry_id, {}), now, current, base, maximum, reserve_in_base=True, evening_minimum=63.0,
+                      fixed_reserve_c=getattr(self, "_dhw_fixed_reserve", 4.0))
         tomorrow_fv = number(data.get("forecast_tomorrow_kwh"))
         today_fv = number(data.get("forecast_today_kwh"))
         poor_tomorrow = tomorrow_fv is not None and (tomorrow_fv < 6 or (today_fv and tomorrow_fv < today_fv * 0.35))
@@ -563,7 +564,7 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
                                        result["normal_target_c"], min(result["normal_target_c"] + 20, 73,
                                        number(item.get(CONF_THERMAL_NORMAL_MAX_TEMP_C), 65),
                                        number(item.get(CONF_THERMAL_HARD_MAX_TEMP_C), 70)),
-                                       reserve_in_base=True, demand_end_hour=12)
+                                       reserve_in_base=True, demand_end_hour=12, fixed_reserve_c=getattr(self, "_dhw_fixed_reserve", 4.0))
                         if dt_util.parse_datetime(morning["deadline"]).hour < 12:
                             await self._async_request_dhw_recovery(item, morning, now)
             # GREEN is capped at the manufacturer's heat-pump limit. It never
@@ -595,7 +596,7 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         data["dhw_history_models"] = self._dhw_models
         diag = data.get("v1511_thermal_adaptive_target")
         if isinstance(diag, dict):
-            diag.update(model="recorder_completed_demand_days", margin_c=4.0,
+            diag.update(model="recorder_completed_demand_days", margin_c=getattr(self, "_dhw_fixed_reserve", 4.0),
                         adaptive_storage_buffer_c=0.0, adaptive_margin_cap_c=4.0,
                         history_source="home_assistant_recorder",
                         heat_pump_max_c=53.0, current_day_in_training=False)

@@ -31,6 +31,7 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         self._house_priorities = {}
         self._house_surplus_state = {}
         self._house_surplus_delays = {}
+        self._dhw_fixed_reserve = 4.0
         self._house_owned = {}
         self._house_hold = {}
         self._house_error = None
@@ -56,6 +57,7 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
             self._house_priorities = saved.get("priorities", {})
             self._house_surplus_state = saved.get("surplus_state", {})
             self._house_surplus_delays = saved.get("surplus_delays", {})
+            self._dhw_fixed_reserve = max(0, min(finite(saved.get("dhw_fixed_reserve"), 4), 10))
             self._house_owned = saved.get("owned", {})
             self._house_history_until = saved.get("history_until", 0)
             self._house_exception = saved.get("exception", {})
@@ -280,8 +282,15 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
             await self._house_save()
         return allowed, reason
 
+    async def async_set_dhw_fixed_reserve(self, value):
+        if not 0 <= value <= 10:
+            raise ValueError("Riserva non valida")
+        self._dhw_fixed_reserve = float(value)
+        await self._house_save()
+        await self.async_request_refresh()
+
     async def _house_save(self):
-        await self._house_store.async_save({"surplus_state": getattr(self, "_house_surplus_state", {}), "surplus_delays": getattr(self, "_house_surplus_delays", {}), "priorities": getattr(self, "_house_priorities", {}), "reference_offsets": getattr(self, "_house_reference_offsets", {}), "owned": self._house_owned, "hold": self._house_hold,
+        await self._house_store.async_save({"dhw_fixed_reserve": getattr(self, "_dhw_fixed_reserve", 4.0), "surplus_state": getattr(self, "_house_surplus_state", {}), "surplus_delays": getattr(self, "_house_surplus_delays", {}), "priorities": getattr(self, "_house_priorities", {}), "reference_offsets": getattr(self, "_house_reference_offsets", {}), "owned": self._house_owned, "hold": self._house_hold,
                                             "gas_mode": self.house_gas_mode, "last_start": self._house_last_start,
                                             "machine_modes": self.house_machine_modes,
                                             "gas_stopped_at": self._house_gas_stopped_at,
