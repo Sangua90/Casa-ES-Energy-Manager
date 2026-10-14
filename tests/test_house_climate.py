@@ -226,6 +226,34 @@ class ControlTests(unittest.IsolatedAsyncioTestCase):
         c._house_owned["climate.hp"] = {"mode": "heat", "target": 21, "at": NOW.timestamp(), "mode_at": NOW.timestamp()}
         self.assertTrue(await c._house_command("climate.hp", "off", None, NOW, compressor=True, safety_stop=True))
 
+    async def test_surplus_loss_respects_twenty_minutes_on(self):
+        c, house, room, data, states = self.setup_control()
+        house.update(enabled=True, hydraulics_confirmed=False, season="shoulder")
+        states["climate.hp"].state = "heat"
+        c._house_owned["climate.hp"] = {"mode": "heat", "target": 21,
+            "at": NOW.timestamp(), "mode_at": NOW.timestamp()}
+        data["grid_export_w"] = 0
+        await c._async_house_plan(data, NOW + timedelta(minutes=2))
+        self.assertFalse(any(call.args[1] == "set_hvac_mode" and
+            call.args[2].get("hvac_mode") == "off"
+            for call in c.hass.services.async_call.call_args_list))
+        await c._async_house_plan(data, NOW + timedelta(minutes=20))
+        self.assertTrue(any(call.args[1] == "set_hvac_mode" and
+            call.args[2].get("hvac_mode") == "off"
+            for call in c.hass.services.async_call.call_args_list))
+
+    async def test_room_ceiling_does_not_bypass_twenty_minutes_on(self):
+        c, house, room, data, states = self.setup_control()
+        house.update(enabled=True, hydraulics_confirmed=False, season="shoulder")
+        states["climate.hp"].state = "heat"
+        states["climate.valve"].attributes["current_temperature"] = 27
+        c._house_owned["climate.hp"] = {"mode": "heat", "target": 21,
+            "at": NOW.timestamp(), "mode_at": NOW.timestamp()}
+        await c._async_house_plan(data, NOW + timedelta(minutes=2))
+        self.assertFalse(any(call.args[1] == "set_hvac_mode" and
+            call.args[2].get("hvac_mode") == "off"
+            for call in c.hass.services.async_call.call_args_list))
+
     async def test_bias_uses_only_qualified_context_and_heat_ceiling(self):
         c, _, _, _, _ = self.setup_control()
         learned = {"model": {"sensor_bias": {"climate.hp:heat_pump": {"samples": 20, "confidence": .5, "offset_c": 3}}}}

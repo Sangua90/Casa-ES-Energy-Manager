@@ -669,9 +669,11 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
                         phase_budget[phase] -= watts
                         inverter_budget -= watts
             elif is_owned and machine_mode == "auto":
+                # Surplus, room targets, windows and admission budgets are
+                # ordinary scheduling decisions, not electrical emergencies.
+                # They must never bypass the persisted 20-minute ON dwell.
                 await self._house_command(hp, "off", None, now, compressor=True,
-                                          safety_stop=emergency or room_temperature_guard or not electrical or decision["source"] == "window_open_or_unknown" or
-                                          (not solar and not (house.get("season") == "winter" and house.get("allow_economic_grid") and decision["economics_verified"])))
+                                          safety_stop=emergency)
             if decision["heat_pump_mode"] == "off" and machine_mode == "auto":
                 await self._house_storage_fan(hp, False, now)
             if (house.get("hydraulics_confirmed") and self.house_gas_mode == "auto" and decision["radiator_target"] is not None and house.get("season") == "winter"
