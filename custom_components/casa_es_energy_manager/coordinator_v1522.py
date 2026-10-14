@@ -422,6 +422,10 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         minimum = (300 if state.state == "off" else 1200) if compressor and state.state != mode else 180
         if compressor and state.state != mode and owned:
             last_at = owned.get("mode_at", owned["at"])
+        if owned and owned.get("mode") == "off" and mode == "off" and not owned.get("acknowledged", True):
+            # Retrying an unacknowledged OFF is not a new compressor cycle.
+            # The first OFF already respected minimum ON; retry after 3 min.
+            minimum, last_at = 180, owned["at"]
         if safety_stop and mode == "off" and owned:
             minimum = 0
         if now.timestamp() - last_at < minimum:

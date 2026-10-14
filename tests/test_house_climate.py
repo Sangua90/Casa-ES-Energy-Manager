@@ -117,6 +117,9 @@ class ControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(await c._house_command('climate.hp','heat',28,later,compressor=True))
         self.assertEqual(c._house_owned['climate.hp']['mode'],'off')
         self.assertEqual(c._house_owned['climate.hp']['fault_until'],later.timestamp()+600)
+        # If the unit did not obey OFF, do not wait another twenty minutes.
+        self.assertFalse(await c._house_command('climate.hp','off',None,later+timedelta(minutes=2),compressor=True))
+        self.assertTrue(await c._house_command('climate.hp','off',None,later+timedelta(minutes=3),compressor=True))
 
     async def test_priority_defaults_overrides_and_persistence(self):
         c, _, room, _, _ = self.setup_control()
