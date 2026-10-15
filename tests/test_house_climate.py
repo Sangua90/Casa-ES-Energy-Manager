@@ -610,6 +610,20 @@ class SolarPreconditioningTests(unittest.TestCase):
 
 
 class SolarStorageTests(unittest.TestCase):
+    def test_twenty_degree_floor_and_explicit_ideal_plus_margin(self):
+        room={**PlanTests().room(),'solar_storage_available':True,'solar_storage_margin_c':2,
+              'cooling_temperature':22,'solar_storage_cooling_margin_c':3}
+        house={'season':'winter','solar_storage_cool_min_c':20}
+        r=plan.room_plan(house,room,NOW.replace(hour=12),20,True,True)
+        self.assertEqual((r['solar_heating_ideal_c'],r['solar_heating_target_c']),(21,23))
+        self.assertEqual(r['heat_pump_target'],23)
+        house['season']='summer'
+        r=plan.room_plan(house,room,NOW.replace(hour=12),25,True,True)
+        self.assertEqual((r['solar_cooling_ideal_c'],r['solar_cooling_target_c']),(22,20))
+        self.assertEqual(r['heat_pump_target'],20)
+        house['solar_storage_cool_min_c']=18
+        self.assertEqual(plan.room_plan(house,room,NOW.replace(hour=12),25,True,True)['heat_pump_target'],20)
+
     def test_room_margins_replace_global_margins_only_for_solar_storage(self):
         room={**PlanTests().room(),'solar_storage_available':True,
               'solar_storage_margin_c':1,'solar_storage_cooling_margin_c':.5}

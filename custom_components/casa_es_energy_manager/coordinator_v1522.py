@@ -164,7 +164,7 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
                 ("solar_storage_margin_c", "input_number.energy_manager_margine_accumulo_termico", 5, 0, 5),
                 ("solar_storage_heat_max_c", "input_number.energy_manager_limite_caldo_accumulo", 27, 22, 27),
                 ("solar_storage_cooling_margin_c", "input_number.energy_manager_margine_accumulo_fresco", 2, 0, 3),
-                ("solar_storage_cool_min_c", "input_number.energy_manager_limite_freddo_accumulo", 24, 22, 26),
+                ("solar_storage_cool_min_c", "input_number.energy_manager_limite_freddo_accumulo", 24, 20, 26),
                 ("solar_storage_threshold_ratio", "input_number.energy_manager_soglia_surplus_accumulo", 1.25, 1, 2)):
                 state = self.hass.states.get(entity)
                 house[key] = max(lower, min(finite(state.state if state else None, default), upper))

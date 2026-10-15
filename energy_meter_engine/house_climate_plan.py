@@ -141,7 +141,13 @@ def room_plan(house, room, now, current, solar_available, electrical_ok):
               "preparing": preparing, "current_temperature": current,
               "radiator_target": min(base, target) if season == "winter" else None, "heat_pump_mode": "off", "heat_pump_target": None,
               "source": "base_gas" if season == "winter" else "none", "target_level": level,
-              "room_target": target, **cost}
+              "room_target": target, **cost,
+              "solar_heating_ideal_c": min(finite(room.get("comfort_temperature"), 21), 22),
+              "solar_cooling_ideal_c": cooling}
+    heat_margin = max(0, min(finite(room.get("solar_storage_margin_c"), finite(house.get("solar_storage_margin_c"), 5)), 5))
+    cool_margin = max(0, min(finite(room.get("solar_storage_cooling_margin_c"), finite(house.get("solar_storage_cooling_margin_c"), 2)), 3))
+    result["solar_heating_target_c"] = min(result["solar_heating_ideal_c"] + heat_margin, max(22, min(finite(house.get("solar_storage_heat_max_c"), 27), 27)))
+    result["solar_cooling_target_c"] = max(cooling - cool_margin, max(20, min(finite(house.get("solar_storage_cool_min_c"), 24), 26)))
     if current is None:
         result.update(source="temperature_unavailable", radiator_target=None)
         return result
@@ -162,7 +168,7 @@ def room_plan(house, room, now, current, solar_available, electrical_ok):
         margin = max(0, min(finite(room.get("solar_storage_margin_c"), finite(house.get("solar_storage_margin_c"), 5)), 5))
         cooling_margin = max(0, min(finite(room.get("solar_storage_cooling_margin_c"), finite(house.get("solar_storage_cooling_margin_c"), 2)), 3))
         heat_max = max(22, min(finite(house.get("solar_storage_heat_max_c"), 27), 27))
-        cool_min = max(22, min(finite(house.get("solar_storage_cool_min_c"), 24), 26))
+        cool_min = max(20, min(finite(house.get("solar_storage_cool_min_c"), 24), 26))
         comfort = min(comfort + margin, heat_max)
         cooling = max(cooling - cooling_margin, cool_min)
     result["solar_storage_active"] = storage
