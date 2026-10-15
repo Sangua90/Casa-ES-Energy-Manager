@@ -29,6 +29,7 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         self._pv_store = Store(hass, 1, f"casa_es_energy_manager.{entry.entry_id}.pv_local_nowcast")
         self._house_reference_offsets = {}
         self._house_priorities = {}
+        self._house_room_storage = {}
         self._house_surplus_state = {}
         self._house_surplus_delays = {}
         self._dhw_fixed_reserve = 4.0
@@ -55,6 +56,7 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         if isinstance(saved, dict):
             self._house_reference_offsets = saved.get("reference_offsets", {})
             self._house_priorities = saved.get("priorities", {})
+            self._house_room_storage = saved.get("room_storage", {})
             self._house_surplus_state = saved.get("surplus_state", {})
             self._house_surplus_delays = saved.get("surplus_delays", {})
             self._dhw_fixed_reserve = max(0, min(finite(saved.get("dhw_fixed_reserve"), 4), 10))
@@ -240,6 +242,21 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         await self._house_save()
         await self.async_request_refresh()
 
+    def house_room_storage_margins(self, subentry_id, house):
+        values = getattr(self, "_house_room_storage", {}).get(subentry_id, {})
+        return {"solar_storage_margin_c": max(0, min(finite(values.get("heat"), finite(house.get("solar_storage_margin_c"), 5)), 5)),
+                "solar_storage_cooling_margin_c": max(0, min(finite(values.get("cool"), finite(house.get("solar_storage_cooling_margin_c"), 2)), 3))}
+
+    async def async_set_house_room_storage_margin(self, subentry_id, key, value):
+        if key not in ("heat", "cool") or not 0 <= value <= (5 if key == "heat" else 3) or value * 2 != int(value * 2):
+            raise ValueError("Margine non valido")
+        if not hasattr(self, "_house_room_storage"):
+            self._house_room_storage = {}
+        self._house_room_storage.setdefault(subentry_id, {})[key] = value
+        self._house_engine_last_at = 0
+        await self._house_save()
+        await self.async_request_refresh()
+
     def house_surplus_delay(self, key):
         return int(max(0, min(finite(getattr(self, "_house_surplus_delays", {}).get(key), 10), 20)))
 
@@ -294,7 +311,7 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         await self.async_request_refresh()
 
     async def _house_save(self):
-        await self._house_store.async_save({"dhw_fixed_reserve": getattr(self, "_dhw_fixed_reserve", 4.0), "surplus_state": getattr(self, "_house_surplus_state", {}), "surplus_delays": getattr(self, "_house_surplus_delays", {}), "priorities": getattr(self, "_house_priorities", {}), "reference_offsets": getattr(self, "_house_reference_offsets", {}), "owned": self._house_owned, "hold": self._house_hold,
+        await self._house_store.async_save({"room_storage": getattr(self, "_house_room_storage", {}), "dhw_fixed_reserve": getattr(self, "_dhw_fixed_reserve", 4.0), "surplus_state": getattr(self, "_house_surplus_state", {}), "surplus_delays": getattr(self, "_house_surplus_delays", {}), "priorities": getattr(self, "_house_priorities", {}), "reference_offsets": getattr(self, "_house_reference_offsets", {}), "owned": self._house_owned, "hold": self._house_hold,
                                             "gas_mode": self.house_gas_mode, "last_start": self._house_last_start,
                                             "machine_modes": self.house_machine_modes,
                                             "gas_stopped_at": self._house_gas_stopped_at,
@@ -618,6 +635,7 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         live_surplus = self._thermal_solar_available(data)
         for s in rooms:
             r = dict(s.data)
+            r.update(self.house_room_storage_margins(s.subentry_id, house))
             # Engine horizon uses a descending weight; dashboard rank is 1-first.
             r["priority"] = 6 - self.house_room_priority(s.subentry_id, r)
             hp = self.hass.states.get(r.get("heat_pump_entity", ""))
@@ -711,6 +729,7 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         settling = bool(last_thermal and 0 <= now.timestamp() - last_thermal.timestamp() < 60)
         for subentry in rooms:
             room = dict(subentry.data)
+            room.update(self.house_room_storage_margins(subentry.subentry_id, house))
             learned = self._house_engine_result.get("zones", {}).get(subentry.subentry_id, {})
             if learned.get("learning_status") in ("thermal_rate_available", "conservative_fallback"):
                 room["preheat_minutes"] = max(15, min(finite(learned.get("preheat_minutes"), 90), 480))
@@ -767,6 +786,8 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
             decision = room_plan(house, room, now, current, solar, electrical)
             decision["subentry_id"] = subentry.subentry_id
             decision["priority"] = self.house_room_priority(subentry.subentry_id, room)
+            decision.update(solar_storage_heat_margin_c=room["solar_storage_margin_c"],
+                            solar_storage_cooling_margin_c=room["solar_storage_cooling_margin_c"])
             owner = self._house_owned.get(hp, {})
             decision["control_status"] = ("command_unconfirmed" if owner and not owner.get("acknowledged", True)
                                           else "automatic_owned" if owner else "not_owned")
@@ -798,7 +819,7 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
                 if decision["source"] not in ("window_open_or_unknown", "profile_to_confirm"):
                     gas_sensors_valid = True
                     gas_demand |= current < decision["radiator_target"] - .3
-            room_heat_limit = min(min(finite(room.get("comfort_temperature"), 21), 22) + finite(house.get("solar_storage_margin_c"), 5), finite(house.get("solar_storage_heat_max_c"), 27))
+            room_heat_limit = min(min(finite(room.get("comfort_temperature"), 21), 22) + finite(room.get("solar_storage_margin_c"), 5), finite(house.get("solar_storage_heat_max_c"), 27))
             room_temperature_guard = bool(current is not None and hp_state and
                 ((hp_state.state == "heat" and current >= room_heat_limit) or
                  (hp_state.state == "cool" and current <= finite(house.get("solar_storage_cool_min_c"), 24))))

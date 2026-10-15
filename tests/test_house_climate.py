@@ -94,6 +94,16 @@ Coordinator = namespace["CasaESEnergyCoordinator"]
 
 
 class ControlTests(unittest.IsolatedAsyncioTestCase):
+    async def test_per_room_storage_margins_persist_without_changing_other_rooms(self):
+        c,_,_,_,_=self.setup_control()
+        c.async_request_refresh=AsyncMock()
+        await c.async_set_house_room_storage_margin('room','heat',1.5)
+        await c.async_set_house_room_storage_margin('room','cool',.5)
+        self.assertEqual(c.house_room_storage_margins('room',{}),{'solar_storage_margin_c':1.5,'solar_storage_cooling_margin_c':.5})
+        self.assertEqual(c.house_room_storage_margins('other',{})['solar_storage_margin_c'],5)
+        self.assertEqual(c._house_store.async_save.call_args.args[0]['room_storage']['room'],{'heat':1.5,'cool':.5})
+        with self.assertRaises(ValueError):
+            await c.async_set_house_room_storage_margin('room','cool',4)
     async def test_independent_thermometer_replaces_trv_reference(self):
         c,house,room,data,states=self.setup_control()
         room['temperature_entity']='sensor.room_temperature'
@@ -600,6 +610,19 @@ class SolarPreconditioningTests(unittest.TestCase):
 
 
 class SolarStorageTests(unittest.TestCase):
+    def test_room_margins_replace_global_margins_only_for_solar_storage(self):
+        room={**PlanTests().room(),'solar_storage_available':True,
+              'solar_storage_margin_c':1,'solar_storage_cooling_margin_c':.5}
+        house={'season':'winter','solar_storage_margin_c':5,'solar_storage_cooling_margin_c':2}
+        r=plan.room_plan(house,room,NOW.replace(hour=12),20,True,True)
+        self.assertEqual(r['heat_pump_target'],22)
+        self.assertEqual(r['radiator_target'],17)
+        room['solar_storage_margin_c']=4
+        self.assertEqual(plan.room_plan(house,room,NOW.replace(hour=12),20,True,True)['heat_pump_target'],25)
+        house['season']='summer'
+        room['cooling_temperature']=26
+        self.assertEqual(plan.room_plan(house,room,NOW.replace(hour=12),28,True,True)['heat_pump_target'],25.5)
+        self.assertEqual(plan.room_plan(house,room,NOW.replace(hour=12),28,False,True)['heat_pump_mode'],'off')
     def test_large_surplus_expands_temperature_band_but_leaves_gas_target(self):
         room = {**PlanTests().room(), "solar_storage_available": True}
         now = NOW.replace(hour=12)

@@ -84,6 +84,8 @@ async def async_setup_entry(
         for subentry in entry.subentries.values():
             if subentry.subentry_type == "climate_room" and subentry.data.get("heat_pump_entity"):
                 entities.append(CasaESHouseRoomPrioritySelect(coordinator, entry, subentry))
+                for key in ("heat", "cool"):
+                    entities.append(CasaESHouseRoomStorageMarginSelect(coordinator, entry, subentry, key))
     async_add_entities(entities)
 
 
@@ -98,6 +100,29 @@ class _CasaESSelectBase(SelectEntity):
             model="Energy Manager",
             sw_version=VERSION,
         )
+
+
+class CasaESHouseRoomStorageMarginSelect(_CasaESSelectBase):
+    _attr_icon = "mdi:thermometer-auto"
+
+    def __init__(self, coordinator, entry, subentry, key):
+        self.coordinator, self.subentry, self.key = coordinator, subentry, key
+        self._attr_unique_id = f"{entry.entry_id}_{subentry.subentry_id}_solar_margin_{key}"
+        self._attr_name = ("Margine caldo FV " if key == "heat" else "Margine fresco FV ") + str(subentry.data.get("name") or subentry.title)
+        self._attr_options = [format(n / 2, "g") for n in range(11 if key == "heat" else 7)]
+        self._set_device_info(entry)
+
+    @property
+    def current_option(self):
+        house, _ = self.coordinator._house_config()
+        key = "solar_storage_margin_c" if self.key == "heat" else "solar_storage_cooling_margin_c"
+        return format(self.coordinator.house_room_storage_margins(self.subentry.subentry_id, house)[key], "g")
+
+    async def async_select_option(self, option):
+        if option not in self._attr_options:
+            raise ValueError("Margine non valido")
+        await self.coordinator.async_set_house_room_storage_margin(self.subentry.subentry_id, self.key, float(option))
+        self.async_write_ha_state()
 
 
 class CasaESDhwReserveSelect(_CasaESSelectBase):
