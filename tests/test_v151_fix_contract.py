@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import unittest
+from release_contract import release_chain_source, assert_release_version
 
 ROOT = Path(__file__).resolve().parents[1]
 COMPONENT = ROOT / "custom_components" / "casa_es_energy_manager"
@@ -35,7 +36,7 @@ class V151FixContractTests(unittest.TestCase):
         source155 = (COMPONENT / "coordinator_v155.py").read_text(encoding="utf-8")
         source156 = (COMPONENT / "coordinator_v156.py").read_text(encoding="utf-8")
         source157 = (COMPONENT / "coordinator_v157.py").read_text(encoding="utf-8")
-        init_source = (COMPONENT / "__init__.py").read_text(encoding="utf-8")
+        init_source = release_chain_source(COMPONENT)
         manifest = (COMPONENT / "manifest.json").read_text(encoding="utf-8")
         const = (COMPONENT / "const.py").read_text(encoding="utf-8")
         self.assertIn("coordinator_v151", source152)
@@ -45,9 +46,9 @@ class V151FixContractTests(unittest.TestCase):
         self.assertIn("V155Coordinator", source156)
         self.assertIn("V156Coordinator", source157)
         self.assertIn("coordinator_v157", init_source)
-        self.assertIn('"version": "1.5.7"', manifest)
-        self.assertIn('VERSION = "1.5.7"', const)
+        assert_release_version(self, COMPONENT, "1.5.7")
 
 
 if __name__ == "__main__":
     unittest.main()
+

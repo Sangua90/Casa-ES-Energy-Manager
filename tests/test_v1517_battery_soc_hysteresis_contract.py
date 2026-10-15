@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import unittest
+from release_contract import release_chain_source, assert_release_version
 
 ROOT = Path(__file__).resolve().parents[1]
 COMPONENT = ROOT / "custom_components" / "casa_es_energy_manager"
@@ -12,7 +13,7 @@ COMPONENT = ROOT / "custom_components" / "casa_es_energy_manager"
 class V1517BatterySocHysteresisContractTests(unittest.TestCase):
     def setUp(self) -> None:
         self.source = (COMPONENT / "coordinator_v1517.py").read_text(encoding="utf-8")
-        self.init = (COMPONENT / "__init__.py").read_text(encoding="utf-8")
+        self.init = release_chain_source(COMPONENT)
         self.manifest = (COMPONENT / "manifest.json").read_text(encoding="utf-8")
         self.const = (COMPONENT / "const.py").read_text(encoding="utf-8")
 
@@ -38,9 +39,9 @@ class V1517BatterySocHysteresisContractTests(unittest.TestCase):
 
     def test_release_chain_and_version_are_v1517(self) -> None:
         self.assertIn("coordinator_v1517", self.init)
-        self.assertIn('"version": "1.5.17"', self.manifest)
-        self.assertIn('VERSION = "1.5.17"', self.const)
+        assert_release_version(self, COMPONENT, "1.5.17")
 
 
 if __name__ == "__main__":
     unittest.main()
+
