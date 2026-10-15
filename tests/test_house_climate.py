@@ -94,6 +94,28 @@ Coordinator = namespace["CasaESEnergyCoordinator"]
 
 
 class ControlTests(unittest.IsolatedAsyncioTestCase):
+    async def test_independent_thermometer_replaces_trv_reference(self):
+        c,house,room,data,states=self.setup_control()
+        room['temperature_entity']='sensor.room_temperature'
+        states['sensor.room_temperature']=SimpleNamespace(state='24.3',last_reported=NOW,attributes={'unit_of_measurement':'°C'})
+        states['climate.hp'].attributes['current_temperature']=28
+        c._house_reference_offsets={'climate.hp':{'offset':9,'at':NOW.timestamp()}}
+        offset,quality=await c._house_trv_reference(house,room,NOW)
+        self.assertAlmostEqual(offset,3.7)
+        self.assertEqual(quality,'independent_room_sensor')
+        self.assertEqual(c._house_reference_offsets['climate.hp']['reference'],'sensor.room_temperature')
+        self.assertEqual(c._room_temperature(room),24.3)
+
+    async def test_independent_temperature_is_not_replaced_by_old_fusion(self):
+        c,house,room,data,states=self.setup_control()
+        house.update(enabled=True,hydraulics_confirmed=False)
+        room['temperature_entity']='sensor.room_temperature'
+        states['sensor.room_temperature']=SimpleNamespace(state='24.3',last_reported=NOW,attributes={'unit_of_measurement':'°C'})
+        c._house_engine_result={'zones':{'room':{'estimated_temperature':22,'estimate_quality':'calibrated_fusion'}}}
+        c._house_engine_last_at=NOW.timestamp()
+        await c._async_house_plan(data,NOW)
+        self.assertEqual(data['house_climate_rooms'][0]['current_temperature'],24.3)
+
     async def test_unacknowledged_target_is_not_a_manual_edit_and_can_stop(self):
         c,_,_,_,states=self.setup_control()
         states['climate.hp'].state='heat'

@@ -461,6 +461,29 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
         return True
 
     async def _house_trv_reference(self, house, room, now):
+        independent = room.get("temperature_entity")
+        if independent:
+            sensor = self.hass.states.get(independent)
+            hp = room.get("heat_pump_entity", "")
+            split = self.hass.states.get(hp)
+            at = getattr(sensor, "last_reported", getattr(sensor, "last_updated", None)) if sensor else None
+            reference = celsius(sensor.state, sensor.attributes.get("unit_of_measurement")) if sensor and sensor.state not in ("unknown", "unavailable") else None
+            native = celsius(split.attributes.get("current_temperature"), self.hass.config.units.temperature_unit) if split else None
+            if reference is None or native is None or at is None or not 0 <= now.timestamp() - at.timestamp() <= 6 * 3600:
+                return None, "independent_reference_unavailable_or_stale"
+            saved = getattr(self, "_house_reference_offsets", {}).get(hp, {})
+            running = bool(split and split.state in ("heat", "cool") and (finite(split.attributes.get("compressor_frequency"), 0) > 0
+                           or finite(self._house_power_w(room, split), 0) > 100))
+            delta = native - reference
+            if not running and abs(delta) <= 10:
+                self._house_reference_offsets = getattr(self, "_house_reference_offsets", {})
+                if saved.get("reference") != independent or abs(delta - saved.get("offset", 0)) >= .25 or now.timestamp() - saved.get("at", 0) >= 3600:
+                    self._house_reference_offsets[hp] = {"offset": delta, "at": now.timestamp(), "reference": independent}
+                    await self._house_save()
+                return delta, "independent_room_sensor"
+            if saved.get("reference") == independent and 0 <= now.timestamp() - saved.get("at", 0) <= 7 * 86400:
+                return saved["offset"], "independent_room_sensor_frozen_offset"
+            return None, "independent_room_sensor_no_cold_offset"
         switch = self.hass.states.get("input_boolean.energy_manager_riferimento_testine_" + room.get("name", "").strip().lower().replace(" ", "_"))
         if not switch or switch.state != "on" or not room.get("radiator_entities"):
             return None, "native_or_learned"
@@ -699,7 +722,7 @@ class CasaESEnergyCoordinator(PreviousCoordinator):
                 room["preheat_minutes"] = 480
             current = self._room_temperature(room)
             estimate = learned.get("estimated_temperature")
-            if learned.get("estimate_quality") == "calibrated_fusion" and finite(estimate) is not None and current is not None and abs(estimate - current) <= 3:
+            if not room.get("temperature_entity") and learned.get("estimate_quality") == "calibrated_fusion" and finite(estimate) is not None and current is not None and abs(estimate - current) <= 3:
                 current = estimate
             hp = room.get("heat_pump_entity", "")
             hp_state = self.hass.states.get(hp)
