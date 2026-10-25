@@ -39,6 +39,18 @@ def start_time(room, prefix, suffix, day):
 
 
 
+def day_periods(room, day, non_working_day=False):
+    index = 5 if non_working_day and day.weekday() < 5 else day.weekday()
+    custom = room.get('daily_schedule', {}).get(str(index))
+    if custom is not None:
+        return custom
+    prefix = 'weekend' if non_working_day or day.weekday() >= 5 else 'weekday'
+    return [{'enabled':room.get(prefix+suffix+'_enabled',False),
+             'start':start_time(room,prefix,suffix,day),
+             'end':room.get(prefix+suffix+'_end','00:00:00')}
+            for suffix in ('','_second')]
+
+
 def occupancy(room, now, non_working_day=False):
     """A cross-midnight period belongs to the day on which it STARTED."""
     if room.get("manual_only", False):
@@ -46,12 +58,10 @@ def occupancy(room, now, non_working_day=False):
     preheat = timedelta(minutes=finite(room.get("preheat_minutes"), 90))
     for offset in (-1, 0, 1):
         day = now.date() + timedelta(days=offset)
-        prefix = "weekend" if non_working_day or day.weekday() >= 5 else "weekday"
-        for suffix in ("", "_second"):
-            if not room.get(prefix + suffix + "_enabled", False):
+        for period in day_periods(room, day, non_working_day):
+            if not period.get('enabled'):
                 continue
-            period_start = start_time(room, prefix, suffix, day)
-            end_time = room.get(prefix + suffix + "_end", "00:00:00")
+            period_start, end_time = period['start'], period['end']
             start = datetime.combine(day, datetime.fromisoformat("2000-01-01T" + period_start).time(), now.tzinfo)
             end = datetime.combine(day, datetime.fromisoformat("2000-01-01T" + end_time).time(), now.tzinfo)
             if end <= start:
@@ -82,12 +92,11 @@ def next_deadline(room, now, non_working_day=False):
     if room.get("manual_only"):
         return None
     starts = []
-    for offset in (0, 1, 2):
+    for offset in range(8):
         day = now.date() + timedelta(days=offset)
-        prefix = "weekend" if non_working_day or day.weekday() >= 5 else "weekday"
-        for suffix in ("", "_second"):
-            if room.get(prefix + suffix + "_enabled"):
-                start = datetime.combine(day, datetime.fromisoformat("2000-01-01T" + start_time(room, prefix, suffix, day)).time(), now.tzinfo)
+        for period in day_periods(room, day, non_working_day):
+            if period.get('enabled'):
+                start = datetime.combine(day, datetime.fromisoformat("2000-01-01T" + period['start']).time(), now.tzinfo)
                 if start.timestamp() > now.timestamp():
                     starts.append(start)
     return min(starts, key=lambda d: d.timestamp()) if starts else None
