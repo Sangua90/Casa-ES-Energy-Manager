@@ -64,13 +64,18 @@ def day_periods(room, day, non_working_day=False):
     festival = room.get('holidays_weekend',False) and italian_public_holiday(day)
     index = 5 if festival or non_working_day and day.weekday() < 5 else day.weekday()
     custom = room.get('daily_schedule', {}).get(str(index))
-    if custom is not None:
-        return custom
     prefix = 'weekend' if festival or non_working_day or day.weekday() >= 5 else 'weekday'
-    return [{'enabled':room.get(prefix+suffix+'_enabled',False),
-             'start':start_time(room,prefix,suffix,day),
-             'end':room.get(prefix+suffix+'_end','00:00:00')}
-            for suffix in ('','_second')]
+    periods = [dict(p) for p in custom] if custom is not None else [
+        {'enabled':room.get(prefix+suffix+'_enabled',False),
+         'start':start_time(room,prefix,suffix,day),
+         'end':room.get(prefix+suffix+'_end','00:00:00')} for suffix in ('','_second')]
+    if room.get('wake_day_end'):
+        wake = day+timedelta(days=1)
+        festive = non_working_day or wake.weekday()>=5 or italian_public_holiday(wake)
+        for period in periods:
+            if period.get('end','00:00:00') <= period.get('start','00:00:00'):
+                period['end'] = room.get('wake_festive_end' if festive else 'wake_weekday_end', '09:00:00' if festive else '07:00:00')
+    return periods
 
 
 def occupancy(room, now, non_working_day=False):
@@ -136,6 +141,13 @@ def target_level(house, room, now):
     if occupied:
         return min(finite(room.get("comfort_temperature"), 21), 22), "comfort", occupied, preparing
     if room.get("base_enabled") and not room.get("manual_only"):
+        if room.get('night_setback'):
+            clock = now.strftime('%H:%M:%S')
+            starts = [p['start'] for p in day_periods(room,now.date(),mode=='guest')
+                if p.get('enabled') and p['start']<'12:00:00']
+            morning = min(starts) if starts else '07:00:00'
+            if clock >= room.get('night_start','21:00:00') or clock < morning:
+                return maintenance, 'night', False, False
         return min(base, 22), "base", False, False
     return maintenance, "maintenance", False, False
 
@@ -215,10 +227,13 @@ def room_plan(house, room, now, current, solar_available, electrical_ok):
         if has_hp and electrical_ok and solar_available and current < comfort - 0.3:
             result.update(source="solar_heating", heat_pump_mode="heat", heat_pump_target=comfort)
     elif season == "winter":
-        if has_hp and electrical_ok and (solar_available or (house.get("allow_economic_grid", False) and affordable)):
+        hp_only = room.get('heat_pump_only',False) or has_hp and not room.get('radiator_entities')
+        if has_hp and electrical_ok and (solar_available or hp_only or (house.get("allow_economic_grid", False) and affordable)):
             if current < comfort - 0.3:
-                result.update(source="solar_heating" if solar_available else "economic_heat_pump",
+                result.update(source="solar_heating" if solar_available else "heat_pump_only" if hp_only else "economic_heat_pump",
                               heat_pump_mode="heat", heat_pump_target=comfort)
-        elif room.get("radiator_entities"):
+        elif room.get("radiator_entities") and not hp_only:
             result.update(source="gas_comfort", radiator_target=comfort)
+        if hp_only and room.get('radiator_entities'):
+            result['radiator_target'] = finite(room.get('maintenance_temperature'),17)
     return result
