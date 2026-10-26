@@ -2,6 +2,7 @@
 
 from pathlib import Path
 import unittest
+from release_contract import release_chain_source, assert_release_version
 
 ROOT = Path(__file__).resolve().parents[1]
 COMPONENT = ROOT / "custom_components" / "casa_es_energy_manager"
@@ -26,15 +27,15 @@ class V157SelectPauseResumeContractTests(unittest.TestCase):
         self.assertNotIn('"stop"', self.coordinator.split('PAUSE_ALIASES', 1)[1].split('def _norm', 1)[0])
 
     def test_release_is_v157(self) -> None:
-        init_source = (COMPONENT / "__init__.py").read_text(encoding="utf-8")
+        init_source = release_chain_source(COMPONENT)
         subentry = (COMPONENT / "subentry_support.py").read_text(encoding="utf-8")
         manifest = (COMPONENT / "manifest.json").read_text(encoding="utf-8")
         const = (COMPONENT / "const.py").read_text(encoding="utf-8")
         self.assertIn("coordinator_v157", init_source)
         self.assertIn("monitored_load_flow_v157", subentry)
-        self.assertIn('"version": "1.5.7"', manifest)
-        self.assertIn('VERSION = "1.5.7"', const)
+        assert_release_version(self, COMPONENT, "1.5.7")
 
 
 if __name__ == "__main__":
     unittest.main()
+

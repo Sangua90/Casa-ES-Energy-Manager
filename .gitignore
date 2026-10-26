@@ -16,3 +16,13 @@ tests/playwright/screenshots/
 package.json
 package-lock.json
 screenshot.png
+
+# Local Home Assistant diagnosis and test dependencies (never publish).
+ha-*-review.json
+read-ha-*.ps1
+baseline-review/
+test-output.txt
+.test-deps/
+
+ha-*-review.txt
+install-ha.ps1
