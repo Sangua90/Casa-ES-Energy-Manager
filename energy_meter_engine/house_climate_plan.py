@@ -39,12 +39,34 @@ def start_time(room, prefix, suffix, day):
 
 
 
+def italian_public_holiday(day):
+    """National Italian days off; Oct 4 effective from 2026 (Law 151/2025).
+
+    Gregorian Easter uses the Meeus/Jones/Butcher integer computus.
+    Local patron days are deliberately not inferred from a country calendar.
+    """
+    fixed = {(1,1),(1,6),(4,25),(5,1),(6,2),(8,15),(11,1),(12,8),(12,25),(12,26)}
+    if (day.month,day.day) in fixed or day.year >= 2026 and (day.month,day.day)==(10,4):
+        return True
+    y = day.year
+    a,b,c = y%19,y//100,y%100
+    d,e,f,g = b//4,b%4,(b+8)//25,(b-(b+8)//25+1)//3
+    h = (19*a+b-d-g+15)%30
+    i,k = c//4,c%4
+    l = (32+2*e+2*i-h-k)%7
+    m = (a+11*h+22*l)//451
+    n = h+l-7*m+114
+    easter = day.replace(month=n//31,day=n%31+1)
+    return day in (easter,easter+timedelta(days=1))
+
+
 def day_periods(room, day, non_working_day=False):
-    index = 5 if non_working_day and day.weekday() < 5 else day.weekday()
+    festival = room.get('holidays_weekend',False) and italian_public_holiday(day)
+    index = 5 if festival or non_working_day and day.weekday() < 5 else day.weekday()
     custom = room.get('daily_schedule', {}).get(str(index))
     if custom is not None:
         return custom
-    prefix = 'weekend' if non_working_day or day.weekday() >= 5 else 'weekday'
+    prefix = 'weekend' if festival or non_working_day or day.weekday() >= 5 else 'weekday'
     return [{'enabled':room.get(prefix+suffix+'_enabled',False),
              'start':start_time(room,prefix,suffix,day),
              'end':room.get(prefix+suffix+'_end','00:00:00')}
