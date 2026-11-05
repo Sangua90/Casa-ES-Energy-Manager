@@ -16,9 +16,9 @@ def finite(value, default=None):
 
 def celsius(value, unit, minimum=-10):
     value = finite(value)
-    if value is None or unit not in ("°C", "C", "°F", "F"):
+    if value is None or unit not in ("\u00b0C", "C", "\u00b0F", "F"):
         return None
-    value = (value - 32) * 5 / 9 if unit in ("°F", "F") else value
+    value = (value - 32) * 5 / 9 if unit in ("\u00b0F", "F") else value
     return value if minimum <= value <= 50 else None
 
 
