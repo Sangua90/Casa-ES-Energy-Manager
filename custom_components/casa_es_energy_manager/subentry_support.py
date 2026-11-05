@@ -9,6 +9,8 @@ from homeassistant.core import callback
 
 from .const import SUBENTRY_TYPE_MANAGED_DEVICE, SUBENTRY_TYPE_MONITORED_LOAD
 from .managed_device_flow_v1513 import ManagedDeviceSubentryFlow
+from .house_climate_flow import HouseClimateFlow, ClimateRoomFlow
+from .house_climate_plan import HOUSE_TYPE, ROOM_TYPE
 from .monitored_load_flow import MonitoredLoadSubentryFlow as LegacyMonitoredLoadSubentryFlow
 from .monitored_load_flow_v157 import MonitoredLoadSubentryFlow as V157MonitoredLoadSubentryFlow
 
@@ -31,6 +33,9 @@ class CasaESSubentrySupport:
         cls, config_entry: ConfigEntry
     ) -> dict[str, type[ConfigSubentryFlow]]:
         return {
+            HOUSE_TYPE: HouseClimateFlow,
+            ROOM_TYPE: ClimateRoomFlow,
             SUBENTRY_TYPE_MANAGED_DEVICE: ManagedDeviceSubentryFlow,
             SUBENTRY_TYPE_MONITORED_LOAD: MonitoredLoadSubentryFlow,
         }
+

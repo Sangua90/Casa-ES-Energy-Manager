@@ -47,6 +47,7 @@ CONF_THERMAL_HEATING_ENTITY = "thermal_heating_entity"
 CONF_THERMAL_LEGIONELLA_ENTITY = "thermal_legionella_entity"
 CONF_THERMAL_AVOID_GRID_RECOVERY = "thermal_avoid_grid_recovery"
 CONF_THERMAL_LEARNING = "thermal_learning"
+CONF_THERMAL_NOTIFY_SERVICE = "thermal_notify_service"
 CONF_THERMAL_STRATEGY = "thermal_strategy"
 THERMAL_STRATEGIES = ("balanced", "max_solar", "comfort")
 
@@ -109,7 +110,7 @@ def _thermal_schema(current: dict[str, Any]) -> vol.Schema:
             CONF_THERMAL_NORMAL_MAX_TEMP_C,
             default=current.get(CONF_THERMAL_NORMAL_MAX_TEMP_C, 65.0),
         )
-    ] = base._num(45, 72, 0.5, "°C")
+    ] = base._num(45, 75, 0.5, "°C")
     fields[
         vol.Required(
             CONF_THERMAL_HARD_MAX_TEMP_C,
@@ -147,6 +148,8 @@ def _thermal_schema(current: dict[str, Any]) -> vol.Schema:
             default=current.get(CONF_THERMAL_LEARNING, True),
         )
     ] = selector.BooleanSelector()
+    fields[vol.Optional(CONF_THERMAL_NOTIFY_SERVICE,
+                        default=current.get(CONF_THERMAL_NOTIFY_SERVICE, ""))] = selector.TextSelector()
     return vol.Schema(fields)
 
 
@@ -228,6 +231,11 @@ class ManagedDeviceSubentryFlow(base.ManagedDeviceSubentryFlow):
         if user_input is not None:
             values = dict(user_input)
             base_temp = float(values.get(CONF_THERMAL_BASE_TEMP_C, 52.0))
+            notify_service = str(values.get(CONF_THERMAL_NOTIFY_SERVICE, "")).strip()
+            values[CONF_THERMAL_NOTIFY_SERVICE] = notify_service
+            if notify_service and (not notify_service.startswith("notify.mobile_app_") or
+                                   not self.hass.services.has_service("notify", notify_service.split(".", 1)[1])):
+                errors[CONF_THERMAL_NOTIFY_SERVICE] = "invalid_notify_service"
             normal_max = float(values.get(CONF_THERMAL_NORMAL_MAX_TEMP_C, 65.0))
             hard_max = float(values.get(CONF_THERMAL_HARD_MAX_TEMP_C, 72.0))
             if normal_max < base_temp:

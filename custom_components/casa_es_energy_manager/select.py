@@ -73,6 +73,19 @@ async def async_setup_entry(
                 device_name=name,
             )
         )
+    if hasattr(coordinator, "house_gas_mode"):
+        entities.append(CasaESHouseGasModeSelect(coordinator, entry))
+        entities.append(CasaESHouseSituationSelect(coordinator, entry))
+        entities.append(CasaESDhwReserveSelect(coordinator, entry))
+        for key in ("start", "stop"):
+            entities.append(CasaESHouseSurplusDelaySelect(coordinator, entry, key))
+        for machine, name in (("salotto", "Clima Salotto"), ("ester", "Clima Ester"), ("p1", "Clima P1")):
+            entities.append(CasaESHouseMachineModeSelect(coordinator, entry, machine, name))
+        for subentry in entry.subentries.values():
+            if subentry.subentry_type == "climate_room" and subentry.data.get("heat_pump_entity"):
+                entities.append(CasaESHouseRoomPrioritySelect(coordinator, entry, subentry))
+                for key in ("heat", "cool"):
+                    entities.append(CasaESHouseRoomStorageMarginSelect(coordinator, entry, subentry, key))
     async_add_entities(entities)
 
 
@@ -87,6 +100,139 @@ class _CasaESSelectBase(SelectEntity):
             model="Energy Manager",
             sw_version=VERSION,
         )
+
+
+class CasaESHouseRoomStorageMarginSelect(_CasaESSelectBase):
+    _attr_icon = "mdi:thermometer-auto"
+
+    def __init__(self, coordinator, entry, subentry, key):
+        self.coordinator, self.subentry, self.key = coordinator, subentry, key
+        self._attr_unique_id = f"{entry.entry_id}_{subentry.subentry_id}_solar_margin_{key}"
+        self._attr_name = ("Margine caldo FV " if key == "heat" else "Margine fresco FV ") + str(subentry.data.get("name") or subentry.title)
+        self._attr_options = [format(n / 2, "g") for n in range(11 if key == "heat" else 7)]
+        self._set_device_info(entry)
+
+    @property
+    def current_option(self):
+        house, _ = self.coordinator._house_config()
+        key = "solar_storage_margin_c" if self.key == "heat" else "solar_storage_cooling_margin_c"
+        return format(self.coordinator.house_room_storage_margins(self.subentry.subentry_id, house)[key], "g")
+
+    async def async_select_option(self, option):
+        if option not in self._attr_options:
+            raise ValueError("Margine non valido")
+        await self.coordinator.async_set_house_room_storage_margin(self.subentry.subentry_id, self.key, float(option))
+        self.async_write_ha_state()
+
+
+class CasaESDhwReserveSelect(_CasaESSelectBase):
+    _attr_name = "Riserva aggiuntiva acqua calda"
+    _attr_icon = "mdi:thermometer-plus"
+    _attr_options = [str(n) for n in range(11)]
+
+    def __init__(self, coordinator, entry):
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{entry.entry_id}_dhw_fixed_reserve"
+        self._set_device_info(entry)
+
+    @property
+    def current_option(self):
+        return str(int(getattr(self.coordinator, "_dhw_fixed_reserve", 4)))
+
+    async def async_select_option(self, option):
+        if option not in self._attr_options:
+            raise ValueError("Riserva non valida")
+        await self.coordinator.async_set_dhw_fixed_reserve(float(option))
+        self.async_write_ha_state()
+
+
+class CasaESHouseSurplusDelaySelect(_CasaESSelectBase):
+    _attr_icon = "mdi:timer-outline"
+    _attr_options = [str(n) for n in range(1, 21)]
+
+    def __init__(self, coordinator, entry, key):
+        self.coordinator, self.key = coordinator, key
+        self._attr_unique_id = f"{entry.entry_id}_house_surplus_delay_{key}"
+        self._attr_name = "Attesa surplus avvio clima" if key == "start" else "Tolleranza calo surplus clima"
+        self._set_device_info(entry)
+
+    @property
+    def current_option(self):
+        return str(self.coordinator.house_surplus_delay(self.key))
+
+    async def async_select_option(self, option):
+        if option not in self._attr_options:
+            raise ValueError("Tempo non valido")
+        await self.coordinator.async_set_house_surplus_delay(self.key, int(option))
+        self.async_write_ha_state()
+
+
+class CasaESHouseRoomPrioritySelect(_CasaESSelectBase):
+    """Persistent room ranking: 1 starts first, 5 is shed first."""
+    _attr_icon = "mdi:sort-numeric-ascending"
+    _attr_options = ["1", "2", "3", "4", "5"]
+
+    def __init__(self, coordinator, entry, subentry):
+        self.coordinator = coordinator
+        self.subentry = subentry
+        self._attr_unique_id = f"{entry.entry_id}_{subentry.subentry_id}_house_priority"
+        self._attr_name = "Priorità clima " + str(subentry.data.get("name") or subentry.title)
+        self._set_device_info(entry)
+
+    @property
+    def current_option(self):
+        return str(self.coordinator.house_room_priority(self.subentry.subentry_id, self.subentry.data))
+
+    async def async_select_option(self, option):
+        if option not in self._attr_options:
+            raise ValueError("Priorità non valida")
+        await self.coordinator.async_set_house_room_priority(self.subentry.subentry_id, int(option))
+        self.async_write_ha_state()
+
+
+class CasaESHouseGasModeSelect(_CasaESSelectBase):
+    """Only the space-heating thermostat; never boiler main power or DHW."""
+    _attr_name = "Riscaldamento caldaia"
+    _attr_icon = "mdi:radiator"
+    _attr_options = ["Automatico", "Spento"]
+
+    def __init__(self, coordinator, entry):
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{entry.entry_id}_house_gas_mode"
+        self._set_device_info(entry)
+
+    @property
+    def current_option(self):
+        return "Automatico" if self.coordinator.house_gas_mode == "auto" else "Spento"
+
+    async def async_select_option(self, option):
+        values = {"Automatico": "auto", "Spento": "off"}
+        if option not in values:
+            raise ValueError("Modalità caldaia non valida")
+        await self.coordinator.async_set_house_gas_mode(values[option])
+        self.async_write_ha_state()
+
+
+class CasaESHouseMachineModeSelect(_CasaESSelectBase):
+    _attr_icon = "mdi:air-conditioner"
+    _attr_options = ["Automatico", "Manuale", "Spento"]
+
+    def __init__(self, coordinator, entry, machine, name):
+        self.coordinator, self.machine = coordinator, machine
+        self._attr_name = name
+        self._attr_unique_id = f"{entry.entry_id}_house_machine_{machine}"
+        self._set_device_info(entry)
+
+    @property
+    def current_option(self):
+        return {"auto": "Automatico", "manual": "Manuale", "off": "Spento"}.get(self.coordinator.house_machine_modes.get(self.machine), "Manuale")
+
+    async def async_select_option(self, option):
+        values = {"Automatico": "auto", "Manuale": "manual", "Spento": "off"}
+        if option not in values:
+            raise ValueError("Modalità climatizzatore non valida")
+        await self.coordinator.async_set_house_machine_mode(self.machine, values[option])
+        self.async_write_ha_state()
 
 
 class CasaESEnergyPreferenceSelect(_CasaESSelectBase):
@@ -173,3 +319,36 @@ class CasaESManagedDeviceModeSelect(RestoreEntity, _CasaESSelectBase):
         )
         self.async_write_ha_state()
         await self.coordinator.async_request_refresh()
+
+
+class CasaESHouseSituationSelect(_CasaESSelectBase):
+    """Time-limited house overrides; routines resume at explicit expiry."""
+    _attr_name = "Situazione casa"
+    _attr_icon = "mdi:home-clock"
+    _attr_options = ["Normale", "Ospiti", "Vacanza"]
+
+    def __init__(self, coordinator, entry):
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{entry.entry_id}_house_situation"
+        self._set_device_info(entry)
+
+    async def async_added_to_hass(self):
+        await super().async_added_to_hass()
+        self.async_on_remove(self.coordinator.async_add_listener(self.async_write_ha_state))
+
+    @property
+    def current_option(self):
+        from .house_climate_plan import situation
+        from homeassistant.util import dt as dt_util
+        mode = situation({"exception": self.coordinator._house_exception}, dt_util.now())
+        guest = self.coordinator.hass.states.get((self.coordinator._config("house_guest_entity") or "input_boolean.modalita_ospite"))
+        if guest and guest.state == "on":
+            return "Ospiti"
+        return "Vacanza" if mode == "holiday" else "Normale"
+
+    async def async_select_option(self, option):
+        if option not in self.options:
+            raise ValueError("Situazione casa non valida")
+        index = self.options.index(option)
+        await self.coordinator.async_set_house_exception(["normal", "guest", "holiday"][index])
+        self.async_write_ha_state()

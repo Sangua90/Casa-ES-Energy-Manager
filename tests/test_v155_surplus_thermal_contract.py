@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import unittest
+from release_contract import release_chain_source, assert_release_version
 
 ROOT = Path(__file__).resolve().parents[1]
 COMPONENT = ROOT / "custom_components" / "casa_es_energy_manager"
@@ -42,7 +43,7 @@ class V155SurplusThermalContractTests(unittest.TestCase):
         self.assertIn("abs(min_off - 20.0)", self.flow)
 
     def test_v155_remains_in_v157_release_chain(self) -> None:
-        init_source = (COMPONENT / "__init__.py").read_text(encoding="utf-8")
+        init_source = release_chain_source(COMPONENT)
         source156 = (COMPONENT / "coordinator_v156.py").read_text(encoding="utf-8")
         source157 = (COMPONENT / "coordinator_v157.py").read_text(encoding="utf-8")
         manifest = (COMPONENT / "manifest.json").read_text(encoding="utf-8")
@@ -50,9 +51,9 @@ class V155SurplusThermalContractTests(unittest.TestCase):
         self.assertIn("V155Coordinator", source156)
         self.assertIn("V156Coordinator", source157)
         self.assertIn("coordinator_v157", init_source)
-        self.assertIn('"version": "1.5.7"', manifest)
-        self.assertIn('VERSION = "1.5.7"', const)
+        assert_release_version(self, COMPONENT, "1.5.7")
 
 
 if __name__ == "__main__":
     unittest.main()
+
