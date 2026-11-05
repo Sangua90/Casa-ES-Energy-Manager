@@ -74,3 +74,41 @@ class EngineTests(unittest.TestCase):
         self.assertEqual((ROOT / "energy_meter_engine/house_climate_plan.py").read_text(),
                          (ROOT / "custom_components/casa_es_energy_manager/house_climate_plan.py").read_text())
 
+    def preparation(self, hour=14, hp_only=False, electrical=True):
+        room = {"reviewed": True, "heat_pump_entity": "climate.hp", "radiator_entities": ["climate.trv"],
+                "heat_pump_only": hp_only, "comfort_temperature": 20, "heat_pump_cop": 4,
+                "cop_confirmed": True, "weekday_enabled": True,
+                "weekday_start": "18:00:00", "weekday_end": "19:00:00"}
+        self.engine.models["r"] = {"gas": {"rate_c_h": .2, "samples": 20},
+                                   "heat_pump": {"rate_c_h": 2, "samples": 20},
+                                   "off": {"rate_c_h": -.4, "samples": 20}}
+        payload = self.payload()
+        payload.update(timestamp=self.now.replace(hour=hour).isoformat(),
+                       house={"reviewed": True, "season": "winter", "hydraulics_confirmed": True,
+                              "economics_confirmed": True, "allow_economic_grid": True},
+                       zones=[{"id": "r", "config": room, "temperature": 18,
+                               "electrical_ok": electrical}])
+        return self.engine.plan(payload)["zones"]["r"]
+
+    def test_economic_preparation_uses_hp_rate_not_slow_radiator(self):
+        d = self.preparation()
+        self.assertEqual(d["preheat_source"], "heat_pump")
+        # Two degrees now + four hours of .4 C/h cooling; heating replaces
+        # passive cooling during the preparation interval.
+        self.assertAlmostEqual(d["preheat_minutes"], 3.6 / 2.4 * 60 * 1.25 + 15)
+
+    def test_active_period_does_not_project_loss_until_tomorrow(self):
+        d = self.preparation(hour=18)
+        self.assertEqual(d["preheat_minutes"], 0)
+        self.assertEqual(d["preheat_basis"], "active_period")
+        self.assertIsNone(d["deadline"])
+        self.assertTrue(d["occupied"])
+
+    def test_real_electrical_restriction_uses_gas_preparation(self):
+        d = self.preparation(electrical=False)
+        self.assertEqual(d["preheat_source"], "gas")
+        self.assertGreater(d["preheat_minutes"], 300)
+
+    def test_hp_only_never_trains_preparation_from_radiator_rate(self):
+        d = self.preparation(hp_only=True, electrical=False)
+        self.assertEqual(d["preheat_source"], "heat_pump")

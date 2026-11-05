@@ -6,7 +6,7 @@ from statistics import median
 import json
 import os
 
-from house_climate_plan import finite, room_plan, next_deadline
+from house_climate_plan import finite, room_plan, next_deadline, occupancy, heat_costs
 from thermal_model import estimate, fit_context, predicted_rate
 from horizon import optimize
 
@@ -128,10 +128,18 @@ class Engine:
             heating = [m["rate_c_h"] for source, m in model.items()
                        if source in ("gas", "heat_pump", "combined") and m.get("samples", 0) >= 10 and m.get("rate_c_h", 0) > .1]
             current = finite(zone.get("temperature"))
-            deadline = next_deadline(room, now, non_working_day=house.get("exception", {}).get("mode") == "guest")
+            guest = house.get("exception", {}).get("mode") == "guest"
+            in_use = occupancy({**room, "preheat_minutes": 0}, now, non_working_day=guest)[0]
+            deadline = None if in_use else next_deadline(room, now, non_working_day=guest)
             if current is not None:
                 cooling = house.get("season") == "summer"
-                sources = ("cooling",) if cooling else (("heat_pump",) if not house.get("hydraulics_confirmed") else ("gas", "heat_pump", "combined"))
+                costs = heat_costs({**house, "outdoor_temperature": finite(zone.get("outdoor_temperature"))}, room)
+                hp_only = room.get("heat_pump_only") or not room.get("radiator_entities")
+                economic_hp = (house.get("allow_economic_grid") and costs["economics_verified"]
+                               and costs["heat_pump_eur_kwh_heat"] < costs["gas_eur_kwh_heat"] * .95)
+                hp_expected = bool(room.get("heat_pump_entity") and (hp_only or
+                    zone.get("electrical_ok") and (zone.get("solar_available") or economic_hp)))
+                sources = ("cooling",) if cooling else (("heat_pump",) if hp_expected or not house.get("hydraulics_confirmed") else ("gas",))
                 eligible = [abs(m["rate_c_h"]) for source, m in model.items() if source in sources and m.get("samples", 0) >= 10 and (m.get("rate_c_h", 0) < -.1 if cooling else m.get("rate_c_h", 0) > .1)]
                 conservative = min(eligible) if eligible else .7
                 outdoor = finite(zone.get("outdoor_temperature"))
@@ -152,8 +160,12 @@ class Engine:
                 projected = current + (max(drift, 0) if cooling else min(drift, 0)) * min(hours_to_use, 12)
                 target = finite(room.get("cooling_temperature"), 26) if cooling else finite(room.get("comfort_temperature"), 21)
                 deficit = max(projected - target if cooling else target - projected, 0)
-                minutes = deficit / conservative * 60
-                room["preheat_minutes"] = min(max(minutes * 1.25 + 15, 15), 480)
+                # Passive cooling applies only BEFORE preparation starts. Dividing
+                # the full-deadline deficit by heating alone counts those losses
+                # a second time during the heating interval.
+                drift_loss = max(drift, 0) if cooling else max(-drift, 0)
+                minutes = deficit / (conservative + drift_loss) * 60
+                room["preheat_minutes"] = 0 if in_use or deadline is None else min(max(minutes * 1.25 + 15, 15), 480)
             decision = room_plan({**house, "outdoor_temperature": finite(zone.get("outdoor_temperature"))}, room, now, current, bool(zone.get("solar_available")), bool(zone.get("electrical_ok")))
             inertia = model.get("inertia", {})
             decision.update(overshoot_c=inertia.get("overshoot_c", 0) if inertia.get("samples", 0) >= 5 else 0,
@@ -161,6 +173,8 @@ class Engine:
                             confidence=max((m.get("confidence", 0) for k, m in model.items() if k in ("off", "gas", "heat_pump", "combined")), default=0),
                             estimated_temperature=current, estimate_quality=zone.get("estimate_quality", "fallback"),
                             deadline=deadline.isoformat() if deadline else None, learning_status="conservative_fallback" if not heating else "thermal_rate_available")
+            decision.update(preheat_source=sources[0] if current is not None else None,
+                            preheat_basis="active_period" if in_use else "next_use")
             results[zone["id"]] = decision
             if current is None:
                 reasons.append("temperature_unavailable:" + zone["id"])

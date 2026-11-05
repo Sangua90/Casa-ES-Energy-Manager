@@ -33,7 +33,7 @@ class PredictiveTests(unittest.TestCase):
     def test_replay_keeps_attributes_and_absolute_timestamps(self):
         def row(state, attributes):
             return {"last_updated": NOW.isoformat(), "state": state, "attributes": attributes}
-        rows = {"sensor.room": [row("68", {"unit_of_measurement": "°F"})],
+        rows = {"sensor.room": [row("68", {"unit_of_measurement": "\u00b0F"})],
                 "climate.hp": [row("heat", {"current_temperature": 21, "realtime_power": 800})],
                 "sensor.power": [row(".8", {"unit_of_measurement": "kW"})],
                 "binary_sensor.window": [row("off", {})]}
@@ -63,8 +63,8 @@ class PredictiveTests(unittest.TestCase):
         self.assertEqual(next_deadline(room, NOW - timedelta(days=1)).hour, 18)
 
     def test_outdoor_freezing_fahrenheit_and_oven_standby_units(self):
-        self.assertAlmostEqual(celsius(0, "°F", -40), -17.7777777778)
-        self.assertIsNone(celsius(0, "°F"))
+        self.assertAlmostEqual(celsius(0, "\u00b0F", -40), -17.7777777778)
+        self.assertIsNone(celsius(0, "\u00b0F"))
         self.assertFalse(auxiliary_active("1.3", {"unit_of_measurement": "W"}))
         self.assertTrue(auxiliary_active(".2", {"unit_of_measurement": "kW"}))
 
@@ -92,7 +92,9 @@ class PredictiveTests(unittest.TestCase):
             engine.models["r"] = {"envelope": {"loss_per_hour": .1}, "solar_gain": {"c_h_per_pv_kw": .2}}
             zone = {"id": "r", "config": self.room(), "temperature": 21, "outdoor_temperature": 15, "solar_power_w": 7000, "thermal_source": "off", "contamination": []}
             result = engine.plan({"schema": 1, "timestamp": NOW.isoformat(), "house": {"season": "winter", "reviewed": True}, "zones": [zone], "energy": {}})
-            self.assertGreater(result["zones"]["r"]["preheat_minutes"], 60)
+            # Losses before startup matter, but not again during heating.
+            self.assertAlmostEqual(result["zones"]["r"]["preheat_minutes"],
+                                   .6 / (.7 + .6) * 60 * 1.25 + 15)
 
     def test_bias_requires_independent_reference_and_enough_samples(self):
         model = {}
